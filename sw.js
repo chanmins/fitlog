@@ -1,13 +1,13 @@
-const CACHE = "fitlog-v10";
+const CACHE = "fitlog-v11";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=10",
-  "./app.js?v=10",
-  "./db.js?v=10",
-  "./exercises.js?v=10",
-  "./cloud.js?v=10",
-  "./firebase-config.js?v=10",
+  "./styles.css?v=11",
+  "./app.js?v=11",
+  "./db.js?v=11",
+  "./exercises.js?v=11",
+  "./cloud.js?v=11",
+  "./firebase-config.js?v=11",
   "./manifest.json",
   "./icons/icon.svg",
   "./icons/icon-192.png",

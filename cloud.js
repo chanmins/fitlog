@@ -93,20 +93,11 @@ const Cloud = (() => {
 
   async function signInGoogle() {
     if (!auth) throw new Error("Firebase가 설정되지 않았습니다.");
-    /* Use popup: app domain (github.io) differs from authDomain (firebaseapp.com),
-       and signInWithRedirect breaks under browser storage partitioning in that
-       cross-domain setup. Popup returns the result via postMessage instead. */
-    try {
-      const cred = await auth.signInWithPopup(googleProvider());
-      return profile(cred.user);
-    } catch (err) {
-      /* Fallback to redirect only when popup itself is blocked/unsupported. */
-      if (err && (err.code === "auth/popup-blocked" || err.code === "auth/operation-not-supported-in-this-environment")) {
-        await auth.signInWithRedirect(googleProvider());
-        return null;
-      }
-      throw err;
-    }
+    /* Redirect works reliably now that the app is served from the same origin
+       as authDomain (fitlog-4fe54.firebaseapp.com). It also avoids popup blockers
+       (popups get blocked when not opened synchronously in the click handler). */
+    await auth.signInWithRedirect(googleProvider());
+    return null;
   }
 
   async function completeRedirect() {
