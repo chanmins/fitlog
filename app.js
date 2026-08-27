@@ -1313,10 +1313,16 @@
       navigator.serviceWorker.register('./sw.js').catch(()=>{});
     }
     Cloud.init();
-    try { await Cloud.completeRedirect(); } catch (err) {
+
+    /* Process redirect result FIRST before waitAuth resolves with stale null.
+       Firebase fires onAuthStateChanged(null) synchronously before getRedirectResult
+       settles, so waitAuth() would otherwise resolve with null and show the login
+       screen even though the redirect succeeded. */
+    let redirectUser = null;
+    try { redirectUser = await Cloud.completeRedirect(); } catch (err) {
       state.authError = Cloud.authMessage(err);
     }
-    const existing = await Cloud.waitAuth();
+
     Cloud.onAuth(async (user) => {
       if (!state.authReady) return;
       if (user && (!state.user || state.user.uid !== user.uid)) {
@@ -1332,6 +1338,13 @@
         render();
       }
     });
+
+    if (redirectUser) {
+      await enterApp(redirectUser);
+      return;
+    }
+
+    const existing = await Cloud.waitAuth();
     if (existing) {
       await enterApp(existing);
       return;
