@@ -1245,9 +1245,11 @@
     state.authError = '';
     render();
     try {
-      /* signInGoogle always uses redirect — page navigates away */
-      await Cloud.signInGoogle();
-      /* if we somehow get here (non-redirect env), handle the returned user */
+      const user = await Cloud.signInGoogle();
+      if (user) {
+        await enterApp(user);
+      }
+      /* if null: popup was blocked and a redirect is now in progress */
     } catch (err) {
       state.authBusy = false;
       state.authError = Cloud.authMessage(err);

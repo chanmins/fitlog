@@ -93,9 +93,20 @@ const Cloud = (() => {
 
   async function signInGoogle() {
     if (!auth) throw new Error("Firebase가 설정되지 않았습니다.");
-    /* Always use redirect — popup is frequently blocked on mobile and PWA. */
-    await auth.signInWithRedirect(googleProvider());
-    return null;
+    /* Use popup: app domain (github.io) differs from authDomain (firebaseapp.com),
+       and signInWithRedirect breaks under browser storage partitioning in that
+       cross-domain setup. Popup returns the result via postMessage instead. */
+    try {
+      const cred = await auth.signInWithPopup(googleProvider());
+      return profile(cred.user);
+    } catch (err) {
+      /* Fallback to redirect only when popup itself is blocked/unsupported. */
+      if (err && (err.code === "auth/popup-blocked" || err.code === "auth/operation-not-supported-in-this-environment")) {
+        await auth.signInWithRedirect(googleProvider());
+        return null;
+      }
+      throw err;
+    }
   }
 
   async function completeRedirect() {
