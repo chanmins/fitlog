@@ -10,20 +10,38 @@
   <meta name="apple-mobile-web-app-title" content="FITLOG">
   <title>FITLOG</title>
   <link rel="manifest" href="./manifest.json">
-  <link rel="stylesheet" href="./styles.css?v=19">
+  <link rel="stylesheet" href="./styles.css?v=20">
   <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icons/icon-192.png">
 </head>
 <body>
   <div id="app"></div>
   <input id="import-file" type="file" accept="application/json,.json" hidden>
+  <script>
+    /* If a stale service worker left a blank shell, wipe it once and reload. */
+    (function () {
+      var BUILD = "20";
+      setTimeout(function () {
+        var app = document.getElementById("app");
+        if (!app || app.innerHTML.trim()) return;
+        try { if (sessionStorage.getItem("fitlog-blank-recover") === BUILD) return; } catch (_) {}
+        try { sessionStorage.setItem("fitlog-blank-recover", BUILD); } catch (_) {}
+        if (!("serviceWorker" in navigator)) { location.reload(); return; }
+        navigator.serviceWorker.getRegistrations()
+          .then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); })
+          .then(function () { return caches.keys(); })
+          .then(function (keys) { return Promise.all(keys.map(function (k) { return caches.delete(k); })); })
+          .finally(function () { location.reload(); });
+      }, 3500);
+    })();
+  </script>
   <script src="https://www.gstatic.com/firebasejs/11.4.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/11.4.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/11.4.0/firebase-firestore-compat.js"></script>
-  <script src="./firebase-config.js?v=19"></script>
-  <script src="./cloud.js?v=19"></script>
-  <script src="./exercises.js?v=19"></script>
-  <script src="./db.js?v=19"></script>
-  <script src="./app.js?v=19"></script>
+  <script src="./firebase-config.js?v=20"></script>
+  <script src="./cloud.js?v=20"></script>
+  <script src="./exercises.js?v=20"></script>
+  <script src="./db.js?v=20"></script>
+  <script src="./app.js?v=20"></script>
 </body>
 </html>

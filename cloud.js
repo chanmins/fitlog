@@ -93,11 +93,26 @@ const Cloud = (() => {
 
   async function signInGoogle() {
     if (!auth) throw new Error("Firebase가 설정되지 않았습니다.");
-    /* Redirect works reliably now that the app is served from the same origin
-       as authDomain (fitlog-4fe54.firebaseapp.com). It also avoids popup blockers
-       (popups get blocked when not opened synchronously in the click handler). */
-    await auth.signInWithRedirect(googleProvider());
-    return null;
+    const provider = googleProvider();
+    /* Popup first: same-origin hosting keeps the result in this tab.
+       Redirect is the fallback when the browser blocks the popup (iOS PWA, in-app browsers).
+       The caller must invoke this directly from the click handler — no render() beforehand. */
+    try {
+      const cred = await auth.signInWithPopup(provider);
+      return cred && cred.user ? profile(cred.user) : null;
+    } catch (err) {
+      const code = err && err.code ? err.code : "";
+      if (
+        code === "auth/popup-blocked" ||
+        code === "auth/cancelled-popup-request" ||
+        code === "auth/operation-not-supported-in-this-environment"
+      ) {
+        try { sessionStorage.setItem("fitlog-auth-pending", "1"); } catch (_) {}
+        await auth.signInWithRedirect(provider);
+        return null;
+      }
+      throw err;
+    }
   }
 
   async function completeRedirect() {

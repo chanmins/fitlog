@@ -1573,14 +1573,20 @@
     if (!Cloud.configured()) { state.authError = 'Firebase가 아직 연결되지 않았습니다.'; render(); return; }
     state.authBusy = true;
     state.authError = '';
-    render();
+    /* Start Google auth from the click handler BEFORE any re-render.
+       Replacing the DOM first drops the user-activation token, so iOS/Android
+       browsers block the popup and the redirect never starts. */
     try {
+      try { sessionStorage.setItem('fitlog-auth-pending', '1'); } catch (_) {}
       const user = await Cloud.signInGoogle();
       if (user) {
+        try { sessionStorage.removeItem('fitlog-auth-pending'); } catch (_) {}
         await enterApp(user);
+      } else {
+        render();
       }
-      /* if null: popup was blocked and a redirect is now in progress */
     } catch (err) {
+      try { sessionStorage.removeItem('fitlog-auth-pending'); } catch (_) {}
       state.authBusy = false;
       state.authError = Cloud.authMessage(err);
       render();
@@ -1644,7 +1650,9 @@
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js').catch(()=>{});
       navigator.serviceWorker.addEventListener('message', event => {
-        if (event.data?.type === 'SW_UPDATED') window.location.reload();
+        if (event.data?.type !== 'SW_UPDATED') return;
+        try { if (sessionStorage.getItem('fitlog-auth-pending')) return; } catch (_) {}
+        window.location.reload();
       });
     }
     Cloud.init();
@@ -1663,8 +1671,9 @@
     }, 10000);
 
     let redirectUser = null;
-    try { redirectUser = await withTimeout(Cloud.completeRedirect(), 8000, '로그인 확인'); }
+    try { redirectUser = await withTimeout(Cloud.completeRedirect(), 15000, '로그인 확인'); }
     catch (err) { console.warn('redirect result failed', err); }
+    try { if (redirectUser) sessionStorage.removeItem('fitlog-auth-pending'); } catch (_) {}
 
     Cloud.onAuth(async (user) => {
       if (!state.authReady) return;

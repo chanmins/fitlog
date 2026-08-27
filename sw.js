@@ -1,13 +1,13 @@
-const CACHE = "fitlog-v19";
+const CACHE = "fitlog-v20";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=19",
-  "./app.js?v=19",
-  "./db.js?v=19",
-  "./exercises.js?v=19",
-  "./cloud.js?v=19",
-  "./firebase-config.js?v=19",
+  "./styles.css?v=20",
+  "./app.js?v=20",
+  "./db.js?v=20",
+  "./exercises.js?v=20",
+  "./cloud.js?v=20",
+  "./firebase-config.js?v=20",
   "./manifest.json",
   "./icons/icon.svg",
   "./icons/icon-192.png",
@@ -28,9 +28,16 @@ self.addEventListener("activate", event => {
       .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
       .then(() => {
-        /* Tell all open tabs to reload so they get the new files */
-        return self.clients.matchAll({ type: 'window' }).then(clients => {
-          clients.forEach(client => client.postMessage({ type: 'SW_UPDATED', version: CACHE }));
+        return self.clients.matchAll({ type: "window" }).then(clients => {
+          return Promise.all(clients.map(client => {
+            try { client.postMessage({ type: "SW_UPDATED", version: CACHE }); } catch (_) {}
+            if (typeof client.navigate === "function") {
+              const u = client.url || "";
+              if (u.indexOf("/__/auth") !== -1) return Promise.resolve();
+              return client.navigate(u);
+            }
+            return Promise.resolve();
+          }));
         });
       })
   );
@@ -39,10 +46,28 @@ self.addEventListener("activate", event => {
 self.addEventListener("fetch", event => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
-  if (url.hostname.endsWith("gstatic.com") || url.hostname.endsWith("googleapis.com") || url.hostname.endsWith("firebaseio.com")) {
-    event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
+
+  /* Never intercept Firebase Auth / Google identity — caching these breaks login. */
+  if (
+    url.pathname.startsWith("/__/auth") ||
+    url.pathname.startsWith("/__/") ||
+    url.hostname.endsWith("gstatic.com") ||
+    url.hostname.endsWith("googleapis.com") ||
+    url.hostname.endsWith("google.com") ||
+    url.hostname.endsWith("firebaseio.com") ||
+    url.hostname.endsWith("identitytoolkit.googleapis.com")
+  ) {
     return;
   }
+
+  /* HTML navigations: always hit the network so users are not stuck on an old shell. */
+  if (event.request.mode === "navigate" || url.pathname === "/" || url.pathname.endsWith("/index.html")) {
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match("./index.html"))
+    );
+    return;
+  }
+
   event.respondWith(
     fetch(event.request)
       .then(response => {
