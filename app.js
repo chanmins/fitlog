@@ -394,6 +394,7 @@
           </svg>
         </div>
       </div>`;
+  }
 
   /* ── Render Root ─────────────────────────── */
   function render() {
