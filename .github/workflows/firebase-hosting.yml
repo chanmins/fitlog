@@ -12,9 +12,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           projectId: fitlog-4fe54
           channelId: live
+
+      - name: Deploy Firestore rules
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          npm install -g firebase-tools
+
+          KEY="$RUNNER_TEMP/firebase-key.json"
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$KEY"
+
+          # The secret may hold raw JSON or base64-encoded JSON — accept both.
+          if ! head -c 1 "$KEY" | grep -q '{'; then
+            base64 -d "$KEY" > "$KEY.decoded"
+            mv "$KEY.decoded" "$KEY"
+          fi
+
+          export GOOGLE_APPLICATION_CREDENTIALS="$KEY"
+          firebase deploy --only firestore:rules --project fitlog-4fe54 --non-interactive
