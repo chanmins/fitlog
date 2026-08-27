@@ -4,8 +4,34 @@ const Cloud = (() => {
   let store = null;
   let currentUser = null;
   let authResolved = false;
+  let persistenceReady = Promise.resolve();
   const authWaiters = [];
   const listeners = [];
+
+  /* Popups are the wrong default on phones.
+     signInWithPopup opens a second window and waits for it to post a result
+     back. On mobile that window is a browser-managed tab, and anything from a
+     tab-limit to an app switch to the OS reclaiming memory closes it — which
+     surfaces as auth/popup-closed-by-user even though the user never cancelled.
+     Installed PWAs are worse: iOS standalone mode has no window to open, and
+     in-app browsers (KakaoTalk, Instagram, Naver…) block window.open outright.
+     Redirect has none of these problems, so phones get redirect from the start
+     rather than after a failed popup. */
+  function prefersRedirect() {
+    try {
+      const ua = navigator.userAgent || "";
+      const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+      const inApp = /KAKAOTALK|Instagram|FBAN|FBAV|Line\/|NAVER|DaumApps|Snapchat|Twitter/i.test(ua);
+      const standalone =
+        (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
+        window.navigator.standalone === true;
+      /* iPadOS 13+ reports a desktop UA; touch points give it away. */
+      const iPadDesktopUA = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+      return mobile || inApp || standalone || iPadDesktopUA;
+    } catch (_) {
+      return false;
+    }
+  }
 
   function configured() {
     return typeof firebase !== "undefined" && typeof isFirebaseConfigured === "function" && isFirebaseConfigured();
@@ -59,6 +85,18 @@ const Cloud = (() => {
     auth = firebase.auth();
     store = firebase.firestore();
     auth.useDeviceLanguage();
+
+    /* Keep the session across app restarts. LOCAL is Firebase's default, but
+       it silently degrades to in-memory when IndexedDB is unavailable — which
+       is exactly what happens in an installed PWA on iOS after the OS evicts
+       storage, and is why "already logged in" users kept landing back on the
+       login screen. Requesting it explicitly also lets a failure surface in the
+       console instead of looking like a random logout. Sign-in calls await this
+       so persistence is settled before a credential is created. */
+    persistenceReady = auth
+      .setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+      .catch((err) => { console.warn("auth persistence fell back to session", err); });
+
     auth.onAuthStateChanged((u) => {
       notify(u);
       if (!authResolved) {
@@ -82,6 +120,10 @@ const Cloud = (() => {
     let host = "";
     try { host = location.hostname; } catch (_) {}
     const map = {
+      /* Raised by signInEmail once it has confirmed with Firebase that this
+         address has no password credential — see the comment there. */
+      "fitlog/google-only": "이 이메일은 Google 계정으로 가입되어 있어서 비밀번호가 없습니다. 위의 'Google로 계속하기'로 로그인해 주세요. 비밀번호로도 쓰고 싶다면 아래 '비밀번호 찾기 / 새로 설정'을 눌러 새로 만들면 두 방법 모두 사용할 수 있습니다.",
+      "fitlog/other-provider": "이 이메일은 다른 로그인 방법으로 가입되어 있습니다. 처음 가입할 때 사용한 방법으로 로그인해 주세요.",
       "auth/invalid-email": "이메일 형식이 올바르지 않습니다.",
       "auth/user-not-found": "가입되지 않은 이메일입니다.",
       /* The single most confusing failure in this app: the account exists but
@@ -108,27 +150,51 @@ const Cloud = (() => {
     return map[code] || (err && err.message) || "로그인에 실패했습니다.";
   }
 
-  function googleProvider() {
+  /* forceChooser: show Google's account picker even when the browser already
+     has exactly one signed-in Google account.
+     Off for normal sign-in — prompt:"select_account" makes Google re-ask every
+     single time, which reads as "it forgot me again" when the whole point of
+     tapping the button is to get back in. Google still shows the picker on its
+     own when there are several accounts to choose between.
+     On for reauthenticate(), where the user is confirming identity before a
+     destructive action and an implicit silent match would defeat the purpose. */
+  function googleProvider(forceChooser) {
     const provider = new firebase.auth.GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: "select_account" });
+    if (forceChooser) provider.setCustomParameters({ prompt: "select_account" });
     return provider;
   }
 
+  /* Returns a profile when sign-in completed in this tab (desktop popup), or
+     null when the browser is navigating away to Google — in which case the
+     result is picked up by completeRedirect() on the way back.
+     The caller must invoke this straight from the click handler: re-rendering
+     first drops the user-activation token and the popup gets blocked. */
   async function signInGoogle() {
     if (!auth) throw new Error("Firebase가 설정되지 않았습니다.");
+    await persistenceReady;
     const provider = googleProvider();
-    /* Popup first: same-origin hosting keeps the result in this tab.
-       Redirect is the fallback when the browser blocks the popup (iOS PWA, in-app browsers).
-       The caller must invoke this directly from the click handler — no render() beforehand. */
+
+    if (prefersRedirect()) {
+      try { sessionStorage.setItem("fitlog-auth-pending", "1"); } catch (_) {}
+      await auth.signInWithRedirect(provider);
+      return null;
+    }
+
     try {
       const cred = await auth.signInWithPopup(provider);
       return cred && cred.user ? profile(cred.user) : null;
     } catch (err) {
       const code = err && err.code ? err.code : "";
+      /* Desktop popup failures that are environmental rather than a real
+         cancellation still deserve the redirect fallback. popup-closed-by-user
+         is deliberately NOT in this list: on desktop that genuinely means the
+         user shut the window, and bouncing them to Google anyway would ignore
+         an explicit "no". */
       if (
         code === "auth/popup-blocked" ||
         code === "auth/cancelled-popup-request" ||
-        code === "auth/operation-not-supported-in-this-environment"
+        code === "auth/operation-not-supported-in-this-environment" ||
+        code === "auth/web-storage-unsupported"
       ) {
         try { sessionStorage.setItem("fitlog-auth-pending", "1"); } catch (_) {}
         await auth.signInWithRedirect(provider);
@@ -146,12 +212,37 @@ const Cloud = (() => {
 
   async function signInEmail(email, password) {
     if (!auth) throw new Error("Firebase가 설정되지 않았습니다.");
-    const cred = await auth.signInWithEmailAndPassword(String(email || "").trim(), password);
-    return profile(cred.user);
+    await persistenceReady;
+    const addr = String(email || "").trim();
+    try {
+      const cred = await auth.signInWithEmailAndPassword(addr, password);
+      return profile(cred.user);
+    } catch (err) {
+      const code = err && err.code ? err.code : "";
+      /* "비밀번호가 맞지 않습니다" is a lie when the account has no password at
+         all. An account created through Google Sign-In exists in Auth with only
+         the google.com provider, so every password is wrong and retyping can
+         never succeed. Ask Firebase which providers the address actually has
+         and say the specific thing.
+         fetchSignInMethodsForEmail returns [] when the project has email
+         enumeration protection on, so an empty answer means "can't tell" — fall
+         through to the generic message rather than guessing. */
+      if (code === "auth/wrong-password" || code === "auth/invalid-credential" || code === "auth/user-not-found") {
+        let methods = [];
+        try { methods = await auth.fetchSignInMethodsForEmail(addr); } catch (_) {}
+        if (methods.length && methods.indexOf("password") === -1) {
+          const e = new Error("google-only account");
+          e.code = methods.indexOf("google.com") !== -1 ? "fitlog/google-only" : "fitlog/other-provider";
+          throw e;
+        }
+      }
+      throw err;
+    }
   }
 
   async function signUpEmail(email, password) {
     if (!auth) throw new Error("Firebase가 설정되지 않았습니다.");
+    await persistenceReady;
     const cred = await auth.createUserWithEmailAndPassword(String(email || "").trim(), password);
     return profile(cred.user);
   }
@@ -273,7 +364,7 @@ const Cloud = (() => {
     if (!u) throw new Error("로그인 상태가 아닙니다.");
     const providerId = (u.providerData[0] || {}).providerId;
     if (providerId === "google.com") {
-      await u.reauthenticateWithPopup(googleProvider());
+      await u.reauthenticateWithPopup(googleProvider(true));
       return;
     }
     const password = prompt("본인 확인을 위해 비밀번호를 다시 입력해 주세요.");

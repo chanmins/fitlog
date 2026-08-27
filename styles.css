@@ -49,10 +49,24 @@
 
   /* Safe areas */
   --safe-top: env(safe-area-inset-top, 0px);
-  --safe-bot: env(safe-area-inset-bottom, 0px);
+  /* Zero in a browser tab, on purpose.
+     With viewport-fit=cover a notched phone reports a bottom inset (~34px for
+     the home indicator) even inside Safari/Chrome — but there the browser's own
+     toolbar already sits in that strip, so reserving it again padded the nav
+     upward and left a visible gap under it on first load. Only an installed PWA
+     draws all the way to the hardware edge and actually needs the inset, so it
+     is scoped to standalone display modes below. */
+  --safe-bot: 0px;
 
   --nav-h: 64px;
 }
+
+@media (display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui) {
+  :root { --safe-bot: env(safe-area-inset-bottom, 0px); }
+}
+/* iOS < 16.4 has no display-mode media query; navigator.standalone is set on
+   the html element by app.js at boot so the same rule still applies there. */
+html.is-standalone { --safe-bot: env(safe-area-inset-bottom, 0px); }
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
@@ -72,7 +86,11 @@ html, body {
 body { background: var(--bg-grad); background-attachment: fixed; }
 
 button, input { font-family: inherit; color: inherit; }
-button { cursor: pointer; border: none; background: none; }
+/* touch-action: manipulation app-wide — every control here is tap-to-act, and
+   none of them wants double-tap-to-zoom. Applied globally rather than per
+   component so a control added later can't reintroduce the zoom-on-fast-taps
+   bug. Pinch-zoom on the page itself is untouched. */
+button { cursor: pointer; border: none; background: none; touch-action: manipulation; }
 input { border: none; outline: none; }
 ul { list-style: none; }
 svg { display: block; }
@@ -118,6 +136,14 @@ em { font-style: normal; }
   backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   border-top: 1px solid var(--line);
+}
+/* Belt and braces for the gap: mobile browsers animate their toolbar in and out
+   and can briefly expose a sliver under a bottom-fixed element mid-scroll. This
+   paints that sliver in the nav's own colour so a transient gap reads as part
+   of the bar rather than a hole punched through to the page behind it. */
+.bottom-nav::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 60px;
+  background: var(--surface); pointer-events: none;
 }
 .nav-tab {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -225,7 +251,7 @@ em { font-style: normal; }
 .week-day.today .wd-label { color: var(--accent); }
 
 /* stat mini cards */
-.stat-row { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-bottom: 20px; }
+.stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(0,1fr)); gap: 10px; margin-bottom: 20px; }
 .stat-card {
   background: var(--surface); border: 1px solid var(--line);
   border-radius: var(--r-md); padding: 14px 12px; box-shadow: var(--sh-card);
@@ -233,6 +259,41 @@ em { font-style: normal; }
 .stat-val { font-size: 21px; font-weight: 900; letter-spacing: -0.04em; }
 .stat-val span { font-size: 12px; font-weight: 700; color: var(--muted); margin-left: 2px; }
 .stat-lbl { font-size: 11.5px; color: var(--muted); font-weight: 700; margin-top: 3px; }
+
+/* ── Training balance card ── */
+.balance-card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); padding: 16px; margin-bottom: 20px;
+  box-shadow: var(--sh-card);
+}
+.balance-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
+.balance-window { font-size: 11.5px; font-weight: 700; color: var(--muted); }
+.balance-empty { font-size: 13px; color: var(--muted); font-weight: 600; line-height: 1.6; }
+.balance-bars { display: flex; flex-direction: column; gap: 9px; }
+.balance-row { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 10px; }
+.balance-name { font-size: 12.5px; font-weight: 800; color: var(--sub); }
+.balance-track { height: 7px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
+.balance-fill { display: block; height: 100%; border-radius: 4px; transition: width .3s ease; }
+.balance-meta { font-size: 11.5px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+/* Groups that have gone a week without work, and ones untouched all window */
+.balance-row.warn .balance-meta { color: var(--sub); }
+.balance-row.stale .balance-name { color: var(--red); }
+.balance-row.stale .balance-meta { color: var(--red); opacity: .85; }
+
+.balance-tip {
+  display: flex; align-items: center; gap: 10px; margin-top: 15px; padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.balance-tip-text { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 600; color: var(--muted); line-height: 1.5; }
+.balance-tip-text strong { color: var(--text); font-weight: 800; }
+.balance-go {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 2px;
+  height: 36px; padding: 0 10px 0 13px; border-radius: 999px;
+  background: var(--accent); color: var(--accent-ink);
+  font-size: 12.5px; font-weight: 800; letter-spacing: -0.01em;
+  transition: transform .1s;
+}
+.balance-go:active { transform: scale(.95); }
 
 /* today card */
 .today-card {
@@ -533,8 +594,17 @@ em { font-style: normal; }
 /* ============================================================
    PICKER (numpad)
    ============================================================ */
-.picker-big { text-align: center; margin: 4px 0 14px; }
+.picker-big {
+  display: block; width: 100%; text-align: center; margin: 4px 0 14px;
+  background: none; border: 0; padding: 6px 0; border-radius: var(--r-md);
+}
+.picker-big:active { background: var(--surface-2); }
 .picker-big-num { font-size: 58px; font-weight: 900; letter-spacing: -0.06em; line-height: 1; }
+/* Placeholder zero on an empty pad — dimmed so it never reads as a typed 0. */
+.picker-big-num.is-empty { color: var(--muted); opacity: .45; }
+/* The existing value, shown until the first digit replaces it. Tinted to say
+   "this is the old number, start typing to overwrite". */
+.picker-big-num.is-fresh { color: var(--accent); }
 .picker-big-unit { font-size: 17px; font-weight: 800; color: var(--muted); margin-top: 4px; }
 
 .numpad { margin-bottom: 10px; }
@@ -547,6 +617,17 @@ em { font-style: normal; }
 .numpad-key:active { transform: scale(.93); background: var(--surface-3); }
 .numpad-key.back { color: var(--muted); }
 .numpad-key.clear { font-size: 14px; color: var(--muted); }
+/* Tapping "5" twice quickly is a double-tap, and a double-tap on a phone means
+   "zoom in" — which is why hammering the pad kept blowing up the layout.
+   touch-action: manipulation drops the double-tap-to-zoom gesture (and the
+   300ms click delay that comes with waiting for it) while leaving pinch-zoom
+   alone, so the page stays accessible. Selection is disabled too: fast repeat
+   taps otherwise start highlighting the key labels. */
+.numpad-key, .picker-big {
+  touch-action: manipulation;
+  -webkit-user-select: none; user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
 
 .picker-adj-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 7px; margin-bottom: 14px; }
 .adj-btn {
@@ -806,6 +887,32 @@ em { font-style: normal; }
   font-size: 12.5px; color: var(--muted); font-weight: 600; line-height: 1.6;
   margin: 20px 4px 0; text-align: center;
 }
+
+/* Advanced disclosure (backup files) */
+.settings-adv { margin-top: 22px; }
+.settings-adv-summary {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 13px 14px; border-radius: var(--r-md);
+  background: var(--surface); border: 1px solid var(--line);
+  font-size: 13.5px; font-weight: 800; color: var(--sub);
+  cursor: pointer; list-style: none; user-select: none;
+  touch-action: manipulation;
+}
+.settings-adv-summary::-webkit-details-marker { display: none; }
+.settings-adv-summary:active { background: var(--surface-2); }
+.settings-adv-chev { color: var(--muted); transition: transform .18s; flex-shrink: 0; }
+.settings-adv[open] .settings-adv-chev { transform: rotate(180deg); }
+.settings-adv-body { padding-top: 8px; }
+
+/* Danger zone — visually fenced so destructive taps need intent, not luck */
+.settings-label.danger-label { color: var(--red); margin-top: 30px; }
+.danger-zone {
+  border: 1px solid color-mix(in srgb, var(--red) 32%, transparent);
+  border-radius: var(--r-lg); padding: 10px 10px 2px;
+  background: color-mix(in srgb, var(--red) 5%, transparent);
+}
+.danger-zone .settings-item { background: var(--surface); }
+.danger-item .settings-item-title { color: var(--red); }
 
 /* ============================================================
    LOGIN / SPLASH

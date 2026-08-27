@@ -303,6 +303,62 @@
     }, 1800);
   }
 
+  /* ── Number pad buffer ────────────────────────────────────────────────────
+     `str` is the single source of truth for what the pad shows: what you see is
+     exactly what you have typed. The old version fell back to the set's stored
+     `value` whenever `str` was empty, which produced two bugs that fed each
+     other — backspacing down to nothing made the previous number reappear (so
+     ⌫ looked broken), and clearing left a "0" on screen that was really the
+     old value showing through, so the next keypress read as 0 → 5 → 0 = "050".
+
+     `fresh` marks a pad that has been opened but not typed into yet. It shows
+     the existing number so you can see what you are changing, then the first
+     digit replaces it wholesale — the way a calculator or a stopwatch entry
+     field behaves. Backspace and clear drop `fresh`, so from that point on
+     digits append normally. */
+  function newPicker(exId, setId, value) {
+    const num = Number(value);
+    const has = value !== null && value !== undefined && value !== '' && !Number.isNaN(num) && num !== 0;
+    return { exId, setId, str: has ? String(num) : '', fresh: true };
+  }
+
+  function pickerDigit(p, digit, maxLen) {
+    if (p.fresh) { p.str = ''; p.fresh = false; }
+    /* No leading zeros: "0" then "5" is 5, not 05. "0." is untouched so 0.5
+       stays reachable. */
+    if (p.str === '0') p.str = '';
+    if (p.str.length >= maxLen) return;
+    p.str += digit;
+  }
+
+  function pickerDot(p) {
+    if (p.fresh) { p.str = ''; p.fresh = false; }
+    if (p.str.includes('.') || p.str.length >= 5) return;
+    p.str = (p.str === '' ? '0' : p.str) + '.';
+  }
+
+  function pickerBack(p) {
+    p.fresh = false;
+    p.str = p.str.slice(0, -1);
+  }
+
+  function pickerClear(p) {
+    p.fresh = false;
+    p.str = '';
+  }
+
+  /* Empty buffer reads as 0 on confirm — an intentional "no weight" for
+     bodyweight work, not a rejected entry. */
+  function pickerValue(p) {
+    if (!p.str) return 0;
+    const n = parseFloat(p.str);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function pickerDisplay(p) {
+    return p.str === '' ? '0' : p.str;
+  }
+
   /* Repaint ONLY the big number inside an open picker sheet.
      Going through render() would swap appEl.innerHTML, destroying and
      rebuilding the sheet — which replays its slide-up animation and makes the
@@ -312,8 +368,10 @@
     if (!p) return;
     const el = document.querySelector('.picker-big-num');
     if (!el) { render(); return; }
-    const str = p.str || '';
-    el.textContent = str || (p.value == null || p.value === '' ? '0' : String(p.value));
+    el.textContent = pickerDisplay(p);
+    /* Dim the placeholder zero so an empty pad never looks like a typed 0. */
+    el.classList.toggle('is-empty', p.str === '');
+    el.classList.toggle('is-fresh', !!p.fresh);
   }
 
   const CHECK_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
@@ -593,7 +651,6 @@
     return `<main class="login-screen">
       <div class="topbar-brand">FIT<span>LOG</span></div>
       <h1 class="login-title">오늘의 운동을<br>가장 멋지게 기록하세요</h1>
-      <p class="login-sub">폰과 PC에서 기록이 자동으로 이어집니다.</p>
       ${configured ? `
         ${state.authError ? `<p class="login-error">${esc(state.authError)}</p>` : ''}
         <button class="btn-google" data-act="login-google" ${busy ? 'disabled' : ''}>
@@ -637,6 +694,155 @@
       </button>`).join('')}</nav>`;
   }
 
+  /* ── Training balance ─────────────────────────────────────────────────────
+     Replaces the weekly set/volume counters. A set total answers "how much did
+     I lift", which is a number you can't act on and which quietly punishes
+     bodyweight and low-rep work. What actually changes the next session is
+     which muscle groups have gone stale — so the home screen answers "what have
+     I been skipping" instead.
+
+     A part counts as trained on a day when at least one of its sets was ticked
+     done; a planned-but-empty part doesn't count, otherwise adding a part tile
+     and walking out would read as a workout. Recency is tracked separately from
+     frequency because three chest days a fortnight ago is a different problem
+     from three spread through this week. */
+  const BALANCE_WINDOW = 14;
+
+  /* Consecutive days ending today (or yesterday, so the streak survives until
+     the day is actually over rather than resetting at midnight). */
+  function streakDays() {
+    const logged = new Set(state.sessions.filter(hasAnyWork).map(s => s.date));
+    if (!logged.size) return 0;
+    const today = todayISO();
+    let cursor = logged.has(today) ? today : shiftDate(today, -1);
+    if (!logged.has(cursor)) return 0;
+    let n = 0;
+    while (logged.has(cursor)) { n += 1; cursor = shiftDate(cursor, -1); }
+    return n;
+  }
+
+  /* A session counts as a workout only if something was actually completed —
+     a ticked set or a logged run. Opening the app and adding a part tile is
+     not a training day. */
+  function hasAnyWork(s) {
+    if (!s) return false;
+    if (Number(s.run?.km) > 0 || Number(s.run?.minutes) > 0) return true;
+    return (s.exercises || []).some(ex => (ex.sets || []).some(st => st.done));
+  }
+
+  function partBalance() {
+    const parts = PARTS.filter(p => p.kind === 'weight');
+    const today = todayISO();
+    const since = shiftDate(today, -(BALANCE_WINDOW - 1));
+    const stats = {};
+    parts.forEach(p => { stats[p.id] = { part: p, days: 0, sets: 0, last: null }; });
+
+    for (const s of state.sessions) {
+      if (!s.date || s.date < since || s.date > today) continue;
+      const trainedToday = new Set();
+      for (const ex of s.exercises || []) {
+        const st = stats[ex.part];
+        if (!st) continue;
+        const done = (ex.sets || []).filter(x => x.done).length;
+        if (!done) continue;
+        st.sets += done;
+        trainedToday.add(ex.part);
+      }
+      trainedToday.forEach(id => {
+        stats[id].days += 1;
+        if (!stats[id].last || s.date > stats[id].last) stats[id].last = s.date;
+      });
+    }
+    return parts.map(p => stats[p.id]);
+  }
+
+  /* Days since a part was last trained; null (never in range) sorts as "longest
+     ago" so untouched groups surface first rather than being skipped by a
+     numeric comparison against nothing. */
+  function daysSince(iso) {
+    if (!iso) return Infinity;
+    return Math.round((isoToDate(todayISO()) - isoToDate(iso)) / 86400000);
+  }
+
+  /* Sortable staleness. daysSince returns Infinity for a group with no session
+     in the window, and Infinity - Infinity is NaN — a comparator returning NaN
+     leaves the array in an arbitrary order, which for a new user (every group
+     untrained, so every pair NaN) is exactly when the suggestion matters most.
+     Clamping "never" to just past the window keeps it the largest finite gap. */
+  function staleRank(row) {
+    const d = daysSince(row.last);
+    return Number.isFinite(d) ? d : BALANCE_WINDOW + 1;
+  }
+
+  function balanceSuggestion(rows) {
+    const ranked = rows.slice().sort((a, b) => {
+      if (a.days !== b.days) return a.days - b.days;
+      if (staleRank(a) !== staleRank(b)) return staleRank(b) - staleRank(a);
+      /* Final tiebreak on the canonical PARTS order so the same input always
+         produces the same suggestion instead of drifting between renders. */
+      return PARTS.indexOf(a.part) - PARTS.indexOf(b.part);
+    });
+    return ranked.slice(0, 2);
+  }
+
+  function renderBalanceCard() {
+    const rows = partBalance();
+    const trained = rows.filter(r => r.days > 0);
+
+    /* Nothing logged yet in the window — a bar chart of six zeros teaches
+       nothing, so say what the card will do once there is data. */
+    if (!trained.length) {
+      return `<div class="balance-card">
+        <div class="balance-head">
+          <div class="sec-title">부위 밸런스</div>
+          <span class="balance-window">최근 ${BALANCE_WINDOW}일</span>
+        </div>
+        <p class="balance-empty">운동을 기록하면 부위별로 얼마나 했는지, 어디가 부족한지 여기에 정리해 드려요.</p>
+      </div>`;
+    }
+
+    const max = Math.max(...rows.map(r => r.days), 1);
+    const bars = rows.map(r => {
+      const pct = Math.round((r.days / max) * 100);
+      const gap = daysSince(r.last);
+      const meta = r.days
+        ? `${r.days}일 · ${r.sets}세트`
+        : `${BALANCE_WINDOW}일간 없음`;
+      const staleCls = r.days === 0 ? ' stale' : (gap >= 7 ? ' warn' : '');
+      return `<div class="balance-row${staleCls}">
+        <span class="balance-name">${esc(r.part.label)}</span>
+        <span class="balance-track"><span class="balance-fill" style="width:${Math.max(pct, r.days ? 8 : 3)}%;background:${r.part.color}"></span></span>
+        <span class="balance-meta">${esc(meta)}</span>
+      </div>`;
+    }).join('');
+
+    const picks = balanceSuggestion(rows);
+    const names = picks.map(p => p.part.label).join('·');
+    const primary = picks[0];
+    const gap = daysSince(primary.last);
+    const why = primary.days === 0
+      ? `${BALANCE_WINDOW}일 동안 기록이 없어요`
+      : gap >= 7 ? `마지막으로 한 지 ${gap}일 됐어요`
+      : `다른 부위보다 적게 했어요`;
+
+    return `<div class="balance-card">
+      <div class="balance-head">
+        <div class="sec-title">부위 밸런스</div>
+        <span class="balance-window">최근 ${BALANCE_WINDOW}일</span>
+      </div>
+      <div class="balance-bars">${bars}</div>
+      <div class="balance-tip">
+        <div class="balance-tip-text">
+          <strong>${esc(names)}</strong>가 부족해요 — ${esc(why)}.
+        </div>
+        <button class="balance-go" data-act="start-part" data-part="${esc(primary.part.id)}">
+          ${esc(primary.part.label)} 시작
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+    </div>`;
+  }
+
   /* ── Home Tab ─────────────────────────────── */
   function renderHome() {
     const today = todayISO();
@@ -657,8 +863,10 @@
     /* week stats */
     const weekSessions = state.sessions.filter(s => weekDays.includes(s.date));
     const weekCount = weekSessions.length;
-    const weekSets = weekSessions.reduce((a,s)=>a+(s.exercises||[]).reduce((b,ex)=>b+(ex.sets||[]).filter(st=>st.done).length,0),0);
     const weekKm = weekSessions.reduce((a,s)=>a+(Number(s.run?.km)||0),0);
+    /* Running only earns a slot once there is running to show — an eternal
+       "0 km" is just a reminder of something the user doesn't do. */
+    const everRan = state.sessions.some(s => Number(s.run?.km) > 0);
 
     let todayBlock;
     if (todaySess) {
@@ -724,10 +932,11 @@
         <div class="week-strip">${weekStrip}</div>
         <div class="stat-row">
           <div class="stat-card"><div class="stat-val">${weekCount}<span>일</span></div><div class="stat-lbl">이번 주 운동</div></div>
-          <div class="stat-card"><div class="stat-val">${weekSets}<span>세트</span></div><div class="stat-lbl">이번 주 세트</div></div>
-          <div class="stat-card"><div class="stat-val">${weekKm?weekKm.toFixed(weekKm%1?1:0):0}<span>km</span></div><div class="stat-lbl">주간 러닝</div></div>
+          <div class="stat-card"><div class="stat-val">${streakDays()}<span>일</span></div><div class="stat-lbl">연속 기록</div></div>
+          ${everRan ? `<div class="stat-card"><div class="stat-val">${weekKm?weekKm.toFixed(weekKm%1?1:0):0}<span>km</span></div><div class="stat-lbl">주간 러닝</div></div>` : ''}
         </div>
         ${todayBlock}
+        ${renderBalanceCard()}
         ${recentHtml}
       </main>`;
   }
@@ -949,8 +1158,9 @@
 
   /* ── Weight Picker Sheet ──────────────────── */
   function renderWeightPickerSheet() {
-    const { value, str = '' } = state.weightPicker;
-    const display = str || (value == null || value === '' ? '0' : String(value));
+    const p = state.weightPicker;
+    const display = pickerDisplay(p);
+    const numCls = `picker-big-num${p.str === '' ? ' is-empty' : ''}${p.fresh ? ' is-fresh' : ''}`;
     const ex = state.session?.exercises.find(x => x.id === state.weightPicker.exId);
     const sub = ex ? `${ex.name} · ${setLabelFor(ex, state.weightPicker.setId)}` : '';
     const numpadRows = [['7','8','9'],['4','5','6'],['1','2','3'],['.','0','⌫']];
@@ -970,10 +1180,10 @@
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
-        <div class="picker-big">
-          <div class="picker-big-num">${esc(display)}</div>
+        <button class="picker-big" data-act="numpad-w-clear" aria-label="입력한 무게 지우기">
+          <div class="${numCls}">${esc(display)}</div>
           <div class="picker-big-unit">kg</div>
-        </div>
+        </button>
         <div class="numpad">${numpad}</div>
         <button class="picker-confirm" data-act="confirm-weight">확인</button>
       </div>
@@ -982,8 +1192,9 @@
 
   /* ── Reps Picker Sheet ────────────────────── */
   function renderRepsPickerSheet() {
-    const { value, str = '' } = state.repsPicker;
-    const display = str || (value == null || value === '' ? '0' : String(value));
+    const p = state.repsPicker;
+    const display = pickerDisplay(p);
+    const numCls = `picker-big-num${p.str === '' ? ' is-empty' : ''}${p.fresh ? ' is-fresh' : ''}`;
     const ex = state.session?.exercises.find(x => x.id === state.repsPicker.exId);
     const sub = ex ? `${ex.name} · ${setLabelFor(ex, state.repsPicker.setId)}` : '';
     const numpadRows = [['7','8','9'],['4','5','6'],['1','2','3'],['C','0','⌫']];
@@ -1003,10 +1214,10 @@
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
-        <div class="picker-big">
-          <div class="picker-big-num">${esc(display)}</div>
+        <button class="picker-big" data-act="numpad-r-clear" aria-label="입력한 횟수 지우기">
+          <div class="${numCls}">${esc(display)}</div>
           <div class="picker-big-unit">회</div>
-        </div>
+        </button>
         <div class="numpad">${numpad}</div>
         <button class="picker-confirm" data-act="confirm-reps">확인</button>
       </div>
@@ -1241,15 +1452,7 @@
           <div class="settings-item-sub">이 기기에서 계정 연결 해제</div>
         </div>
       </button>
-      <button class="settings-item" data-act="delete-account" ${state.accountBusy?'disabled':''}>
-        <div class="settings-item-icon" style="background:var(--red-soft);color:var(--red)">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-        </div>
-        <div class="settings-item-text">
-          <div class="settings-item-title" style="color:var(--red)">${state.accountBusy?'삭제 중…':'계정 및 데이터 삭제'}</div>
-          <div class="settings-item-sub">클라우드 기록을 포함해 완전히 삭제 (되돌릴 수 없음)</div>
-        </div>
-      </button>` : `
+      ` : `
       <div class="settings-label">계정</div>
       <button class="settings-item" data-act="show-login">
         <div class="settings-item-icon" style="background:var(--accent-soft);color:var(--accent)">
@@ -1269,38 +1472,8 @@
       <main class="screen">
         <div style="height:8px"></div>
         ${account}
-        <div class="settings-label">데이터</div>
-        <button class="settings-item" data-act="export">
-          <div class="settings-item-icon" style="background:var(--accent-soft);color:var(--accent)">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          </div>
-          <div class="settings-item-text">
-            <div class="settings-item-title">백업 내보내기</div>
-            <div class="settings-item-sub">JSON 파일로 저장</div>
-          </div>
-          <svg class="settings-item-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-        </button>
-        <button class="settings-item" data-act="import">
-          <div class="settings-item-icon" style="background:color-mix(in srgb, var(--blue) 15%, var(--surface));color:var(--blue)">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          </div>
-          <div class="settings-item-text">
-            <div class="settings-item-title">백업 가져오기</div>
-            <div class="settings-item-sub">JSON 파일에서 복원</div>
-          </div>
-          <svg class="settings-item-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-        </button>
-        <button class="settings-item" data-act="clear-local-data">
-          <div class="settings-item-icon" style="background:var(--red-soft);color:var(--red)">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-          </div>
-          <div class="settings-item-text">
-            <div class="settings-item-title">이 기기 기록 초기화</div>
-            <div class="settings-item-sub">${state.user ? '이 기기에서만 지워지고 클라우드 기록은 남습니다' : '이 기기에 저장된 모든 기록이 사라집니다'}</div>
-          </div>
-        </button>
 
-        <div class="settings-label">휴식 타이머</div>
+        <div class="settings-label">운동</div>
         <div class="settings-item" style="cursor:default;flex-direction:column;align-items:stretch;gap:10px">
           <div class="settings-item-text">
             <div class="settings-item-title">세트 완료 시 기본 휴식 시간</div>
@@ -1312,8 +1485,69 @@
         </div>
 
         <p class="settings-note">${state.user
-          ? '기록은 계정 클라우드와 이 기기에 함께 저장됩니다.'
+          ? '기록은 계정 클라우드와 이 기기에 함께 저장됩니다. 기기를 바꿔도 로그인하면 그대로 이어집니다.'
           : '지금은 이 기기에만 저장됩니다. 로그인하면 기기가 바뀌어도 기록이 이어집니다.'}</p>
+
+        <!-- Backup lives behind a disclosure on purpose. Export/import move raw
+             JSON around, which is a developer's mental model, not a lifter's —
+             and for a signed-in user the cloud already is the backup, so putting
+             these at the top level made the tab look more technical than it is.
+             Still one tap away for anyone who wants a local copy. -->
+        <details class="settings-adv">
+          <summary class="settings-adv-summary">
+            <span>고급 · 백업 파일</span>
+            <svg class="settings-adv-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </summary>
+          <div class="settings-adv-body">
+            <button class="settings-item" data-act="export">
+              <div class="settings-item-icon" style="background:var(--accent-soft);color:var(--accent)">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              </div>
+              <div class="settings-item-text">
+                <div class="settings-item-title">백업 내보내기</div>
+                <div class="settings-item-sub">전체 기록을 파일 하나로 저장</div>
+              </div>
+              <svg class="settings-item-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+            <button class="settings-item" data-act="import">
+              <div class="settings-item-icon" style="background:color-mix(in srgb, var(--blue) 15%, var(--surface));color:var(--blue)">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              </div>
+              <div class="settings-item-text">
+                <div class="settings-item-title">백업 가져오기</div>
+                <div class="settings-item-sub">내보낸 파일에서 기록 복원</div>
+              </div>
+              <svg class="settings-item-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+          </div>
+        </details>
+
+        <!-- Destructive actions, fenced off at the very bottom rather than
+             sitting a thumb's width from "백업 내보내기". Both are irreversible
+             and both used to live inline next to routine items — the reset was
+             directly under import, which is precisely where a mis-tap lands. -->
+        <div class="settings-label danger-label">위험 구역</div>
+        <div class="danger-zone">
+          <button class="settings-item danger-item" data-act="clear-local-data">
+            <div class="settings-item-icon" style="background:var(--red-soft);color:var(--red)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+            </div>
+            <div class="settings-item-text">
+              <div class="settings-item-title">이 기기 기록 초기화</div>
+              <div class="settings-item-sub">${state.user ? '이 기기에서만 지워지고 클라우드 기록은 남습니다' : '이 기기에 저장된 모든 기록이 사라집니다'}</div>
+            </div>
+          </button>
+          ${u ? `
+          <button class="settings-item danger-item" data-act="delete-account" ${state.accountBusy?'disabled':''}>
+            <div class="settings-item-icon" style="background:var(--red-soft);color:var(--red)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/><line x1="17" y1="8" x2="22" y2="13"/><line x1="22" y1="8" x2="17" y2="13"/></svg>
+            </div>
+            <div class="settings-item-text">
+              <div class="settings-item-title" style="color:var(--red)">${state.accountBusy?'삭제 중…':'계정 및 데이터 삭제'}</div>
+              <div class="settings-item-sub">클라우드 기록까지 완전히 삭제 · 되돌릴 수 없음</div>
+            </div>
+          </button>` : ''}
+        </div>
         <div style="height:24px"></div>
       </main>`;
   }
@@ -1359,14 +1593,14 @@
       const ex = state.session.exercises.find(x=>x.id===btn.dataset.ex);
       const set = ex?.sets.find(s=>s.id===btn.dataset.set);
       if (!set) return;
-      state.weightPicker = { exId: btn.dataset.ex, setId: btn.dataset.set, value: set.kg };
+      state.weightPicker = newPicker(btn.dataset.ex, btn.dataset.set, set.kg);
       render(); return;
     }
     if (act === 'open-reps') {
       const ex = state.session.exercises.find(x=>x.id===btn.dataset.ex);
       const set = ex?.sets.find(s=>s.id===btn.dataset.set);
       if (!set) return;
-      state.repsPicker = { exId: btn.dataset.ex, setId: btn.dataset.set, value: set.reps };
+      state.repsPicker = newPicker(btn.dataset.ex, btn.dataset.set, set.reps);
       render(); return;
     }
 
@@ -1376,27 +1610,28 @@
     /* Weight picker controls */
     if (act === 'numpad-w-digit') {
       if (!state.weightPicker) return;
-      const p = state.weightPicker;
-      if ((p.str||'').length < 5) p.str = (p.str||'') + btn.dataset.d;
+      pickerDigit(state.weightPicker, btn.dataset.d, 5);
       paintPickerValue(); return;
     }
     if (act === 'numpad-w-dot') {
       if (!state.weightPicker) return;
-      const p = state.weightPicker;
-      if (!(p.str||'').includes('.') && (p.str||'').length < 5)
-        p.str = (p.str||'0') + '.';
+      pickerDot(state.weightPicker);
       paintPickerValue(); return;
     }
     if (act === 'numpad-w-back') {
       if (!state.weightPicker) return;
-      state.weightPicker.str = (state.weightPicker.str||'').slice(0,-1);
+      pickerBack(state.weightPicker);
+      paintPickerValue(); return;
+    }
+    if (act === 'numpad-w-clear') {
+      if (!state.weightPicker) return;
+      pickerClear(state.weightPicker);
       paintPickerValue(); return;
     }
     if (act === 'confirm-weight') {
       if (!state.weightPicker) return;
-      const { exId, setId, str } = state.weightPicker;
-      let value = state.weightPicker.value;
-      if (str) value = parseFloat(str) || 0;
+      const { exId, setId } = state.weightPicker;
+      const value = pickerValue(state.weightPicker);
       const ex = state.session.exercises.find(x=>x.id===exId);
       const set = ex?.sets.find(s=>s.id===setId);
       if (set) { set.kg = value; await persist(); }
@@ -1407,26 +1642,23 @@
     /* Reps picker controls */
     if (act === 'numpad-r-digit') {
       if (!state.repsPicker) return;
-      const p = state.repsPicker;
-      if ((p.str||'').length < 3) p.str = (p.str||'') + btn.dataset.d;
+      pickerDigit(state.repsPicker, btn.dataset.d, 3);
       paintPickerValue(); return;
     }
     if (act === 'numpad-r-back') {
       if (!state.repsPicker) return;
-      state.repsPicker.str = (state.repsPicker.str||'').slice(0,-1);
+      pickerBack(state.repsPicker);
       paintPickerValue(); return;
     }
     if (act === 'numpad-r-clear') {
       if (!state.repsPicker) return;
-      state.repsPicker.str = '';
-      state.repsPicker.value = 0;
+      pickerClear(state.repsPicker);
       paintPickerValue(); return;
     }
     if (act === 'confirm-reps') {
       if (!state.repsPicker) return;
-      const { exId, setId, str } = state.repsPicker;
-      let value = state.repsPicker.value;
-      if (str) value = parseInt(str) || 0;
+      const { exId, setId } = state.repsPicker;
+      const value = Math.round(pickerValue(state.repsPicker));
       const ex = state.session.exercises.find(x=>x.id===exId);
       const set = ex?.sets.find(s=>s.id===setId);
       if (set) {
@@ -1485,6 +1717,7 @@
     }
     if (act === 'toggle-done') { await handleToggleDone(btn.dataset.ex, btn.dataset.set); return; }
     if (act === 'copy-last') { await handleCopyLast(btn.dataset.ex); return; }
+    if (act === 'start-part') { await handleStartPart(btn.dataset.part); return; }
     if (act === 'toggle-part') { await handleTogglePart(btn.dataset.part); return; }
     if (act === 'delete-day') { await handleDeleteDay(); return; }
     if (act === 'export') { await exportJson(); return; }
@@ -1541,6 +1774,24 @@
   }
 
   /* ── Action handlers ─────────────────────── */
+  /* One tap from "등이 부족해요" to a session with 등 already open and its
+     exercise picker up. Going through loadDay first means today's existing
+     record is loaded rather than overwritten, so tapping the suggestion after
+     already training something else adds to the day instead of replacing it. */
+  async function handleStartPart(partId) {
+    if (!PARTS.some(p => p.id === partId)) return;
+    await loadDay(todayISO());
+    const s = state.session;
+    if (!s.parts.includes(partId)) {
+      s.parts.push(partId);
+      await persist();
+    }
+    state.pickerPart = partId;
+    state.pickSelection = [];
+    state.exerciseSearch = '';
+    render();
+  }
+
   async function handleTogglePart(partId) {
     const s = state.session;
     const on = s.parts.includes(partId);
@@ -2000,7 +2251,25 @@
   }
 
   /* ── Init ────────────────────────────────── */
+  /* Flags an installed PWA for CSS. Only a standalone window draws to the
+     hardware edge and needs the bottom safe-area inset reserved; inside a
+     browser tab the toolbar already occupies that strip and reserving it again
+     leaves a gap under the nav bar. iOS below 16.4 has no display-mode media
+     query, so the legacy navigator.standalone flag backs it up. */
+  function markDisplayMode() {
+    try {
+      const standalone =
+        (window.matchMedia && (
+          window.matchMedia('(display-mode: standalone)').matches ||
+          window.matchMedia('(display-mode: fullscreen)').matches ||
+          window.matchMedia('(display-mode: minimal-ui)').matches
+        )) || window.navigator.standalone === true;
+      document.documentElement.classList.toggle('is-standalone', !!standalone);
+    } catch (_) {}
+  }
+
   async function init() {
+    markDisplayMode();
     render();
     startRestTicker();
     if ('serviceWorker' in navigator) {
