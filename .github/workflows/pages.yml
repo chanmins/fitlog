@@ -1,8 +1,24 @@
-name: Deploy GitHub Pages
+# Disabled on purpose — FITLOG deploys only to Firebase Hosting
+# (https://fitlog-4fe54.web.app).
+#
+# Running GitHub Pages alongside Firebase Hosting served the same app from two
+# different origins. Firebase only auto-authorizes its own web.app /
+# firebaseapp.com domains for Google Sign-In, so login worked on one origin and
+# failed with auth/unauthorized-domain on the other — with no clue as to why,
+# since both URLs look like "the app". Keeping a single canonical domain avoids
+# that whole class of bug.
+#
+# The `push:` trigger is removed rather than the file: unpublishing the Pages
+# site in repo Settings does NOT stop this workflow, and any later push would
+# silently republish the ghost copy. `workflow_dispatch` keeps it manually
+# runnable from the Actions tab if a static mirror is ever wanted again.
+#
+# To retire GitHub Pages completely:
+#   1. Settings → Pages → "Unpublish site"
+#   2. Keep this file as-is (or delete it outright).
+name: Deploy GitHub Pages (disabled)
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:

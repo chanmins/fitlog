@@ -20,21 +20,32 @@ jobs:
           projectId: fitlog-4fe54
           channelId: live
 
-      - name: Deploy Firestore rules
-        env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-        run: |
-          set -euo pipefail
-          npm install -g firebase-tools
-
-          KEY="$RUNNER_TEMP/firebase-key.json"
-          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$KEY"
-
-          # The secret may hold raw JSON or base64-encoded JSON — accept both.
-          if ! head -c 1 "$KEY" | grep -q '{'; then
-            base64 -d "$KEY" > "$KEY.decoded"
-            mv "$KEY.decoded" "$KEY"
-          fi
-
-          export GOOGLE_APPLICATION_CREDENTIALS="$KEY"
-          firebase deploy --only firestore:rules --project fitlog-4fe54 --non-interactive
+# Firestore rules are NOT deployed from CI.
+#
+# A "Deploy Firestore rules" step used to live here, but the service account
+# behind FIREBASE_SERVICE_ACCOUNT is the one Firebase auto-creates for the
+# GitHub integration: it carries Hosting permissions only, so the step failed on
+# every push while hosting itself deployed fine. A permanently-red deploy is
+# worse than no step at all — it trains you to ignore the X, and a real hosting
+# failure then looks identical to the usual noise.
+#
+# firestore.rules in this repo stays the source of truth for review purposes;
+# publish it from Firebase Console → Firestore Database → 규칙 → 게시.
+#
+# To move rules back into CI later, grant the service account the
+# "Firebase Rules Admin" role (roles/firebaserules.admin) in Google Cloud
+# Console → IAM, then re-add:
+#
+#   - name: Deploy Firestore rules
+#     env:
+#       FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+#     run: |
+#       set -euo pipefail
+#       npm install -g firebase-tools
+#       KEY="$RUNNER_TEMP/firebase-key.json"
+#       printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$KEY"
+#       if ! head -c 1 "$KEY" | grep -q '{'; then
+#         base64 -d "$KEY" > "$KEY.decoded" && mv "$KEY.decoded" "$KEY"
+#       fi
+#       export GOOGLE_APPLICATION_CREDENTIALS="$KEY"
+#       firebase deploy --only firestore:rules --project fitlog-4fe54 --non-interactive
