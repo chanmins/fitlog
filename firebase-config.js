@@ -1,26 +1,30 @@
-/* ── authDomain and redirect_uri_mismatch ──────────────────────────────────
+/* ── authDomain, redirect_uri_mismatch, and why iOS broke ──────────────────
    authDomain decides the OAuth redirect URI Firebase sends to Google:
        https://<authDomain>/__/auth/handler
-   Google rejects any redirect URI that is not registered on the OAuth client
-   with "400: redirect_uri_mismatch" — and the client Firebase auto-creates
-   registers ONLY the firebaseapp.com handler:
-       https://fitlog-4fe54.firebaseapp.com/__/auth/handler   ← registered
-       https://fitlog-4fe54.web.app/__/auth/handler           ← NOT registered
 
-   So pointing authDomain at the page's own origin (web.app) — which looks like
-   the tidier, same-site choice — is exactly what broke Google sign-in. Keep it
-   on firebaseapp.com: the popup opens that handler cross-origin and posts the
-   result back, which works fine and needs no console setup.
+   Pointing it at fitlog-4fe54.firebaseapp.com while the app itself is served
+   from fitlog-4fe54.web.app makes the sign-in handler a THIRD-PARTY origin.
+   Safari/WebKit — which every iOS browser is, Chrome for iOS included —
+   partitions third-party storage, so the handler writes the auth result into a
+   storage bucket the app can never read back. The redirect completes, Google is
+   happy, and the app still shows the login screen. That is the "구글 로그인이
+   안 된다" on iPhone: not a wrong password, not a blocked popup, just two
+   origins that are no longer allowed to share state.
 
-   Want the same-origin version back (marginally better for signInWithRedirect
-   on Safari, where cross-site storage gets partitioned)? Then FIRST register
-   the web.app handler, and only after that flip SAME_ORIGIN_AUTH to true:
+   Serving auth from the SAME origin as the app removes the third-party hop
+   entirely, which is why this is now true.
+
+   ⚠️ BEFORE DEPLOYING WITH true, register the web.app handler — Firebase only
+   auto-registers the firebaseapp.com one, and Google rejects anything else with
+   "400: redirect_uri_mismatch":
      Google Cloud Console → APIs & Services → Credentials
        → OAuth 2.0 Client IDs → "Web client (auto created by Google Service)"
-       → Authorized redirect URIs  += https://fitlog-4fe54.web.app/__/auth/handler
+       → Authorized redirect URIs      += https://fitlog-4fe54.web.app/__/auth/handler
        → Authorized JavaScript origins += https://fitlog-4fe54.web.app
-   Propagation can take a few minutes. */
-const SAME_ORIGIN_AUTH = false;
+   Propagation takes a few minutes. If Google sign-in starts failing with
+   redirect_uri_mismatch, that registration is missing — flip this back to false
+   to restore the old (desktop-only) behaviour while you sort it out. */
+const SAME_ORIGIN_AUTH = true;
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyBvDzUOnsZmTqST-pUJ0ZuXq6Eba_oVrWQ",
@@ -28,6 +32,10 @@ const FIREBASE_CONFIG = {
     if (!SAME_ORIGIN_AUTH) return "fitlog-4fe54.firebaseapp.com";
     try {
       const h = location.hostname;
+      /* Only these two are Firebase Hosting origins that actually serve their
+         own /__/auth/handler. Anywhere else (localhost, a file:// page, a
+         preview channel) has no handler, so fall back to the canonical domain
+         rather than pointing auth at a 404. */
       if (h === "fitlog-4fe54.web.app" || h === "fitlog-4fe54.firebaseapp.com") return h;
     } catch (_) {}
     return "fitlog-4fe54.firebaseapp.com";

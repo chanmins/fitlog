@@ -1,6 +1,36 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    /* ── Username directory ────────────────────────────────────────────────
+       Firebase Auth has no concept of a username — it signs in with an email.
+       So "아이디로 로그인" needs one public hop: 아이디 → the email Firebase
+       expects. That lookup necessarily happens BEFORE the user is
+       authenticated, which is why `get` is open.
+
+       `list` is closed on purpose, and the distinction matters: `get` can only
+       return a document whose exact id you already typed, while `list` would
+       hand a scraper the entire directory of usernames and addresses in one
+       query. Open get + closed list means guessing "chanmin" reveals that one
+       account and nothing reveals the rest.
+
+       create: only a signed-in user, only pointing at their own uid, and only
+       for a name nobody holds — Firestore applies `create` rules only when the
+       document does not already exist, so that last part is what enforces
+       uniqueness. Names are never editable; freeing one is a delete by its
+       owner (account deletion), so a rename can't strand a stale pointer. */
+    match /usernames/{username} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if request.auth != null
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.keys().hasOnly(['uid', 'email', 'createdAt']);
+      allow update: if false;
+      allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
+    }
+
+    /* Everything under a user's own document — profile, sessions, custom
+       exercises — is readable and writable only by that user. */
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
 

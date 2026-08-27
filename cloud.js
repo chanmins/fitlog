@@ -124,6 +124,9 @@ const Cloud = (() => {
          address has no password credential — see the comment there. */
       "fitlog/google-only": "이 이메일은 Google 계정으로 가입되어 있어서 비밀번호가 없습니다. 위의 'Google로 계속하기'로 로그인해 주세요. 비밀번호로도 쓰고 싶다면 아래 '비밀번호 찾기 / 새로 설정'을 눌러 새로 만들면 두 방법 모두 사용할 수 있습니다.",
       "fitlog/other-provider": "이 이메일은 다른 로그인 방법으로 가입되어 있습니다. 처음 가입할 때 사용한 방법으로 로그인해 주세요.",
+      "fitlog/no-username": "존재하지 않는 아이디입니다. 다시 확인해 주세요.",
+      "fitlog/username-taken": "이미 사용 중인 아이디입니다. 다른 아이디를 골라 주세요.",
+      "fitlog/bad-username": "아이디 형식이 올바르지 않습니다.",
       "auth/invalid-email": "이메일 형식이 올바르지 않습니다.",
       "auth/user-not-found": "가입되지 않은 이메일입니다.",
       /* The single most confusing failure in this app: the account exists but
@@ -247,6 +250,193 @@ const Cloud = (() => {
     return profile(cred.user);
   }
 
+  /* ── Username accounts ────────────────────────────────────────────────────
+     Firebase Auth signs in with an email, full stop — there is no username
+     provider. Two ways to fake one:
+
+       (a) synthesise an address from the name (chanmin@fitlog.invalid) and use
+           it as the auth identity. Login needs no lookup and uniqueness comes
+           free from Auth itself — but the address is undeliverable, so
+           "비밀번호 찾기" can never send anything and a forgotten password
+           means a dead account.
+
+       (b) keep the user's REAL email as the auth identity and treat 아이디 as a
+           lookup key: 아이디 → email → signInWithEmailAndPassword.
+
+     (b) is what runs here, because the user asked for recovery to work and
+     Firebase's reset mail only goes to the account's own address. The cost is
+     one public document per name (see firestore.rules for why `get` is open and
+     `list` is not). */
+  const USERNAME_RE = /^[a-z0-9][a-z0-9_.]{2,19}$/;
+
+  /* Case- and width-insensitive so "ChanMin" and "chanmin" can't both exist —
+     usernames people type from memory should not depend on shift keys. */
+  function normalizeUsername(raw) {
+    return String(raw || "").normalize("NFKC").trim().toLowerCase();
+  }
+
+  function usernameError(id) {
+    if (!id) return "아이디를 입력해 주세요.";
+    if (id.length < 3) return "아이디는 3자 이상이어야 합니다.";
+    if (id.length > 20) return "아이디는 20자 이하여야 합니다.";
+    if (!/^[a-z0-9_.]+$/.test(id)) return "아이디는 영문 소문자, 숫자, _ . 만 쓸 수 있습니다.";
+    if (!USERNAME_RE.test(id)) return "아이디는 영문 소문자나 숫자로 시작해야 합니다.";
+    return "";
+  }
+
+  /* Single-document get — the only read the rules allow before sign-in. */
+  async function lookupUsername(rawId) {
+    const id = normalizeUsername(rawId);
+    if (!store || !id) return null;
+    const snap = await store.collection("usernames").doc(id).get();
+    return snap.exists ? snap.data() : null;
+  }
+
+  async function isUsernameFree(rawId) {
+    return !(await lookupUsername(rawId));
+  }
+
+  async function signInUsername(rawId, password) {
+    if (!auth) throw new Error("Firebase가 설정되지 않았습니다.");
+    await persistenceReady;
+    const id = normalizeUsername(rawId);
+    const rec = await lookupUsername(id);
+    if (!rec || !rec.email) {
+      const e = new Error("no such username");
+      e.code = "fitlog/no-username";
+      throw e;
+    }
+    return signInEmail(rec.email, password);
+  }
+
+  /* Creates the Auth account, then claims the name.
+     The claim has to come second — the rules require request.auth, which does
+     not exist until the account does. That leaves a window where the account
+     exists but the name is taken by someone who got there first, so a failed
+     claim deletes the account it just made rather than leaving a signed-in user
+     with no 아이디 and no way to pick one. */
+  async function signUpUsername({ username, password, email, profile: prof }) {
+    if (!auth) throw new Error("Firebase가 설정되지 않았습니다.");
+    await persistenceReady;
+    const id = normalizeUsername(username);
+    const bad = usernameError(id);
+    if (bad) { const e = new Error(bad); e.code = "fitlog/bad-username"; throw e; }
+
+    if (!(await isUsernameFree(id))) {
+      const e = new Error("taken");
+      e.code = "fitlog/username-taken";
+      throw e;
+    }
+
+    const cred = await auth.createUserWithEmailAndPassword(String(email || "").trim(), password);
+    const u = cred.user;
+    try {
+      await store.collection("usernames").doc(id).set({
+        uid: u.uid,
+        email: String(email || "").trim(),
+        createdAt: Date.now(),
+      });
+    } catch (err) {
+      try { await u.delete(); } catch (_) {}
+      const e = new Error("taken");
+      e.code = "fitlog/username-taken";
+      throw e;
+    }
+
+    const displayName = (prof && prof.name) ? String(prof.name).trim() : id;
+    try { await u.updateProfile({ displayName }); } catch (_) {}
+    await store.collection("users").doc(u.uid).set({
+      username: id,
+      email: String(email || "").trim(),
+      displayName,
+      profile: sanitizeProfile(prof),
+      createdAt: Date.now(),
+    }, { merge: true });
+
+    return profile(auth.currentUser || u);
+  }
+
+  /* Claims a name for an account that already exists — the Google path, where
+     Auth created the user before any 아이디 was chosen. Same create-only rule
+     does the uniqueness work, so a lost race surfaces as a permission error
+     that we translate rather than a silent overwrite. */
+  async function claimUsername(rawId) {
+    const u = currentUser;
+    if (!store || !u) throw new Error("로그인 상태가 아닙니다.");
+    const id = normalizeUsername(rawId);
+    const bad = usernameError(id);
+    if (bad) { const e = new Error(bad); e.code = "fitlog/bad-username"; throw e; }
+    if (!(await isUsernameFree(id))) {
+      const e = new Error("taken"); e.code = "fitlog/username-taken"; throw e;
+    }
+    try {
+      await store.collection("usernames").doc(id).set({
+        uid: u.uid, email: u.email || "", createdAt: Date.now(),
+      });
+    } catch (_) {
+      const e = new Error("taken"); e.code = "fitlog/username-taken"; throw e;
+    }
+    await store.collection("users").doc(u.uid).set({ username: id }, { merge: true });
+    return id;
+  }
+
+  /* Accepts 아이디 or an email — people rarely remember which one they used. */
+  async function sendPasswordResetFor(idOrEmail) {
+    if (!auth) throw new Error("Firebase가 설정되지 않았습니다.");
+    const raw = String(idOrEmail || "").trim();
+    if (!raw) throw new Error("아이디 또는 이메일을 입력해 주세요.");
+    if (raw.includes("@")) return sendPasswordReset(raw);
+    const rec = await lookupUsername(raw);
+    if (!rec || !rec.email) {
+      const e = new Error("no such username");
+      e.code = "fitlog/no-username";
+      throw e;
+    }
+    return sendPasswordReset(rec.email);
+  }
+
+  /* ── Profile ─────────────────────────────────────────────────────────────
+     Stored on the user document rather than in Auth: Auth only carries a
+     displayName and a photo, and height/weight/birth year are app data that
+     belongs next to the workouts they explain. Every field is optional — the
+     signup flow lets people skip the whole step. */
+  const PROFILE_FIELDS = ["name", "gender", "birthYear", "heightCm", "weightKg", "username"];
+
+  function sanitizeProfile(raw) {
+    const src = raw || {};
+    const out = {};
+    if (src.name != null && String(src.name).trim()) out.name = String(src.name).trim().slice(0, 40);
+    if (src.gender === "male" || src.gender === "female" || src.gender === "other") out.gender = src.gender;
+    const yr = Number(src.birthYear);
+    const thisYear = new Date().getFullYear();
+    if (Number.isFinite(yr) && yr >= 1900 && yr <= thisYear) out.birthYear = Math.round(yr);
+    const h = Number(src.heightCm);
+    if (Number.isFinite(h) && h > 60 && h < 260) out.heightCm = Math.round(h * 10) / 10;
+    const w = Number(src.weightKg);
+    if (Number.isFinite(w) && w > 20 && w < 400) out.weightKg = Math.round(w * 10) / 10;
+    return out;
+  }
+
+  async function saveProfile(prof) {
+    const u = currentUser;
+    if (!store || !u) return null;
+    const clean = sanitizeProfile(prof);
+    const patch = { profile: clean, updatedAt: Date.now() };
+    if (clean.name) patch.displayName = clean.name;
+    await store.collection("users").doc(u.uid).set(patch, { merge: true });
+    if (clean.name) { try { await u.updateProfile({ displayName: clean.name }); } catch (_) {} }
+    return clean;
+  }
+
+  async function loadProfile() {
+    const u = currentUser;
+    if (!store || !u) return null;
+    const snap = await store.collection("users").doc(u.uid).get();
+    if (!snap.exists) return null;
+    const data = snap.data() || {};
+    return { ...sanitizeProfile(data.profile), username: data.username || "" };
+  }
+
   /* Doubles as "set a password on an account that has none".
      An account created through Google Sign-In exists in Auth with the
      google.com provider only — signing up again says email-already-in-use,
@@ -353,7 +543,18 @@ const Cloud = (() => {
     if (!u) throw new Error("로그인 상태가 아닙니다.");
     await deleteAllDocs("sessions");
     await deleteAllDocs("customExercises");
-    if (store) { try { await store.collection("users").doc(u.uid).delete(); } catch (_) {} }
+    /* Release the 아이디 before the user document that records it — once
+       users/{uid} is gone there is nothing left to say which name to free, and
+       the rules only let the owner delete it, so a leftover doc would reserve
+       that name forever with no way to reclaim it. */
+    if (store) {
+      try {
+        const snap = await store.collection("users").doc(u.uid).get();
+        const name = snap.exists ? (snap.data() || {}).username : "";
+        if (name) await store.collection("usernames").doc(name).delete();
+      } catch (_) {}
+      try { await store.collection("users").doc(u.uid).delete(); } catch (_) {}
+    }
     await u.delete();
   }
 
@@ -385,7 +586,17 @@ const Cloud = (() => {
     completeRedirect,
     signInEmail,
     signUpEmail,
+    signInUsername,
+    signUpUsername,
+    claimUsername,
+    lookupUsername,
+    isUsernameFree,
+    normalizeUsername,
+    usernameError,
     sendPasswordReset,
+    sendPasswordResetFor,
+    saveProfile,
+    loadProfile,
     signOut,
     touchProfile,
     saveSession,

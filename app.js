@@ -50,23 +50,44 @@
     pickSelection: [],   /* 시트에서 고른 운동들 — 완료를 눌러야 실제로 추가됨 */
     exerciseSearch: '',
     exerciseInfoId: null,
-    weightPicker: null,   /* { exId, setId, value } */
-    repsPicker:   null,   /* { exId, setId, value } */
+    weightPicker: null,   /* { exId, setId, str, fresh } */
+    repsPicker:   null,   /* { exId, setId, str, fresh } */
 
     /* Auth */
     authReady: false,
     user: null,
     guest: false,
-    authMode: 'signin',
-    authEmail: '',
+    authMode: 'signin',       /* 'signin' | 'signup' */
+    authId: '',               /* 아이디 (or email) typed on the sign-in screen */
     authPassword: '',
     authBusy: false,
     authError: '',
     syncing: false,
     accountBusy: false,
 
+    /* Signup wizard. Kept in state rather than read off the DOM at submit time
+       so moving between steps doesn't lose what was typed. */
+    signupStep: 1,
+    signup: {
+      username: '', password: '', password2: '', email: '',
+      name: '', gender: '', birthYear: '', heightCm: '', weightKg: '',
+    },
+    /* Live 아이디 availability: '' | 'checking' | 'free' | 'taken' | message */
+    idCheck: { id: '', status: '', message: '' },
+
+    /* Profile, and the one-time gate that collects it.
+       onboarding is true when someone is signed in but has no 아이디 yet —
+       every Google account starts there, which is what keeps a Google user and
+       a password user from ending up as two different kinds of account. */
+    profile: null,
+    onboarding: false,
+    profileEditing: false,
+
     /* History calendar — 보고 있는 달 (YYYY-MM) */
     histMonth: null,
+
+    /* Day the read-only summary overlay is showing, or null */
+    summaryDate: null,
 
     /* Toast */
     toast: '',
@@ -99,7 +120,8 @@
 
   /* ── Data helpers ───────────────────────── */
   function emptySession(date) {
-    return { date, parts: [], notes: '', exercises: [], run: { km:'', minutes:'', notes:'' } };
+    return { date, parts: [], notes: '', exercises: [], run: { km:'', minutes:'', notes:'' },
+             completed: false, completedAt: 0 };
   }
   function normalizeSession(raw) {
     return {
@@ -108,6 +130,11 @@
       notes: raw.notes || '',
       exercises: Array.isArray(raw.exercises) ? raw.exercises : [],
       run: { km: raw.run?.km ?? '', minutes: raw.run?.minutes ?? '', notes: raw.run?.notes ?? '' },
+      /* Sessions written before this field existed are treated as finished:
+         they were logged and left alone, so showing every one of them as
+         "진행 중" in the history would be wrong. */
+      completed: raw.completed === undefined ? true : !!raw.completed,
+      completedAt: Number(raw.completedAt) || 0,
     };
   }
   function sessionSummary(s) {
@@ -520,6 +547,7 @@
     state.exerciseInfoId = null;
     state.weightPicker = null;
     state.repsPicker = null;
+    state.profileEditing = false;
     state.exerciseSearch = '';
   }
 
@@ -618,7 +646,14 @@
   /* ── Render Root ──────────────────────────── */
   function render() {
     if (!state.authReady) { appEl.innerHTML = renderSplash(); return; }
-    if (!state.user && !state.guest) { appEl.innerHTML = renderLogin(); bindEvents(); return; }
+    if (!state.user && !state.guest) {
+      appEl.innerHTML = state.authMode === 'signup' ? renderSignup() : renderLogin();
+      bindEvents(); return;
+    }
+    /* Signed in but no 아이디 yet — finish setting the account up first. */
+    if (state.user && state.onboarding) {
+      appEl.innerHTML = renderOnboarding(); bindEvents(); return;
+    }
 
     let html = '';
     if (state.tab === 'home')          html = renderHome();
@@ -626,14 +661,39 @@
     else if (state.tab === 'history')  html = renderHistory();
     else if (state.tab === 'settings') html = renderSettings();
 
+    if (state.profileEditing) html += renderProfileSheet();
     if (state.weightPicker)   html += renderWeightPickerSheet();
     if (state.repsPicker)     html += renderRepsPickerSheet();
     if (state.exerciseInfoId) html += renderExerciseInfoSheet(state.exerciseInfoId);
     if (state.pickerPart)     html += renderExercisePickerSheet(state.pickerPart);
 
     html += renderBottomNav();
+    /* Full-screen overlay, so it can be opened from home, history or the
+       workout screen without any of them needing to know about it. */
+    if (state.summaryDate) html += renderDaySummary(state.summaryDate);
     appEl.innerHTML = html;
     bindEvents();
+    flushPendingFlash();
+  }
+
+  /* Newly added exercises get scrolled to and briefly outlined.
+     A toast alone was not enough: the picker closes, the page is long, and the
+     card that was just created often lands below the fold — so "추가된 건지 안
+     된 건지" was a fair question. Showing the user the thing they created is a
+     more convincing answer than telling them about it. */
+  let pendingFlash = null;
+  function flashExercise(exId) { pendingFlash = exId; }
+  function flushPendingFlash() {
+    if (!pendingFlash) return;
+    const id = pendingFlash;
+    pendingFlash = null;
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`.ex-card[data-exid="${CSS.escape(id)}"]`);
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('just-added');
+      setTimeout(() => el.classList.remove('just-added'), 1500);
+    });
   }
 
   /* ── Auth screens ─────────────────────────── */
@@ -644,35 +704,279 @@
     </main>`;
   }
 
+  const GOOGLE_MARK = `<svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 8 3.1l5.7-5.7C34.2 6.1 29.4 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.3-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 12 24 12c3.1 0 5.8 1.2 8 3.1l5.7-5.7C34.2 6.1 29.4 4 24 4 16.3 4 9.6 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 10-2 13.6-5.2l-6.3-5.3C29.2 35.1 26.7 36 24 36c-5.3 0-9.7-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-1.1 3.2-3.5 5.8-6.7 7.5l6.3 5.3C37.3 38.2 44 33 44 24c0-1.2-.1-2.3-.4-3.5z"/></svg>`;
+
   function renderLogin() {
     const configured = typeof Cloud !== 'undefined' && Cloud.configured();
-    const isSignup = state.authMode === 'signup';
     const busy = state.authBusy;
     return `<main class="login-screen">
-      <div class="topbar-brand">FIT<span>LOG</span></div>
-      <h1 class="login-title">오늘의 운동을<br>가장 멋지게 기록하세요</h1>
+      <div class="login-top">
+        <div class="topbar-brand">FIT<span>LOG</span></div>
+        <h1 class="login-title">오늘의 운동을<br>가장 멋지게 기록하세요</h1>
+      </div>
       ${configured ? `
         ${state.authError ? `<p class="login-error">${esc(state.authError)}</p>` : ''}
         <button class="btn-google" data-act="login-google" ${busy ? 'disabled' : ''}>
-          <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 8 3.1l5.7-5.7C34.2 6.1 29.4 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.3-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 12 24 12c3.1 0 5.8 1.2 8 3.1l5.7-5.7C34.2 6.1 29.4 4 24 4 16.3 4 9.6 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 10-2 13.6-5.2l-6.3-5.3C29.2 35.1 26.7 36 24 36c-5.3 0-9.7-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-1.1 3.2-3.5 5.8-6.7 7.5l6.3 5.3C37.3 38.2 44 33 44 24c0-1.2-.1-2.3-.4-3.5z"/></svg>
-          ${busy ? '처리 중…' : 'Google로 계속하기'}
+          ${GOOGLE_MARK}${busy ? '처리 중…' : 'Google로 계속하기'}
         </button>
-        <div class="login-or">또는 이메일로 계속하기</div>
-        <div class="login-tabs">
-          <button class="login-tab${!isSignup?' active':''}" data-act="toggle-auth-mode" data-mode="signin">로그인</button>
-          <button class="login-tab${isSignup?' active':''}" data-act="toggle-auth-mode" data-mode="signup">회원가입</button>
+        <div class="login-or"><span>또는</span></div>
+        <input class="login-input" id="auth-id" type="text" inputmode="text" autocapitalize="none"
+               autocorrect="off" spellcheck="false" autocomplete="username"
+               placeholder="아이디" value="${esc(state.authId)}">
+        <input class="login-input" id="auth-password" type="password" autocomplete="current-password"
+               placeholder="비밀번호" value="${esc(state.authPassword)}">
+        <button class="btn-hero" style="margin-top:10px" data-act="login-id" ${busy ? 'disabled' : ''}>
+          ${busy ? '처리 중…' : '로그인'}
+        </button>
+        <div class="login-links">
+          <button class="login-link" data-act="reset-password" ${busy ? 'disabled' : ''}>비밀번호 찾기</button>
+          <span class="login-link-sep"></span>
+          <button class="login-link strong" data-act="go-signup" ${busy ? 'disabled' : ''}>회원가입</button>
         </div>
-        <input class="login-input" id="auth-email" type="email" inputmode="email" autocomplete="email" placeholder="이메일" value="${esc(state.authEmail)}">
-        <input class="login-input" id="auth-password" type="password" autocomplete="${isSignup?'new-password':'current-password'}" placeholder="비밀번호 (6자 이상)" value="${esc(state.authPassword)}">
-        ${isSignup ? `<input class="login-input" id="auth-password2" type="password" autocomplete="new-password" placeholder="비밀번호 확인" value="">` : ''}
-        <button class="btn-hero" style="margin-top:6px" data-act="login-email" ${busy ? 'disabled' : ''}>
-          ${isSignup ? '이메일로 회원가입' : '이메일로 로그인'}
-        </button>
-        ${isSignup ? '' : `<button class="login-forgot" data-act="reset-password" ${busy ? 'disabled' : ''}>비밀번호 찾기 / 새로 설정</button>`}
       ` : `
         <div class="login-setup">Firebase 연결 전에는 이 기기에서만 사용할 수 있습니다.</div>
       `}
       <button class="login-guest" data-act="login-guest" ${busy ? 'disabled' : ''}>로그인 없이 이 기기에서만 쓰기</button>
+    </main>`;
+  }
+
+  /* ── Signup wizard ────────────────────────────────────────────────────────
+     Three short steps instead of one wall of inputs. The old screen asked for
+     email, password and password-confirm at once, under a pair of tabs that
+     also switched the form's meaning — so "회원가입" looked identical to
+     "로그인" and every field was equally mandatory-looking.
+
+     Splitting it means each step asks one thing, the 아이디 can be checked for
+     availability while you are still on that step rather than failing at
+     submit, and the profile is visibly optional because it is the only thing on
+     its own screen with a 건너뛰기 next to it. */
+  const SIGNUP_STEPS = [
+    { n: 1, title: '아이디와 비밀번호', sub: '로그인할 때 쓸 아이디를 정해 주세요.' },
+    { n: 2, title: '복구용 이메일',     sub: '비밀번호를 잊었을 때 재설정 링크를 받을 주소입니다.' },
+    { n: 3, title: '프로필',            sub: '나중에 설정에서 바꿀 수 있어요. 건너뛰어도 됩니다.' },
+  ];
+
+  function renderSignupStep1() {
+    const s = state.signup;
+    const chk = state.idCheck;
+    const showChk = chk.id && chk.id === Cloud.normalizeUsername(s.username);
+    const chkCls = chk.status === 'free' ? 'ok' : chk.status === 'checking' ? 'muted' : 'bad';
+    const chkText = !showChk ? ''
+      : chk.status === 'checking' ? '확인 중…'
+      : chk.status === 'free' ? '사용할 수 있는 아이디예요'
+      : chk.message || '사용할 수 없는 아이디입니다';
+    const pwLen = (s.password || '').length;
+    const pwMatch = s.password2 && s.password === s.password2;
+    return `
+      <label class="field-label" for="su-username">아이디</label>
+      <input class="login-input" id="su-username" data-su="username" type="text"
+             inputmode="text" autocapitalize="none" autocorrect="off" spellcheck="false"
+             autocomplete="username" maxlength="20"
+             placeholder="영문 소문자·숫자 3~20자" value="${esc(s.username)}">
+      ${showChk ? `<p class="field-hint ${chkCls}">${esc(chkText)}</p>` : `<p class="field-hint">나중에 바꿀 수 없으니 신중히 정해 주세요.</p>`}
+
+      <label class="field-label" for="su-password">비밀번호</label>
+      <input class="login-input" id="su-password" data-su="password" type="password"
+             autocomplete="new-password" placeholder="6자 이상" value="${esc(s.password)}">
+      <input class="login-input" id="su-password2" data-su="password2" type="password"
+             autocomplete="new-password" placeholder="비밀번호 확인" value="${esc(s.password2)}">
+      <!-- Always present, even when empty: paintSignupHints() writes into this
+           node instead of re-rendering, so it has to exist before the first
+           keystroke or the match/length feedback never appears at all. Its
+           reserved min-height also stops the layout jumping when text arrives. -->
+      <p class="field-hint${s.password2 ? (pwMatch ? ' ok' : ' bad') : (pwLen && pwLen < 6 ? ' bad' : '')}">${
+        s.password2 ? (pwMatch ? '비밀번호가 일치합니다' : '비밀번호가 일치하지 않습니다')
+                    : (pwLen && pwLen < 6 ? '6자 이상 입력해 주세요' : '')}</p>`;
+  }
+
+  function renderSignupStep2() {
+    const s = state.signup;
+    return `
+      <label class="field-label" for="su-email">이메일</label>
+      <input class="login-input" id="su-email" data-su="email" type="email"
+             inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false"
+             autocomplete="email" placeholder="you@example.com" value="${esc(s.email)}">
+      <p class="field-hint">로그인에는 쓰이지 않습니다. 비밀번호를 잊었을 때 이 주소로만 재설정 링크를 보냅니다.</p>
+      <div class="signup-note">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <span>받을 수 있는 주소를 넣어 주세요. 이 주소가 없으면 비밀번호를 잊었을 때 기록을 되찾을 방법이 없습니다.</span>
+      </div>`;
+  }
+
+  function renderSignupStep3() {
+    const s = state.signup;
+    const genders = [['male','남성'],['female','여성'],['other','기타']];
+    return `
+      <label class="field-label" for="su-name">이름</label>
+      <input class="login-input" id="su-name" data-su="name" type="text"
+             autocomplete="name" maxlength="40" placeholder="앱에서 부를 이름" value="${esc(s.name)}">
+
+      <label class="field-label">성별</label>
+      <div class="seg-row">
+        ${genders.map(([v,l]) => `<button class="seg-btn${s.gender===v?' on':''}" data-act="su-gender" data-val="${v}">${l}</button>`).join('')}
+      </div>
+
+      <div class="field-grid">
+        <div>
+          <label class="field-label" for="su-birth">출생연도</label>
+          <input class="login-input" id="su-birth" data-su="birthYear" type="text"
+                 inputmode="numeric" maxlength="4" placeholder="1995" value="${esc(s.birthYear)}">
+        </div>
+        <div>
+          <label class="field-label" for="su-height">키 (cm)</label>
+          <input class="login-input" id="su-height" data-su="heightCm" type="text"
+                 inputmode="decimal" maxlength="5" placeholder="175" value="${esc(s.heightCm)}">
+        </div>
+        <div>
+          <label class="field-label" for="su-weight">몸무게 (kg)</label>
+          <input class="login-input" id="su-weight" data-su="weightKg" type="text"
+                 inputmode="decimal" maxlength="5" placeholder="70" value="${esc(s.weightKg)}">
+        </div>
+      </div>
+      <p class="field-hint">몸무게를 넣어두면 맨몸 운동의 부하를 자동으로 계산해 드립니다.</p>`;
+  }
+
+  function renderSignup() {
+    const step = SIGNUP_STEPS.find(x => x.n === state.signupStep) || SIGNUP_STEPS[0];
+    const busy = state.authBusy;
+    const last = state.signupStep === 3;
+    const body = state.signupStep === 1 ? renderSignupStep1()
+               : state.signupStep === 2 ? renderSignupStep2()
+               : renderSignupStep3();
+    return `<main class="login-screen signup-screen">
+      <div class="signup-head">
+        <button class="signup-back" data-act="signup-back" aria-label="뒤로">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <div class="signup-steps">
+          ${SIGNUP_STEPS.map(x => `<span class="signup-dot${x.n === state.signupStep ? ' on' : ''}${x.n < state.signupStep ? ' done' : ''}"></span>`).join('')}
+        </div>
+        <span class="signup-count">${state.signupStep}/3</span>
+      </div>
+
+      <h1 class="signup-title">${esc(step.title)}</h1>
+      <p class="signup-sub">${esc(step.sub)}</p>
+
+      ${state.authError ? `<p class="login-error">${esc(state.authError)}</p>` : ''}
+
+      <div class="signup-body">${body}</div>
+
+      <div class="signup-actions">
+        <button class="btn-hero" data-act="signup-next" ${busy ? 'disabled' : ''}>
+          ${busy ? '처리 중…' : last ? '가입 완료' : '다음'}
+        </button>
+        ${last ? `<button class="login-link" data-act="signup-skip" ${busy ? 'disabled' : ''}>프로필 없이 가입하기</button>` : ''}
+      </div>
+    </main>`;
+  }
+
+  /* Same fields as signup step 3, in a sheet. The 아이디 is shown but not
+     editable — it is a stable public handle, and letting it change would strand
+     the usernames/{id} pointer that sign-in depends on. */
+  function renderProfileSheet() {
+    const s = state.signup;
+    const genders = [['male','남성'],['female','여성'],['other','기타']];
+    const uname = state.profile?.username || '';
+    return `<div class="sheet-backdrop">
+      <div class="sheet-panel" id="sheet-profile">
+        <div class="sheet-grab"></div>
+        <div class="sheet-head">
+          <div><div class="sheet-title">프로필</div><div class="sheet-title-sub">기록 분석에 쓰입니다</div></div>
+          <button class="sheet-x" data-act="close-profile" aria-label="닫기">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="sheet-scroll">
+          ${uname ? `<label class="field-label">아이디</label>
+          <div class="field-static">@${esc(uname)}<span>변경 불가</span></div>` : ''}
+
+          <label class="field-label" for="pf-name">이름</label>
+          <input class="login-input" id="pf-name" data-su="name" type="text" maxlength="40" placeholder="앱에서 부를 이름" value="${esc(s.name)}">
+
+          <label class="field-label">성별</label>
+          <div class="seg-row">
+            ${genders.map(([v,l]) => `<button class="seg-btn${s.gender===v?' on':''}" data-act="su-gender" data-val="${v}">${l}</button>`).join('')}
+          </div>
+
+          <div class="field-grid">
+            <div>
+              <label class="field-label" for="pf-birth">출생연도</label>
+              <input class="login-input" id="pf-birth" data-su="birthYear" type="text" inputmode="numeric" maxlength="4" placeholder="1995" value="${esc(s.birthYear)}">
+            </div>
+            <div>
+              <label class="field-label" for="pf-height">키 (cm)</label>
+              <input class="login-input" id="pf-height" data-su="heightCm" type="text" inputmode="decimal" maxlength="5" placeholder="175" value="${esc(s.heightCm)}">
+            </div>
+            <div>
+              <label class="field-label" for="pf-weight">몸무게 (kg)</label>
+              <input class="login-input" id="pf-weight" data-su="weightKg" type="text" inputmode="decimal" maxlength="5" placeholder="70" value="${esc(s.weightKg)}">
+            </div>
+          </div>
+        </div>
+        <button class="picker-confirm" data-act="save-profile" ${state.authBusy?'disabled':''}>${state.authBusy?'저장 중…':'저장'}</button>
+      </div>
+    </div>`;
+  }
+
+  /* ── Onboarding gate ──────────────────────────────────────────────────────
+     Shown once to any signed-in account that has no 아이디 yet, which in
+     practice means every Google account. Without it a Google user and a
+     password user would be two different species — one with a handle and a
+     profile, one with neither — which is exactly the inconsistency that made
+     the two sign-in paths feel like different apps. */
+  function renderOnboarding() {
+    const s = state.signup;
+    const chk = state.idCheck;
+    const showChk = chk.id && chk.id === Cloud.normalizeUsername(s.username);
+    const chkCls = chk.status === 'free' ? 'ok' : chk.status === 'checking' ? 'muted' : 'bad';
+    const chkText = chk.status === 'checking' ? '확인 중…'
+      : chk.status === 'free' ? '사용할 수 있는 아이디예요'
+      : chk.message || '사용할 수 없는 아이디입니다';
+    const genders = [['male','남성'],['female','여성'],['other','기타']];
+    const busy = state.authBusy;
+    return `<main class="login-screen signup-screen">
+      <div class="signup-head"><div class="topbar-brand">FIT<span>LOG</span></div></div>
+      <h1 class="signup-title">거의 다 됐어요</h1>
+      <p class="signup-sub">아이디를 정하고 기본 정보만 채우면 시작합니다.</p>
+
+      ${state.authError ? `<p class="login-error">${esc(state.authError)}</p>` : ''}
+
+      <div class="signup-body">
+        <label class="field-label" for="ob-username">아이디</label>
+        <input class="login-input" id="ob-username" data-su="username" type="text"
+               inputmode="text" autocapitalize="none" autocorrect="off" spellcheck="false"
+               maxlength="20" placeholder="영문 소문자·숫자 3~20자" value="${esc(s.username)}">
+        ${showChk ? `<p class="field-hint ${chkCls}">${esc(chkText)}</p>` : `<p class="field-hint">나중에 바꿀 수 없으니 신중히 정해 주세요.</p>`}
+
+        <label class="field-label" for="ob-name">이름</label>
+        <input class="login-input" id="ob-name" data-su="name" type="text" maxlength="40"
+               placeholder="앱에서 부를 이름" value="${esc(s.name)}">
+
+        <label class="field-label">성별</label>
+        <div class="seg-row">
+          ${genders.map(([v,l]) => `<button class="seg-btn${s.gender===v?' on':''}" data-act="su-gender" data-val="${v}">${l}</button>`).join('')}
+        </div>
+
+        <div class="field-grid">
+          <div>
+            <label class="field-label" for="ob-birth">출생연도</label>
+            <input class="login-input" id="ob-birth" data-su="birthYear" type="text" inputmode="numeric" maxlength="4" placeholder="1995" value="${esc(s.birthYear)}">
+          </div>
+          <div>
+            <label class="field-label" for="ob-height">키 (cm)</label>
+            <input class="login-input" id="ob-height" data-su="heightCm" type="text" inputmode="decimal" maxlength="5" placeholder="175" value="${esc(s.heightCm)}">
+          </div>
+          <div>
+            <label class="field-label" for="ob-weight">몸무게 (kg)</label>
+            <input class="login-input" id="ob-weight" data-su="weightKg" type="text" inputmode="decimal" maxlength="5" placeholder="70" value="${esc(s.weightKg)}">
+          </div>
+        </div>
+      </div>
+
+      <div class="signup-actions">
+        <button class="btn-hero" data-act="onboarding-save" ${busy ? 'disabled' : ''}>${busy ? '저장 중…' : '시작하기'}</button>
+        <button class="login-link" data-act="logout">다른 계정으로 로그인</button>
+      </div>
     </main>`;
   }
 
@@ -874,16 +1178,36 @@
         const p = PARTS.find(x=>x.id===id);
         return p ? `<span class="muscle-tag" style="background:color-mix(in srgb,${p.color} 16%,var(--surface-2));color:${p.color}">${p.label}</span>` : '';
       }).join('');
-      todayBlock = `<div class="today-card">
+      /* The whole card is the tap target — looking at what you did is the far
+         more common intent than editing it, and 편집 stays one tap away inside.
+         Wrapped in a <button> rather than given an onclick so it is reachable
+         by keyboard and announced as an action. */
+      const tStats = sessionStats(todaySess);
+      const tRun = Number(todaySess.run?.km);
+      const finished = !!todaySess.completed;
+      const names = (todaySess.exercises || []).map(e => e.name);
+      const preview = names.slice(0, 3).join(' · ') + (names.length > 3 ? ` 외 ${names.length - 3}개` : '');
+      todayBlock = `<button class="today-card${finished ? ' done' : ''}" data-act="open-summary" data-date="${todaySess.date}">
         <div class="today-card-top">
-          <div class="badge-done">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-            오늘 운동 완료
+          <div class="badge-done${finished ? '' : ' progress'}">
+            ${finished
+              ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>오늘 운동 완료`
+              : `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>기록하는 중`}
           </div>
-          <button class="btn-ghost" style="height:34px" data-act="today">기록 편집</button>
+          <svg class="today-card-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
         </div>
-        <div class="today-card-parts">${parts || '<span class="sec-sub">기록 완료</span>'}</div>
-      </div>`;
+        <div class="today-card-parts">${parts || '<span class="sec-sub">부위 미선택</span>'}</div>
+        ${preview ? `<div class="today-card-ex">${esc(preview)}</div>` : ''}
+        <div class="today-card-stats">
+          <span><b>${todaySess.exercises.length}</b>개 운동</span>
+          <span><b>${tStats.done}</b>세트 완료</span>
+          ${Number.isFinite(tRun) && tRun ? `<span><b>${tRun}</b>km</span>` : ''}
+        </div>
+      </button>
+      <button class="btn-ghost today-edit" data-act="today">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4v16h16v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
+        ${finished ? '오늘 기록 이어서 편집' : '기록 계속하기'}
+      </button>`;
     } else {
       todayBlock = `<div style="margin-bottom:20px">
         <button class="btn-hero" data-act="today">
@@ -1044,6 +1368,34 @@
         ${stats.total ? `<div class="sum-bar"><div class="sum-bar-fill" style="width:${pct}%"></div></div>` : ''}
       </div>` : '';
 
+    /* The save button people asked for.
+       Every edit is already written to storage the moment it happens, so this
+       is not what makes the data durable — but "언제 저장된 거지?" is a real
+       question with no answer on a screen that only ever autosaves silently.
+       So the button marks the session finished and hands back a summary, and
+       the line under it states plainly that nothing was waiting to be saved.
+       Framing it as 마치기 rather than 저장 keeps that honest: pressing it is
+       about closing the workout, not rescuing unsaved work. */
+    const anything = stats.total > 0 || hasRunData(s.run) || s.exercises.length > 0;
+    const finishBar = !anything ? '' : (s.completed ? `
+      <div class="finish-bar done">
+        <div class="finish-msg">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          <span>${esc(relDayLabel(s.date))} 운동을 마쳤습니다</span>
+        </div>
+        <div class="finish-actions">
+          <button class="btn-ghost" data-act="open-summary" data-date="${s.date}">기록 보기</button>
+          <button class="btn-ghost" data-act="reopen-day">다시 열기</button>
+        </div>
+      </div>` : `
+      <div class="finish-bar">
+        <button class="btn-hero" data-act="finish-day">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          운동 마치기
+        </button>
+        <p class="finish-note">입력하는 즉시 저장되니 도중에 나가도 사라지지 않아요.</p>
+      </div>`);
+
     return `
       <header class="topbar">
         <button class="btn-icon ghost" data-act="go-tab" data-tab="home">
@@ -1074,7 +1426,98 @@
         <div class="sec-head" style="margin-top:18px"><div class="sec-title">부위 선택</div></div>
         <div class="part-grid">${partTiles}</div>
         ${blocks}
+        ${finishBar}
       </main>`;
+  }
+
+  /* ── Day summary ──────────────────────────────────────────────────────────
+     A read-only "what did I actually do" view, opened by tapping a day card.
+     The editing screen answers "what am I doing next" — it is full of inputs,
+     pickers and part tiles, which is the wrong shape for looking back at a
+     finished session. This one has no controls at all: every set is laid out as
+     a chip so a whole workout reads in one glance. */
+  function renderDaySummary(date) {
+    const s = state.sessions.find(x => x.date === date)
+           || (state.session && state.session.date === date ? state.session : null);
+    if (!s) return '';
+    const stats = sessionStats(s);
+    const runKm = Number(s.run?.km);
+    const runMin = Number(s.run?.minutes);
+    const done = !!s.completed;
+
+    const byPart = PARTS.filter(p => p.kind === 'weight').map(part => {
+      const list = (s.exercises || []).filter(e => e.part === part.id);
+      if (!list.length) return '';
+      return `<div class="dsum-part">
+        <div class="dsum-part-head">
+          <span class="dsum-dot" style="background:${part.color}"></span>${part.label}
+          <span class="dsum-part-count">${list.length}개 운동</span>
+        </div>
+        ${list.map(ex => {
+          let workingNo = 0;
+          const chips = (ex.sets || []).map(set => {
+            const warm = !!set.warmup;
+            if (!warm) workingNo++;
+            const kg = (set.kg !== '' && set.kg != null) ? set.kg : '–';
+            const reps = (set.reps !== '' && set.reps != null) ? set.reps : '–';
+            return `<span class="dsum-set${warm ? ' warm' : ''}${set.done ? ' done' : ''}">
+              <b>${warm ? 'W' : workingNo}</b>${esc(String(kg))}<i>kg</i> × ${esc(String(reps))}
+            </span>`;
+          }).join('');
+          const p = exProgress(ex);
+          return `<div class="dsum-ex">
+            <div class="dsum-ex-head">
+              <span class="dsum-ex-name">${esc(ex.name)}</span>
+              <span class="dsum-ex-meta">${p.done}/${p.total} 세트</span>
+            </div>
+            <div class="dsum-sets">${chips || '<span class="dsum-empty">기록된 세트가 없습니다</span>'}</div>
+          </div>`;
+        }).join('')}
+      </div>`;
+    }).join('');
+
+    const runBlock = hasRunData(s.run) ? `<div class="dsum-part">
+      <div class="dsum-part-head"><span class="dsum-dot" style="background:${PARTS.find(p=>p.id==='run').color}"></span>러닝</div>
+      <div class="dsum-ex"><div class="dsum-sets">
+        ${Number.isFinite(runKm) && runKm ? `<span class="dsum-set">${runKm}<i>km</i></span>` : ''}
+        ${Number.isFinite(runMin) && runMin ? `<span class="dsum-set">${runMin}<i>분</i></span>` : ''}
+      </div></div>
+    </div>` : '';
+
+    const body = (byPart + runBlock) || `<div class="empty-state" style="margin-top:30px">이 날은 기록된 운동이 없습니다.</div>`;
+
+    return `<div class="detail-screen">
+      <header class="topbar">
+        <button class="btn-icon ghost" data-act="close-summary" aria-label="닫기">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <div class="topbar-title">${esc(longDate(s.date))}</div>
+        <div class="topbar-spacer"></div>
+      </header>
+      <main class="screen">
+        <div class="dsum-hero${done ? ' done' : ''}">
+          <div class="dsum-badge">
+            ${done ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>운동 완료`
+                   : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>진행 중`}
+          </div>
+          <div class="dsum-parts">${(s.parts || []).map(id => {
+            const p = PARTS.find(x => x.id === id);
+            return p ? `<span class="muscle-tag" style="background:color-mix(in srgb,${p.color} 16%,var(--surface-2));color:${p.color}">${p.label}</span>` : '';
+          }).join('')}</div>
+          <div class="dsum-stats">
+            <div><b>${s.exercises.length}</b><span>운동</span></div>
+            <div><b>${stats.done}</b><span>완료 세트</span></div>
+            ${hasRunData(s.run) && Number.isFinite(runKm) && runKm ? `<div><b>${runKm}</b><span>km</span></div>` : ''}
+          </div>
+        </div>
+        ${body}
+        <button class="btn-ghost dsum-edit" data-act="edit-day" data-date="${s.date}">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4v16h16v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
+          이 날 기록 편집하기
+        </button>
+        <div style="height:20px"></div>
+      </main>
+    </div>`;
   }
 
   /* ── Exercise Card ────────────────────────── */
@@ -1130,7 +1573,7 @@
     const metaBits = [];
     if (prog.total) metaBits.push(`${prog.done}/${prog.total} 세트`);
 
-    return `<article class="ex-card${allDone?' all-done':''}">
+    return `<article class="ex-card${allDone?' all-done':''}" data-exid="${esc(ex.id)}">
       <div class="ex-card-head">
         <div style="flex:1;min-width:0">
           <div class="ex-card-name">${allDone?'<span class="ex-done-tick"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>':''}${esc(ex.name)}</div>
@@ -1434,15 +1877,32 @@
   /* ── Settings Tab ─────────────────────────── */
   function renderSettings() {
     const u = state.user;
+    const p = state.profile || {};
+    const bits = [];
+    if (p.gender) bits.push({ male:'남성', female:'여성', other:'기타' }[p.gender]);
+    if (p.birthYear) bits.push(`${new Date().getFullYear() - Number(p.birthYear) + 1}세`);
+    if (p.heightCm) bits.push(`${p.heightCm}cm`);
+    if (p.weightKg) bits.push(`${p.weightKg}kg`);
+
     const account = u ? `
       <div class="settings-label">계정</div>
       <div class="account-card">
-        ${u.photoURL ? `<img class="account-avatar" src="${esc(u.photoURL)}" alt="">` : `<div class="account-avatar fallback">${esc((u.displayName||'?').slice(0,1))}</div>`}
+        ${u.photoURL ? `<img class="account-avatar" src="${esc(u.photoURL)}" alt="">` : `<div class="account-avatar fallback">${esc((p.name || u.displayName || '?').slice(0,1))}</div>`}
         <div class="settings-item-text">
-          <div class="settings-item-title">${esc(u.displayName || '사용자')}</div>
-          <div class="settings-item-sub">${esc(u.email || '클라우드에 동기화 중')}</div>
+          <div class="settings-item-title">${esc(p.name || u.displayName || '사용자')}</div>
+          <div class="settings-item-sub">${p.username ? '@' + esc(p.username) : esc(u.email || '클라우드에 동기화 중')}</div>
         </div>
       </div>
+      <button class="settings-item" data-act="edit-profile">
+        <div class="settings-item-icon" style="background:var(--accent-soft);color:var(--accent)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </div>
+        <div class="settings-item-text">
+          <div class="settings-item-title">프로필</div>
+          <div class="settings-item-sub">${bits.length ? esc(bits.join(' · ')) : '이름·성별·나이·키·몸무게 입력하기'}</div>
+        </div>
+        <svg class="settings-item-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
       <button class="settings-item" data-act="logout">
         <div class="settings-item-icon" style="background:var(--red-soft);color:var(--red)">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
@@ -1571,7 +2031,10 @@
     /* Navigation */
     if (act === 'go-tab')     { await goTab(btn.dataset.tab); return; }
     if (act === 'today')      { await loadDay(todayISO()); return; }
-    if (act === 'open-day')   { await loadDay(btn.dataset.date); return; }
+    /* Tapping a past day shows what was done rather than opening the editor.
+       Looking back is the common intent; 편집 is one tap further in, inside the
+       summary, where it is an explicit choice rather than the default. */
+    if (act === 'open-day')   { state.summaryDate = btn.dataset.date; render(); return; }
     if (act === 'cal-shift')  {
       state.histMonth = shiftMonth(state.histMonth || monthKey(todayISO()), Number(btn.dataset.delta));
       render(); return;
@@ -1717,25 +2180,66 @@
     }
     if (act === 'toggle-done') { await handleToggleDone(btn.dataset.ex, btn.dataset.set); return; }
     if (act === 'copy-last') { await handleCopyLast(btn.dataset.ex); return; }
+    if (act === 'open-summary') { state.summaryDate = btn.dataset.date; render(); return; }
+    if (act === 'close-summary') { state.summaryDate = null; render(); return; }
+    if (act === 'edit-day') {
+      state.summaryDate = null;
+      await loadDay(btn.dataset.date);
+      return;
+    }
+    if (act === 'finish-day') { await handleFinishDay(); return; }
+    if (act === 'reopen-day') {
+      state.session.completed = false;
+      state.session.completedAt = 0;
+      await persist(); render();
+      toast('다시 편집할 수 있습니다');
+      return;
+    }
     if (act === 'start-part') { await handleStartPart(btn.dataset.part); return; }
     if (act === 'toggle-part') { await handleTogglePart(btn.dataset.part); return; }
     if (act === 'delete-day') { await handleDeleteDay(); return; }
     if (act === 'export') { await exportJson(); return; }
     if (act === 'import') { importInput.click(); return; }
     if (act === 'login-google') { await handleGoogleLogin(); return; }
-    if (act === 'login-email') { await handleEmailLogin(); return; }
+    if (act === 'login-id') { await handleIdLogin(); return; }
     if (act === 'reset-password') { await handleResetPassword(); return; }
     if (act === 'login-guest') { await enterApp(null, { guest: true }); return; }
-    if (act === 'toggle-auth-mode') {
-      /* save current input values before re-rendering */
-      const emailEl = document.getElementById('auth-email');
-      const passEl  = document.getElementById('auth-password');
-      if (emailEl) state.authEmail    = emailEl.value;
-      if (passEl)  state.authPassword = passEl.value;
-      state.authMode  = btn.dataset.mode || (state.authMode === 'signup' ? 'signin' : 'signup');
-      state.authError = '';
+    if (act === 'go-signup') {
+      resetSignup();
+      state.authMode = 'signup';
       render(); return;
     }
+    if (act === 'signup-back') {
+      /* Step 1's back arrow leaves the wizard entirely rather than dead-ending;
+         anywhere else it is a normal step back. */
+      if (state.signupStep > 1) { state.signupStep -= 1; state.authError = ''; }
+      else { resetSignup(); state.authMode = 'signin'; }
+      render(); return;
+    }
+    if (act === 'signup-next') { await handleSignupNext(); return; }
+    if (act === 'signup-skip') { await submitSignup({}); return; }
+    if (act === 'su-gender') {
+      state.signup.gender = state.signup.gender === btn.dataset.val ? '' : btn.dataset.val;
+      /* Repaint just the segmented control — a full render would blur whatever
+         text field the user was in. */
+      document.querySelectorAll('[data-act="su-gender"]').forEach(b => {
+        b.classList.toggle('on', b.dataset.val === state.signup.gender);
+      });
+      return;
+    }
+    if (act === 'onboarding-save') { await handleOnboardingSave(); return; }
+    if (act === 'save-profile') { await handleSaveProfile(); return; }
+    if (act === 'edit-profile') {
+      const p = state.profile || {};
+      state.signup = {
+        ...state.signup,
+        name: p.name || '', gender: p.gender || '',
+        birthYear: p.birthYear || '', heightCm: p.heightCm || '', weightKg: p.weightKg || '',
+      };
+      state.profileEditing = true;
+      render(); return;
+    }
+    if (act === 'close-profile') { state.profileEditing = false; render(); return; }
     if (act === 'show-login') {
       state.guest = false;
       localStorage.removeItem('fitlog-guest');
@@ -1751,8 +2255,23 @@
   /* ── Input handler ───────────────────────── */
   async function onInput(e) {
     const t = e.target;
-    if (t.dataset.auth === 'email') { state.authEmail = t.value; return; }
-    if (t.dataset.auth === 'password') { state.authPassword = t.value; return; }
+    /* Signup fields write straight to state and deliberately do NOT re-render:
+       replacing the DOM mid-keystroke would drop focus and, on phones, dismiss
+       the keyboard. Feedback is painted into the existing nodes instead. */
+    if (t.dataset.su) {
+      state.signup[t.dataset.su] = t.value;
+      /* Drop a stale error the moment editing resumes. Leaving "이메일 형식이
+         올바르지 않습니다" on screen above a field the user has since fixed
+         reads as though the app hasn't noticed. Removed from the DOM directly
+         for the same reason nothing else here re-renders — focus. */
+      if (state.authError) {
+        state.authError = '';
+        document.querySelector('.login-error')?.remove();
+      }
+      if (t.dataset.su === 'username') scheduleIdCheck(t.value);
+      else paintSignupHints();
+      return;
+    }
     if (t.dataset.run != null) {
       const val = parseNum(t.value);
       state.session.run[t.dataset.run] = val !== '' ? val : t.value;
@@ -1773,11 +2292,239 @@
     }
   }
 
+  /* ── Signup helpers ───────────────────────────────────────────────────────
+     Availability is checked while typing rather than at submit, because
+     "이미 사용 중인 아이디입니다" arriving only after you have filled in a
+     password, an email and a profile is the worst possible moment to learn it.
+
+     Debounced: every keystroke would otherwise be a Firestore read, and the
+     answer for a half-typed name is noise. The token guard drops responses that
+     arrive out of order — a slow lookup for "chan" must not overwrite a fresh
+     one for "chanmin". */
+  let idCheckTimer = 0;
+  let idCheckToken = 0;
+
+  function scheduleIdCheck(raw) {
+    clearTimeout(idCheckTimer);
+    const id = Cloud.normalizeUsername(raw);
+    const bad = Cloud.usernameError(id);
+    if (bad) {
+      state.idCheck = { id, status: 'invalid', message: bad };
+      paintSignupHints();
+      return;
+    }
+    state.idCheck = { id, status: 'checking', message: '' };
+    paintSignupHints();
+    const token = ++idCheckToken;
+    idCheckTimer = setTimeout(async () => {
+      let free = false;
+      try { free = await Cloud.isUsernameFree(id); }
+      catch (_) {
+        if (token !== idCheckToken) return;
+        /* Offline or rules blocked the read — say nothing rather than claim the
+           name is free and fail at submit. */
+        state.idCheck = { id, status: '', message: '' };
+        paintSignupHints();
+        return;
+      }
+      if (token !== idCheckToken) return;
+      state.idCheck = { id, status: free ? 'free' : 'taken', message: free ? '' : '이미 사용 중인 아이디입니다' };
+      paintSignupHints();
+    }, 420);
+  }
+
+  function paintSignupHints() {
+    const s = state.signup;
+    const chk = state.idCheck;
+    const idField = document.querySelector('[data-su="username"]');
+    if (idField) {
+      /* The hint is always the element right after its input. Searching the
+         parent instead would find whichever .field-hint happens to come first,
+         which is the wrong one on any screen that has more than one. */
+      const hint = idField.nextElementSibling;
+      if (hint && hint.classList.contains('field-hint')) {
+        const live = chk.id === Cloud.normalizeUsername(s.username) && chk.status;
+        hint.className = 'field-hint' + (
+          !live ? '' :
+          chk.status === 'free' ? ' ok' :
+          chk.status === 'checking' ? ' muted' : ' bad');
+        hint.textContent = !live ? '나중에 바꿀 수 없으니 신중히 정해 주세요.'
+          : chk.status === 'checking' ? '확인 중…'
+          : chk.status === 'free' ? '사용할 수 있는 아이디예요'
+          : (chk.message || '사용할 수 없는 아이디입니다');
+      }
+    }
+    const pw2 = document.querySelector('[data-su="password2"]');
+    if (pw2) {
+      const hint = pw2.nextElementSibling;
+      if (hint && hint.classList.contains('field-hint')) {
+        if (s.password2) {
+          const match = s.password === s.password2;
+          hint.className = 'field-hint ' + (match ? 'ok' : 'bad');
+          hint.textContent = match ? '비밀번호가 일치합니다' : '비밀번호가 일치하지 않습니다';
+        } else if ((s.password || '').length && s.password.length < 6) {
+          hint.className = 'field-hint bad';
+          hint.textContent = '6자 이상 입력해 주세요';
+        } else {
+          hint.className = 'field-hint';
+          hint.textContent = '';
+        }
+      }
+    }
+  }
+
+  function resetSignup() {
+    state.signup = {
+      username: '', password: '', password2: '', email: '',
+      name: '', gender: '', birthYear: '', heightCm: '', weightKg: '',
+    };
+    state.idCheck = { id: '', status: '', message: '' };
+    state.signupStep = 1;
+    state.authError = '';
+  }
+
+  function collectProfile() {
+    const s = state.signup;
+    return {
+      name: s.name, gender: s.gender,
+      birthYear: s.birthYear, heightCm: s.heightCm, weightKg: s.weightKg,
+    };
+  }
+
+  /* Blocks moving on only for things that make the account impossible to
+     create. The profile step validates nothing — it is allowed to be empty. */
+  function signupStepError() {
+    const s = state.signup;
+    if (state.signupStep === 1) {
+      const id = Cloud.normalizeUsername(s.username);
+      const bad = Cloud.usernameError(id);
+      if (bad) return bad;
+      if (state.idCheck.id === id && state.idCheck.status === 'taken') return '이미 사용 중인 아이디입니다.';
+      if ((s.password || '').length < 6) return '비밀번호는 6자 이상이어야 합니다.';
+      if (s.password !== s.password2) return '비밀번호가 일치하지 않습니다.';
+      return '';
+    }
+    if (state.signupStep === 2) {
+      const mail = (s.email || '').trim();
+      if (!mail) return '이메일을 입력해 주세요.';
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) return '이메일 형식이 올바르지 않습니다.';
+      return '';
+    }
+    return '';
+  }
+
+  async function handleSignupNext() {
+    if (state.authBusy) return;
+    const err = signupStepError();
+    if (err) { state.authError = err; render(); return; }
+    if (state.signupStep < 3) {
+      state.signupStep += 1;
+      state.authError = '';
+      render();
+      return;
+    }
+    await submitSignup(collectProfile());
+  }
+
+  async function submitSignup(prof) {
+    const s = state.signup;
+    state.authBusy = true;
+    state.authError = '';
+    render();
+    try {
+      const user = await Cloud.signUpUsername({
+        username: s.username, password: s.password, email: s.email, profile: prof,
+      });
+      /* Signup already wrote both the name and the profile, so seed them here
+         rather than making enterApp read back what we just sent — that read is
+         what the onboarding gate keys off, and a slow one would briefly gate a
+         user who has demonstrably finished setting up. */
+      state.profile = { ...prof, username: Cloud.normalizeUsername(s.username) };
+      if (user && user.uid) markSetUp(user.uid);
+      resetSignup();
+      state.authMode = 'signin';
+      await enterApp(user, { arrivedFromLogin: true });
+    } catch (err) {
+      state.authBusy = false;
+      /* A taken name is a step-1 problem — send them back to the field that
+         needs fixing instead of leaving them stranded on the profile step. */
+      if (err && err.code === 'fitlog/username-taken') {
+        state.signupStep = 1;
+        state.idCheck = { id: Cloud.normalizeUsername(s.username), status: 'taken', message: '이미 사용 중인 아이디입니다' };
+      }
+      state.authError = Cloud.authMessage(err);
+      render();
+    }
+  }
+
+  async function handleSaveProfile() {
+    if (state.authBusy) return;
+    state.authBusy = true;
+    render();
+    try {
+      state.profile = { ...(await Cloud.saveProfile(collectProfile())), username: state.profile?.username || '' };
+      state.profileEditing = false;
+      state.authBusy = false;
+      render();
+      toast('프로필을 저장했습니다');
+    } catch (err) {
+      state.authBusy = false;
+      state.profileEditing = false;
+      render();
+      toast('프로필 저장에 실패했습니다');
+      console.warn('profile save failed', err);
+    }
+  }
+
+  async function handleOnboardingSave() {
+    if (state.authBusy) return;
+    const s = state.signup;
+    const id = Cloud.normalizeUsername(s.username);
+    const bad = Cloud.usernameError(id);
+    if (bad) { state.authError = bad; render(); return; }
+    state.authBusy = true;
+    state.authError = '';
+    render();
+    try {
+      await Cloud.claimUsername(id);
+      state.profile = { ...(await Cloud.saveProfile(collectProfile())), username: id };
+      if (state.user) markSetUp(state.user.uid);
+      state.onboarding = false;
+      state.authBusy = false;
+      resetSignup();
+      render();
+      toast('설정을 저장했습니다');
+    } catch (err) {
+      state.authBusy = false;
+      if (err && err.code === 'fitlog/username-taken') {
+        state.idCheck = { id, status: 'taken', message: '이미 사용 중인 아이디입니다' };
+      }
+      state.authError = Cloud.authMessage(err);
+      render();
+    }
+  }
+
   /* ── Action handlers ─────────────────────── */
   /* One tap from "등이 부족해요" to a session with 등 already open and its
      exercise picker up. Going through loadDay first means today's existing
      record is loaded rather than overwritten, so tapping the suggestion after
      already training something else adds to the day instead of replacing it. */
+  /* Closes out the day and drops the user straight into the summary — the
+     point of the button is to see what you did, not to watch a toast. */
+  async function handleFinishDay() {
+    const s = state.session;
+    if (!s) return;
+    s.completed = true;
+    s.completedAt = Date.now();
+    await persist();
+    /* persist() is queued; state.sessions is what the summary reads from, so
+       refresh it here rather than racing the write. */
+    state.sessions = await WorkoutDB.getAllSessions();
+    state.summaryDate = s.date;
+    render();
+    toast('오늘 운동을 저장했습니다');
+  }
+
   async function handleStartPart(partId) {
     if (!PARTS.some(p => p.id === partId)) return;
     await loadDay(todayISO());
@@ -1827,10 +2574,14 @@
   }
 
   async function handlePickEx(partId, name, exId) {
+    const before = new Set(state.session.exercises.map(e => e.id));
     if (!addExerciseToSession(partId, name, exId)) { toast('이미 추가된 운동입니다'); return; }
     await persist();
     closeAllSheets();
+    const added = state.session.exercises.find(e => !before.has(e.id));
+    if (added) flashExercise(added.id);
     render();
+    toast('운동을 추가했습니다');
   }
 
   /* Commit every exercise queued in the picker in one shot. */
@@ -1838,9 +2589,18 @@
     const picks = state.pickSelection.slice();
     if (!picks.length) return;
     let n = 0;
+    let firstId = null;
+    const before = new Set(state.session.exercises.map(e => e.id));
     for (const p of picks) if (addExerciseToSession(p.part || partId, p.name, p.exId)) n++;
+    /* Scroll to the first genuinely new card. Diffing against the ids that
+       existed beforehand rather than trusting p.exId, because an exercise added
+       from the custom list gets a generated id that the pick never carried. */
+    for (const ex of state.session.exercises) {
+      if (!before.has(ex.id)) { firstId = ex.id; break; }
+    }
     await persist();
     closeAllSheets();
+    if (firstId) flashExercise(firstId);
     render();
     toast(n > 1 ? `${n}개 운동을 추가했습니다` : '운동을 추가했습니다');
   }
@@ -2040,11 +2800,63 @@
        block entry — the Firestore SDK retries silently forever when the database
        is missing or unreachable, which would otherwise freeze the splash screen. */
     await loadWorkspace();
+
+    /* Resolve the onboarding gate BEFORE the first paint when there is any
+       chance of needing it, so a new account goes splash → gate instead of
+       splash → a flash of an empty home → gate.
+       knownSetUp() makes that a one-time cost: once an account is confirmed to
+       have an 아이디, the flag is cached per-uid and every later launch skips
+       the wait entirely and refreshes the profile in the background. The wait is
+       also capped, so a slow Firestore delays entry by a couple of seconds at
+       worst rather than holding the app on a splash screen. */
+    if (user && !knownSetUp(user.uid)) {
+      await loadProfileThenMaybeOnboard(user, 2500);
+    }
+
     state.authReady = true;
     render();
-    if (user && arrivedFromLogin) toast('로그인했습니다');
+    if (user && arrivedFromLogin && !state.onboarding) toast('로그인했습니다');
 
-    if (user) syncInBackground();
+    if (user) {
+      if (knownSetUp(user.uid)) loadProfileThenMaybeOnboard(user, 8000);
+      syncInBackground();
+    }
+  }
+
+  /* Cached "this account already picked an 아이디". Only ever set from a
+     successful read, never from a failure, so a bad network can't permanently
+     convince the app that setup is done. */
+  function knownSetUp(uid) {
+    try { return localStorage.getItem('fitlog-setup:' + uid) === '1'; } catch (_) { return false; }
+  }
+  function markSetUp(uid) {
+    try { localStorage.setItem('fitlog-setup:' + uid, '1'); } catch (_) {}
+  }
+
+  /* Fetches the profile after entry rather than before it, for the same reason
+     sync runs in the background: a slow or unreachable Firestore must not hold
+     the app hostage on a splash screen. The onboarding gate therefore appears a
+     beat after login — acceptable, because the alternative is the app hanging
+     for anyone whose network is having a bad day.
+     A failed read is treated as "don't know", never as "no 아이디" — wrongly
+     showing the gate to an existing user would invite them to claim a second
+     name for an account that already has one. */
+  async function loadProfileThenMaybeOnboard(user, timeoutMs) {
+    let prof = null;
+    try { prof = await withTimeout(Cloud.loadProfile(), timeoutMs || 8000, '프로필'); }
+    catch (err) { console.warn('profile load failed', err); return; }
+    if (!state.user || state.user.uid !== user.uid) return;
+    state.profile = prof;
+    /* null here means the read succeeded and the document simply isn't there —
+       a brand-new account, which is precisely who the gate is for. Only a
+       thrown error (handled above) counts as "don't know". */
+    if (prof && prof.username) { markSetUp(user.uid); return; }
+
+    /* Prefill from whatever Google already told us so the gate is one tap for
+       most people. */
+    state.signup.name = state.signup.name || user.displayName || '';
+    state.onboarding = true;
+    if (state.authReady) render();
   }
 
   async function syncInBackground() {
@@ -2103,35 +2915,34 @@
     }
   }
 
-  async function handleEmailLogin() {
+  /* Sign in with 아이디 — or an email, since anyone who signed up before this
+     change has one and would otherwise be locked out of their own records. */
+  async function handleIdLogin() {
     if (state.authBusy) return;
     if (!Cloud.configured()) { state.authError = 'Firebase가 아직 연결되지 않았습니다.'; render(); return; }
 
-    /* Read directly from DOM so we don't rely on oninput timing */
-    const emailEl = document.getElementById('auth-email');
-    const passEl  = document.getElementById('auth-password');
-    const pass2El = document.getElementById('auth-password2');
-    const email    = (emailEl ? emailEl.value : state.authEmail).trim();
+    /* Read from the DOM rather than trusting oninput timing — autofill and
+       password managers populate fields without ever firing input. */
+    const idEl   = document.getElementById('auth-id');
+    const passEl = document.getElementById('auth-password');
+    const rawId    = (idEl ? idEl.value : state.authId).trim();
     const password = passEl ? passEl.value : state.authPassword;
 
-    if (!email || !password) {
-      state.authError = '이메일과 비밀번호를 입력해 주세요.';
-      render(); return;
-    }
-    if (state.authMode === 'signup' && pass2El && pass2El.value !== password) {
-      state.authError = '비밀번호가 일치하지 않습니다.';
+    if (!rawId || !password) {
+      state.authError = '아이디와 비밀번호를 입력해 주세요.';
       render(); return;
     }
 
-    state.authEmail    = email;
+    state.authId       = rawId;
     state.authPassword = password;
     state.authBusy     = true;
     state.authError    = '';
     render();
     try {
-      const user = state.authMode === 'signup'
-        ? await Cloud.signUpEmail(email, password)
-        : await Cloud.signInEmail(email, password);
+      const user = rawId.includes('@')
+        ? await Cloud.signInEmail(rawId, password)
+        : await Cloud.signInUsername(rawId, password);
+      state.authPassword = '';
       await enterApp(user);
     } catch (err) {
       state.authBusy = false;
@@ -2146,19 +2957,19 @@
     if (state.authBusy) return;
     if (!Cloud.configured()) { state.authError = 'Firebase가 아직 연결되지 않았습니다.'; render(); return; }
 
-    const emailEl = document.getElementById('auth-email');
-    const email = (emailEl ? emailEl.value : state.authEmail).trim();
-    if (!email) {
-      state.authError = '먼저 이메일을 입력한 뒤 다시 눌러 주세요.';
+    const idEl = document.getElementById('auth-id');
+    const raw = (idEl ? idEl.value : state.authId).trim();
+    if (!raw) {
+      state.authError = '아이디 또는 가입할 때 쓴 이메일을 입력한 뒤 다시 눌러 주세요.';
       render(); return;
     }
 
-    state.authEmail = email;
+    state.authId = raw;
     state.authBusy  = true;
     state.authError = '';
     render();
     try {
-      await Cloud.sendPasswordReset(email);
+      await Cloud.sendPasswordResetFor(raw);
       state.authBusy = false;
       render();
       toast('비밀번호 재설정 메일을 보냈습니다 — 메일함을 확인해 주세요');
