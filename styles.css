@@ -228,6 +228,184 @@ img,svg { display:block; }
   background: currentColor;
   flex-shrink: 0;
 }
+.chip-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  margin-left: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 26%, var(--bg));
+  color: currentColor;
+  font-size: 11px;
+  font-weight: 800;
+  display: inline-grid;
+  place-items: center;
+}
+
+/* ─ Day navigator ─────────────────────────── */
+.day-nav {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.day-nav-arrow {
+  width: 44px;
+  border-radius: var(--r-sm);
+  background: var(--card2);
+  border: 1.5px solid var(--line);
+  color: var(--sub);
+  display: grid;
+  place-items: center;
+  transition: border-color .15s, color .15s, opacity .15s;
+}
+.day-nav-arrow:active:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.day-nav-arrow:disabled { opacity: .3; }
+.day-nav-mid {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  border-radius: var(--r-sm);
+  background: var(--card2);
+  border: 1.5px solid var(--line);
+  padding: 8px 12px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .15s;
+}
+.day-nav-mid:active { border-color: var(--accent); }
+.day-nav-date {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.day-nav-rel {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-top: 2px;
+}
+/* Native picker overlays the whole block so tapping anywhere opens the calendar */
+.day-nav-mid input[type="date"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color-scheme: dark;
+}
+.btn-today {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+/* ─ Session summary ───────────────────────── */
+.sum-card {
+  background: var(--card);
+  border-radius: var(--r);
+  padding: 14px 16px;
+}
+.sum-grid {
+  display: flex;
+  align-items: flex-end;
+}
+.sum-item {
+  flex: 1;
+  min-width: 0;
+}
+.sum-item + .sum-item {
+  border-left: 1px solid var(--line);
+  padding-left: 14px;
+}
+.sum-val {
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: -0.05em;
+  line-height: 1;
+}
+.sum-val span {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0;
+  margin-left: 1px;
+}
+.sum-lbl {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-top: 5px;
+}
+.sum-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--card2);
+  margin-top: 14px;
+  overflow: hidden;
+}
+.sum-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width .3s ease;
+}
+
+/* ─ Empty prompts ─────────────────────────── */
+.pick-prompt {
+  text-align: center;
+  padding: 28px 20px 32px;
+  background: var(--card);
+  border-radius: var(--r);
+}
+.pick-prompt-icon {
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 12px;
+  border-radius: 50%;
+  background: var(--accent-bg);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+}
+.pick-prompt-title {
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+.pick-prompt-sub {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 6px;
+  line-height: 1.5;
+}
+.add-ex-cta {
+  width: 100%;
+  min-height: 52px;
+  margin-bottom: 12px;
+  border-radius: var(--r-sm);
+  border: 1.5px dashed var(--line);
+  color: var(--sub);
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  transition: border-color .15s, color .15s;
+}
+.add-ex-cta:active { border-color: var(--accent); color: var(--accent); }
 
 /* ─ Section header ────────────────────────── */
 .sec-head {
@@ -281,6 +459,19 @@ img,svg { display:block; }
   color: var(--muted);
 }
 .muscle-tag.primary { background: var(--accent-bg); color: var(--accent); }
+.ex-card-meta {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-top: 7px;
+}
+.ex-card.all-done {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--green) 40%, transparent);
+}
+.ex-done-tick {
+  color: var(--green);
+  font-weight: 900;
+}
 
 /* ─ Set table ─────────────────────────────── */
 .set-table {
@@ -288,7 +479,7 @@ img,svg { display:block; }
 }
 .set-table-head {
   display: grid;
-  grid-template-columns: 28px 1fr 1fr 40px;
+  grid-template-columns: 28px 1fr 1fr 40px 26px;
   gap: 8px;
   padding: 0 0 6px;
   font-size: 11px;
@@ -300,11 +491,27 @@ img,svg { display:block; }
 .set-table-head :first-child { text-align: left; }
 .set-row {
   display: grid;
-  grid-template-columns: 28px 1fr 1fr 40px;
+  grid-template-columns: 28px 1fr 1fr 40px 26px;
   gap: 8px;
   align-items: center;
   margin-bottom: 8px;
   position: relative;
+}
+.set-del {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: var(--muted);
+  opacity: .5;
+  transition: opacity .15s, color .15s, background .15s;
+}
+.set-del:active {
+  opacity: 1;
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 14%, transparent);
 }
 .set-num {
   height: 28px;

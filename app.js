@@ -115,6 +115,43 @@
       .map(s => `${s.kg??'-'}kg×${s.reps??'-'}`)
       .join(' · ');
   }
+  function exVolume(ex) {
+    return (ex.sets||[]).reduce((sum, st) => {
+      const kg = Number(st.kg), reps = Number(st.reps);
+      return sum + (Number.isFinite(kg) && Number.isFinite(reps) ? kg * reps : 0);
+    }, 0);
+  }
+  function exProgress(ex) {
+    const sets = ex.sets || [];
+    return { done: sets.filter(s => s.done).length, total: sets.length };
+  }
+  function sessionStats(s) {
+    let done = 0, total = 0, volume = 0;
+    for (const ex of s.exercises || []) {
+      const p = exProgress(ex);
+      done += p.done; total += p.total;
+      volume += exVolume(ex);
+    }
+    return { done, total, volume };
+  }
+  function fmtNum(n) {
+    return Math.round(n).toLocaleString('ko-KR');
+  }
+  function shiftDate(iso, delta) {
+    const d = isoToDate(iso);
+    d.setDate(d.getDate() + delta);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+  function relDayLabel(iso) {
+    const today = todayISO();
+    if (iso === today) return '오늘';
+    const diff = Math.round((isoToDate(today) - isoToDate(iso)) / 86400000);
+    if (diff === 1) return '어제';
+    if (diff === 2) return '그제';
+    if (diff > 0)   return `${diff}일 전`;
+    if (diff === -1) return '내일';
+    return `${-diff}일 후`;
+  }
   function getWeekDays() {
     const today = new Date();
     const day = today.getDay(); // 0=Sun
@@ -432,8 +469,9 @@
 
     const chips = PARTS.map(p => {
       const on = s.parts.includes(p.id);
+      const count = p.kind === 'weight' ? s.exercises.filter(e => e.part === p.id).length : 0;
       return `<button class="part-chip${on?' on':''}" style="color:${p.color}" data-act="toggle-part" data-part="${p.id}">
-        <div class="dot"></div>${p.label}</button>`;
+        <div class="dot"></div>${p.label}${count ? `<span class="chip-count">${count}</span>` : ''}</button>`;
     }).join('');
 
     let blocks = '';
@@ -475,32 +513,78 @@
       if (exercises.length) {
         blocks += exercises.map(ex => renderExerciseCard(ex)).join('');
       } else {
-        blocks += `<div class="help-text" style="margin-bottom:8px">+ 운동 추가로 종목을 넣어보세요.</div>`;
+        blocks += `<button class="add-ex-cta" data-act="open-picker" data-part="${part.id}">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          ${part.label} 운동 추가하기
+        </button>`;
       }
     }
 
     if (!s.parts.length) {
-      blocks = `<div class="empty-state" style="padding:32px 0"><div class="empty-icon">👆</div>부위를 선택하면<br>운동을 기록할 수 있습니다.</div>`;
+      blocks = `<div class="pick-prompt">
+        <div class="pick-prompt-icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6.5 6.5h11M6.5 17.5h11M4 9.5v5M20 9.5v5M9 12h6"/></svg>
+        </div>
+        <div class="pick-prompt-title">어떤 부위를 했나요?</div>
+        <div class="pick-prompt-sub">위에서 부위를 고르면 운동을 기록할 수 있습니다.</div>
+      </div>`;
     }
+
+    const isToday = s.date === todayISO();
+    const stats = sessionStats(s);
+    const pct = stats.total ? Math.round(stats.done / stats.total * 100) : 0;
+    const runKm = Number(s.run.km);
+    const showSummary = stats.total > 0 || hasRunData(s.run);
+
+    const summary = showSummary ? `
+      <div class="sum-card">
+        <div class="sum-grid">
+          <div class="sum-item">
+            <div class="sum-val">${stats.done}<span>/${stats.total}</span></div>
+            <div class="sum-lbl">완료 세트</div>
+          </div>
+          <div class="sum-item">
+            <div class="sum-val">${fmtNum(stats.volume)}<span>kg</span></div>
+            <div class="sum-lbl">총 볼륨</div>
+          </div>
+          ${hasRunData(s.run) ? `
+          <div class="sum-item">
+            <div class="sum-val">${Number.isFinite(runKm)&&runKm?runKm:'-'}<span>km</span></div>
+            <div class="sum-lbl">러닝</div>
+          </div>` : ''}
+        </div>
+        ${stats.total ? `<div class="sum-bar"><div class="sum-bar-fill" style="width:${pct}%"></div></div>` : ''}
+      </div>` : '';
 
     return `
       <header class="topbar">
         <button class="btn-icon" data-act="go-tab" data-tab="home">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
-        <div class="topbar-title">${esc(longDate(s.date))}</div>
+        <div class="topbar-title">기록</div>
+        ${isToday ? '' : `<button class="btn-today" data-act="today">오늘로</button>`}
         <button class="btn-icon danger" data-act="delete-day">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
         </button>
       </header>
       <main class="screen">
-        <input type="date" class="date-pick" style="margin-bottom:14px" data-act="change-date" value="${s.date}">
-        <div class="sec-head" style="margin-top:0"><div class="sec-title">부위 선택</div></div>
+        <div class="day-nav">
+          <button class="day-nav-arrow" data-act="shift-day" data-delta="-1" aria-label="이전 날">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <label class="day-nav-mid">
+            <div class="day-nav-date">${esc(longDate(s.date))}</div>
+            <div class="day-nav-rel">${esc(relDayLabel(s.date))}</div>
+            <input type="date" data-act="change-date" value="${s.date}" max="${todayISO()}" aria-label="날짜 선택">
+          </label>
+          <button class="day-nav-arrow" data-act="shift-day" data-delta="1" aria-label="다음 날"${isToday?' disabled':''}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
+        ${summary}
+        <div class="sec-head" style="margin-top:18px"><div class="sec-title">부위 선택</div></div>
         <div class="part-chips">${chips}</div>
         ${blocks}
-        <div class="sec-head"><div class="sec-title">메모</div></div>
-        <textarea class="memo-field" data-notes placeholder="컨디션, 페이스, 목표 무게 등">${esc(s.notes)}</textarea>
-        <p class="help-text">모든 변경은 자동 저장됩니다.</p>
       </main>`;
   }
 
@@ -540,14 +624,25 @@
         <button class="done-toggle${done?' done':''}" data-act="toggle-done" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="세트 완료">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8"><polyline points="20 6 9 17 4 12"/></svg>
         </button>
+        <button class="set-del" data-act="del-set" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="세트 삭제">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
       </div>`;
     }).join('');
 
-    return `<article class="ex-card">
+    const prog = exProgress(ex);
+    const vol = exVolume(ex);
+    const allDone = prog.total > 0 && prog.done === prog.total;
+    const metaBits = [];
+    if (prog.total) metaBits.push(`${prog.done}/${prog.total} 세트`);
+    if (vol > 0)    metaBits.push(`${fmtNum(vol)}kg`);
+
+    return `<article class="ex-card${allDone?' all-done':''}">
       <div class="ex-card-head">
-        <div style="flex:1">
-          <div class="ex-card-name">${esc(ex.name)}</div>
+        <div style="flex:1;min-width:0">
+          <div class="ex-card-name">${allDone?'<span class="ex-done-tick">✓</span> ':''}${esc(ex.name)}</div>
           <div class="ex-card-sub">${muscleTags}</div>
+          ${metaBits.length ? `<div class="ex-card-meta">${esc(metaBits.join(' · '))}</div>` : ''}
         </div>
         <button class="btn-icon" style="margin-top:2px" data-act="show-ex-info" data-exid="${esc(ex.id)}" data-exname="${esc(ex.name)}">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
@@ -558,7 +653,7 @@
       </div>
       ${prevHint}
       <div class="set-table">
-        <div class="set-table-head"><span>#</span><span>무게</span><span>횟수</span><span>완료</span></div>
+        <div class="set-table-head"><span>#</span><span>무게</span><span>횟수</span><span>완료</span><span></span></div>
         ${sets}
         <button class="add-set-row" data-act="add-set" data-ex="${esc(ex.id)}">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -951,6 +1046,12 @@
     }
     if (act === 'del-ex') { await handleDeleteEx(btn.dataset.ex); return; }
     if (act === 'add-set') { await handleAddSet(btn.dataset.ex); return; }
+    if (act === 'del-set') { await handleDeleteSet(btn.dataset.ex, btn.dataset.set); return; }
+    if (act === 'shift-day') {
+      await persist();
+      await loadDay(shiftDate(state.session.date, Number(btn.dataset.delta)));
+      return;
+    }
     if (act === 'toggle-done') { await handleToggleDone(btn.dataset.ex, btn.dataset.set); return; }
     if (act === 'copy-last') { await handleCopyLast(btn.dataset.ex); return; }
     if (act === 'toggle-part') { await handleTogglePart(btn.dataset.part); return; }
@@ -987,10 +1088,6 @@
     if (t.dataset.run != null) {
       const val = parseNum(t.value);
       state.session.run[t.dataset.run] = val !== '' ? val : t.value;
-      await persist(); return;
-    }
-    if (t.hasAttribute('data-notes')) {
-      state.session.notes = t.value;
       await persist(); return;
     }
     if (t.dataset.act === 'search-ex') {
@@ -1099,6 +1196,14 @@
     if (!ex) return;
     const prev = ex.sets[ex.sets.length-1] || { kg:'', reps:'' };
     ex.sets.push({ id:uid(), kg:prev.kg, reps:prev.reps, done:false });
+    await persist(); render();
+  }
+
+  async function handleDeleteSet(exId, setId) {
+    const ex = state.session.exercises.find(e=>e.id===exId);
+    if (!ex) return;
+    if (ex.sets.length <= 1) { toast('마지막 세트는 지울 수 없습니다'); return; }
+    ex.sets = ex.sets.filter(s => s.id !== setId);
     await persist(); render();
   }
 
