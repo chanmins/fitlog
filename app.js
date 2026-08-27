@@ -51,6 +51,7 @@
     exerciseInfoId: null,
     weightPicker: null,   /* { exId, setId, value } */
     repsPicker:   null,   /* { exId, setId, value } */
+    rpePicker:    null,   /* { exId, setId, value } */
 
     /* Auth */
     authReady: false,
@@ -62,11 +63,29 @@
     authBusy: false,
     authError: '',
     syncing: false,
+    accountBusy: false,
 
     /* Toast */
     toast: '',
     toastTimer: 0,
+
+    /* Rest timer — { endsAt, duration, label } while a rest is running, else null.
+       Rendered as its own DOM node appended to <body> (see startRestTimer), never
+       through the normal render() innerHTML swap, so a live countdown can't steal
+       focus from a numpad or input the user is mid-edit on. */
+    restTimer: null,
   };
+
+  const REST_PRESETS = [30, 60, 90, 120, 180];
+  function restDuration() {
+    const n = Number(localStorage.getItem('fitlog-rest-dur'));
+    return REST_PRESETS.includes(n) ? n : 90;
+  }
+  function setRestDuration(sec) {
+    localStorage.setItem('fitlog-rest-dur', String(sec));
+  }
+
+  const RPE_PRESETS = [6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10];
 
   /* ── DOM root ───────────────────────────── */
   const appEl = document.getElementById('app');
@@ -116,7 +135,10 @@
       .join(' · ');
   }
   function exVolume(ex) {
+    /* Warm-up sets don't count toward working volume — matches how lifters
+       actually think about volume, and keeps the number meaningful. */
     return (ex.sets||[]).reduce((sum, st) => {
+      if (st.warmup) return sum;
       const kg = Number(st.kg), reps = Number(st.reps);
       return sum + (Number.isFinite(kg) && Number.isFinite(reps) ? kg * reps : 0);
     }, 0);
@@ -184,7 +206,8 @@
     for (const s of sorted) {
       const ex = (s.exercises||[]).find(e => e.name === exName);
       if (!ex) continue;
-      const maxKg = Math.max(...(ex.sets||[]).map(st=>Number(st.kg)||0));
+      const working = (ex.sets||[]).filter(st => !st.warmup);
+      const maxKg = Math.max(...working.map(st=>Number(st.kg)||0), 0);
       if (maxKg > 0) history.push({ date: shortDate(s.date), kg: maxKg });
       if (history.length >= 10) break;
     }
@@ -301,6 +324,117 @@
     }, 1800);
   }
 
+  /* ── Rest Timer ─────────────────────────── */
+  /* Renders into its own node on <body>, ticked by a single setInterval — never
+     through render()'s innerHTML swap, so a live countdown can never steal focus
+     from a numpad, an open sheet, or an input the user is mid-edit on. */
+  let _restTickHandle = null;
+
+  function playRestChime() {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = new Ctx();
+      const beep = (freq, start, dur) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime + start);
+        gain.gain.exponentialRampToValueAtTime(0.28, ctx.currentTime + start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + start + dur);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(ctx.currentTime + start);
+        osc.stop(ctx.currentTime + start + dur + 0.05);
+      };
+      beep(880, 0, 0.16);
+      beep(1175, 0.18, 0.24);
+      setTimeout(() => ctx.close().catch(() => {}), 900);
+    } catch (_) {}
+  }
+
+  function startRestTimer(seconds, label) {
+    state.restTimer = { endsAt: Date.now() + seconds * 1000, duration: seconds, label: label || '', chimed: false };
+    renderRestTimerBar();
+    /* Ask once, lazily, only when the feature is actually used — so a background
+       notification can fire if the user switches tabs/apps while resting. Never
+       re-prompt if they dismissed or denied it. */
+    try {
+      if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+    } catch (_) {}
+  }
+
+  function adjustRestTimer(deltaSec) {
+    if (!state.restTimer) return;
+    state.restTimer.endsAt += deltaSec * 1000;
+    state.restTimer.duration = Math.max(5, state.restTimer.duration + deltaSec);
+    renderRestTimerBar();
+  }
+
+  function cancelRestTimer() {
+    state.restTimer = null;
+    document.querySelector('.rest-timer-bar')?.remove();
+  }
+
+  function renderRestTimerBar() {
+    const rt = state.restTimer;
+    let el = document.querySelector('.rest-timer-bar');
+    if (!rt) { el?.remove(); return; }
+
+    const remaining = Math.max(0, Math.round((rt.endsAt - Date.now()) / 1000));
+    if (remaining <= 0 && !rt.chimed) {
+      rt.chimed = true;
+      playRestChime();
+      if (navigator.vibrate) { try { navigator.vibrate([120, 80, 120]); } catch (_) {} }
+      if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+        try { new Notification('휴식 종료', { body: '다음 세트를 시작하세요 💪', tag: 'fitlog-rest' }); } catch (_) {}
+      }
+    }
+
+    const pct = Math.max(0, Math.min(100, (remaining / rt.duration) * 100));
+    const R = 16, C = 2 * Math.PI * R;
+    const offset = (C * (1 - pct / 100)).toFixed(1);
+    const mm = Math.floor(remaining / 60), ss = remaining % 60;
+    const timeStr = `${mm}:${String(ss).padStart(2, '0')}`;
+
+    const html = `
+      <svg class="rest-ring" viewBox="0 0 36 36">
+        <circle cx="18" cy="18" r="${R}" class="rest-ring-bg"/>
+        <circle cx="18" cy="18" r="${R}" class="rest-ring-fg" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${offset}"/>
+      </svg>
+      <div class="rest-timer-mid">
+        <div class="rest-timer-time${remaining <= 0 ? ' zero' : ''}">${remaining <= 0 ? '완료!' : timeStr}</div>
+        ${rt.label ? `<div class="rest-timer-label">${esc(rt.label)}</div>` : ''}
+      </div>
+      <button class="rest-timer-adj" data-rest-act="minus15" aria-label="15초 빼기">−15</button>
+      <button class="rest-timer-adj" data-rest-act="plus15" aria-label="15초 더하기">+15</button>
+      <button class="rest-timer-close" data-rest-act="cancel" aria-label="타이머 닫기">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>`;
+
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'rest-timer-bar';
+      el.addEventListener('click', onRestTimerClick);
+      document.body.appendChild(el);
+    }
+    el.innerHTML = html;
+  }
+
+  function onRestTimerClick(e) {
+    const btn = e.target.closest('[data-rest-act]');
+    if (!btn) return;
+    const act = btn.dataset.restAct;
+    if (act === 'cancel') cancelRestTimer();
+    else if (act === 'plus15') adjustRestTimer(15);
+    else if (act === 'minus15') adjustRestTimer(-15);
+  }
+
+  function startRestTicker() {
+    if (_restTickHandle) return;
+    _restTickHandle = setInterval(() => { if (state.restTimer) renderRestTimerBar(); }, 250);
+  }
+
   /* ── Navigation ─────────────────────────── */
   async function goTab(tab) {
     state.tab = tab;
@@ -315,6 +449,7 @@
     state.exerciseInfoId = null;
     state.weightPicker = null;
     state.repsPicker = null;
+    state.rpePicker = null;
     state.exerciseSearch = '';
   }
 
@@ -421,6 +556,7 @@
 
     if (state.weightPicker)   html += renderWeightPickerSheet();
     if (state.repsPicker)     html += renderRepsPickerSheet();
+    if (state.rpePicker)      html += renderRpePickerSheet();
     if (state.exerciseInfoId) html += renderExerciseInfoSheet(state.exerciseInfoId);
     if (state.pickerPart)     html += renderExercisePickerSheet(state.pickerPart);
 
@@ -462,6 +598,7 @@
         <button class="btn-hero" style="margin-top:6px" data-act="login-email" ${busy ? 'disabled' : ''}>
           ${isSignup ? '이메일로 회원가입' : '이메일로 로그인'}
         </button>
+        ${isSignup ? '' : `<button class="login-forgot" data-act="reset-password" ${busy ? 'disabled' : ''}>비밀번호 찾기 / 새로 설정</button>`}
       ` : `
         <div class="login-setup">Firebase 연결 전에는 이 기기에서만 사용할 수 있습니다.</div>
       `}
@@ -740,10 +877,12 @@
 
     const sets = ex.sets.map((set, idx) => {
       const done = set.done;
+      const warmup = !!set.warmup;
       const kg   = (set.kg   !== '' && set.kg   != null) ? set.kg   : '--';
       const reps = (set.reps !== '' && set.reps != null) ? set.reps : '--';
-      return `<div class="set-row${done?' done':''}">
-        <div class="set-num">${idx+1}</div>
+      const rpe  = (set.rpe  !== '' && set.rpe  != null) ? set.rpe  : '–';
+      return `<div class="set-row${done?' done':''}${warmup?' warmup':''}">
+        <button class="set-num${warmup?' warmup':''}" data-act="toggle-warmup" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="웜업 세트로 표시" title="탭하면 웜업/일반 세트 전환">${warmup?'W':idx+1}</button>
         <button class="val-chip${done?' done':''}" data-act="open-weight" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}">
           <span class="val-chip-num">${kg}</span>
           <span class="val-chip-unit">kg</span>
@@ -751,6 +890,10 @@
         <button class="val-chip${done?' done':''}" data-act="open-reps" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}">
           <span class="val-chip-num">${reps}</span>
           <span class="val-chip-unit">회</span>
+        </button>
+        <button class="rpe-chip${set.rpe?' set':''}" data-act="open-rpe" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="RPE(체감강도) 입력">
+          <span class="rpe-chip-lbl">RPE</span>
+          <span class="rpe-chip-num">${rpe}</span>
         </button>
         <button class="done-toggle${done?' done':''}" data-act="toggle-done" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="세트 완료">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -784,7 +927,7 @@
       </div>
       ${prevHint}
       <div class="set-table">
-        <div class="set-table-head"><span>#</span><span>무게</span><span>횟수</span><span>완료</span><span></span></div>
+        <div class="set-table-head"><span>#</span><span>무게</span><span>횟수</span><span>RPE</span><span>완료</span><span></span></div>
         ${sets}
         <button class="add-set-row" data-act="add-set" data-ex="${esc(ex.id)}">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -880,6 +1023,38 @@
         </div>
         <div class="presets-scroll">${presets}</div>
         <button class="picker-confirm" data-act="confirm-reps">확인</button>
+      </div>
+    </div>`;
+  }
+
+  /* ── RPE Picker Sheet ─────────────────────── */
+  /* RPE (Rate of Perceived Exertion): how hard that set felt, 6 (쉬움) ~ 10 (한계). */
+  function renderRpePickerSheet() {
+    const { value } = state.rpePicker;
+    const ex = state.session?.exercises.find(x => x.id === state.rpePicker.exId);
+    const idx = ex ? ex.sets.findIndex(st => st.id === state.rpePicker.setId) : -1;
+    const sub = ex ? `${ex.name} · ${idx+1}세트` : '';
+    const display = (value === '' || value == null) ? '–' : String(value);
+    const presets = RPE_PRESETS.map(r =>
+      `<button class="preset-chip${Number(value)===r?' on':''}" data-act="set-rpe-preset" data-val="${r}">${r}</button>`
+    ).join('');
+    return `<div class="sheet-backdrop">
+      <div class="sheet-panel" id="sheet-rpe">
+        <div class="sheet-grab"></div>
+        <div class="sheet-head">
+          <div><div class="sheet-title">RPE</div>${sub?`<div class="sheet-title-sub">${esc(sub)}</div>`:''}</div>
+          <button class="sheet-x" data-act="close-sheet" aria-label="닫기">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="picker-big">
+          <div class="picker-big-num">${esc(display)}</div>
+          <div class="picker-big-unit">체감강도</div>
+        </div>
+        <p class="rpe-hint">몇 개 더 할 수 있었을까요? — 6: 여유 4개+ · 8: 여유 2개 · 9: 여유 1개 · 10: 한계</p>
+        <div class="presets-scroll">${presets}</div>
+        <button class="picker-confirm ghost" data-act="clear-rpe">기록 안 함</button>
+        <button class="picker-confirm" style="margin-top:8px" data-act="confirm-rpe">확인</button>
       </div>
     </div>`;
   }
@@ -1039,6 +1214,15 @@
           <div class="settings-item-title">로그아웃</div>
           <div class="settings-item-sub">이 기기에서 계정 연결 해제</div>
         </div>
+      </button>
+      <button class="settings-item" data-act="delete-account" ${state.accountBusy?'disabled':''}>
+        <div class="settings-item-icon" style="background:var(--red-soft);color:var(--red)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+        </div>
+        <div class="settings-item-text">
+          <div class="settings-item-title" style="color:var(--red)">${state.accountBusy?'삭제 중…':'계정 및 데이터 삭제'}</div>
+          <div class="settings-item-sub">클라우드 기록을 포함해 완전히 삭제 (되돌릴 수 없음)</div>
+        </div>
       </button>` : `
       <div class="settings-label">계정</div>
       <button class="settings-item" data-act="show-login">
@@ -1080,6 +1264,26 @@
           </div>
           <svg class="settings-item-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
         </button>
+        <button class="settings-item" data-act="clear-local-data">
+          <div class="settings-item-icon" style="background:var(--red-soft);color:var(--red)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+          </div>
+          <div class="settings-item-text">
+            <div class="settings-item-title">이 기기 기록 초기화</div>
+            <div class="settings-item-sub">${state.user ? '이 기기에서만 지워지고 클라우드 기록은 남습니다' : '이 기기에 저장된 모든 기록이 사라집니다'}</div>
+          </div>
+        </button>
+
+        <div class="settings-label">휴식 타이머</div>
+        <div class="settings-item" style="cursor:default;flex-direction:column;align-items:stretch;gap:10px">
+          <div class="settings-item-text">
+            <div class="settings-item-title">세트 완료 시 기본 휴식 시간</div>
+            <div class="settings-item-sub">세트를 완료 체크하면 자동으로 시작됩니다 (웜업 세트는 40%로 단축)</div>
+          </div>
+          <div class="presets-scroll" style="margin:0">
+            ${REST_PRESETS.map(sec => `<button class="preset-chip${restDuration()===sec?' on':''}" data-act="set-rest-dur" data-val="${sec}">${sec}초</button>`).join('')}
+          </div>
+        </div>
 
         <div class="settings-label">앱 추가</div>
         <div class="settings-item" style="cursor:default">
@@ -1147,6 +1351,13 @@
       const set = ex?.sets.find(s=>s.id===btn.dataset.set);
       if (!set) return;
       state.repsPicker = { exId: btn.dataset.ex, setId: btn.dataset.set, value: set.reps };
+      render(); return;
+    }
+    if (act === 'open-rpe') {
+      const ex = state.session.exercises.find(x=>x.id===btn.dataset.ex);
+      const set = ex?.sets.find(s=>s.id===btn.dataset.set);
+      if (!set) return;
+      state.rpePicker = { exId: btn.dataset.ex, setId: btn.dataset.set, value: set.rpe };
       render(); return;
     }
 
@@ -1242,6 +1453,28 @@
       render(); return;
     }
 
+    /* RPE picker controls */
+    if (act === 'set-rpe-preset') {
+      if (!state.rpePicker) return;
+      state.rpePicker.value = Number(btn.dataset.val);
+      render(); return;
+    }
+    if (act === 'clear-rpe') {
+      if (!state.rpePicker) return;
+      state.rpePicker.value = '';
+      render(); return;
+    }
+    if (act === 'confirm-rpe') {
+      if (!state.rpePicker) return;
+      const { exId, setId, value } = state.rpePicker;
+      const ex = state.session.exercises.find(x=>x.id===exId);
+      const set = ex?.sets.find(s=>s.id===setId);
+      if (set) { set.rpe = value === '' ? '' : Number(value); await persist(); }
+      state.rpePicker = null;
+      render(); return;
+    }
+    if (act === 'toggle-warmup') { await handleToggleWarmup(btn.dataset.ex, btn.dataset.set); return; }
+
     /* Exercise actions */
     if (act === 'pick-ex')  { await handlePickEx(btn.dataset.part, btn.dataset.name, btn.dataset.exid); return; }
     if (act === 'quick-del-ex') {
@@ -1273,6 +1506,7 @@
     if (act === 'import') { importInput.click(); return; }
     if (act === 'login-google') { await handleGoogleLogin(); return; }
     if (act === 'login-email') { await handleEmailLogin(); return; }
+    if (act === 'reset-password') { await handleResetPassword(); return; }
     if (act === 'login-guest') { await enterApp(null, { guest: true }); return; }
     if (act === 'toggle-auth-mode') {
       /* save current input values before re-rendering */
@@ -1291,6 +1525,9 @@
       render(); return;
     }
     if (act === 'logout') { await handleLogout(); return; }
+    if (act === 'delete-account') { await handleDeleteAccount(); return; }
+    if (act === 'clear-local-data') { await handleClearLocalData(); return; }
+    if (act === 'set-rest-dur') { setRestDuration(Number(btn.dataset.val)); render(); return; }
   }
 
   /* ── Input handler ───────────────────────── */
@@ -1346,7 +1583,7 @@
     }
     const last = lastLog(name, s.date);
     const firstSet = last?.sets?.[0] || { kg:'', reps:'' };
-    s.exercises.push({ id: exId||uid(), part: partId, name, sets: [{ id:uid(), kg:firstSet.kg, reps:firstSet.reps, done:false }] });
+    s.exercises.push({ id: exId||uid(), part: partId, name, sets: [{ id:uid(), kg:firstSet.kg, reps:firstSet.reps, done:false, warmup:false, rpe:'' }] });
     if (!s.parts.includes(partId)) s.parts.push(partId);
     await persist();
     state.pickerPart = null;
@@ -1388,7 +1625,7 @@
     const ex = state.session.exercises.find(e=>e.id===exId);
     if (!ex) return;
     const prev = ex.sets[ex.sets.length-1] || { kg:'', reps:'' };
-    ex.sets.push({ id:uid(), kg:prev.kg, reps:prev.reps, done:false });
+    ex.sets.push({ id:uid(), kg:prev.kg, reps:prev.reps, done:false, warmup:false, rpe:'' });
     await persist(); render();
   }
 
@@ -1405,6 +1642,20 @@
     const set = ex?.sets.find(s=>s.id===setId);
     if (!set) return;
     set.done = !set.done;
+    /* Only kick off rest when a set is completed (not when un-checking it).
+       Warm-ups get a shorter rest than working sets by default. */
+    if (set.done) {
+      const dur = set.warmup ? Math.max(20, Math.round(restDuration() * 0.4)) : restDuration();
+      startRestTimer(dur, ex?.name || '');
+    }
+    await persist(); render();
+  }
+
+  async function handleToggleWarmup(exId, setId) {
+    const ex = state.session.exercises.find(e=>e.id===exId);
+    const set = ex?.sets.find(s=>s.id===setId);
+    if (!set) return;
+    set.warmup = !set.warmup;
     await persist(); render();
   }
 
@@ -1413,7 +1664,7 @@
     if (!ex) return;
     const last = lastLog(ex.name, state.session.date);
     if (!last) { toast('이전 기록이 없습니다'); return; }
-    ex.sets = last.sets.map(s=>({ id:uid(), kg:s.kg, reps:s.reps, done:false }));
+    ex.sets = last.sets.map(s=>({ id:uid(), kg:s.kg, reps:s.reps, done:false, warmup:!!s.warmup, rpe:'' }));
     await persist(); render();
     toast('지난 기록을 불러왔습니다');
   }
@@ -1630,6 +1881,35 @@
     }
   }
 
+  /* Also the escape hatch for an account that was created with Google and so
+     has no password: the reset link attaches one to that same account. */
+  async function handleResetPassword() {
+    if (state.authBusy) return;
+    if (!Cloud.configured()) { state.authError = 'Firebase가 아직 연결되지 않았습니다.'; render(); return; }
+
+    const emailEl = document.getElementById('auth-email');
+    const email = (emailEl ? emailEl.value : state.authEmail).trim();
+    if (!email) {
+      state.authError = '먼저 이메일을 입력한 뒤 다시 눌러 주세요.';
+      render(); return;
+    }
+
+    state.authEmail = email;
+    state.authBusy  = true;
+    state.authError = '';
+    render();
+    try {
+      await Cloud.sendPasswordReset(email);
+      state.authBusy = false;
+      render();
+      toast('비밀번호 재설정 메일을 보냈습니다 — 메일함을 확인해 주세요');
+    } catch (err) {
+      state.authBusy = false;
+      state.authError = Cloud.authMessage(err);
+      render();
+    }
+  }
+
   async function handleLogout() {
     if (!confirm('로그아웃할까요? 이 기기 기록은 남아 있고, 계정 기록은 클라우드에 유지됩니다.')) return;
     state.user = null;
@@ -1644,9 +1924,77 @@
     toast('로그아웃했습니다');
   }
 
+  /* Clears only this device's local cache (IndexedDB). Safe to offer to both
+     guest and logged-in users — for a logged-in user the cloud copy is
+     untouched and re-syncs back down on next load; for a guest it's a real
+     wipe, so that path gets its own, stronger confirmation. */
+  async function handleClearLocalData() {
+    const cloudBacked = !!state.user;
+    const msg = cloudBacked
+      ? '이 기기에 저장된 기록만 지웁니다. 클라우드 기록은 남아 있고, 다음에 접속하면 다시 내려받습니다. 계속할까요?'
+      : '로그인하지 않은 상태라 이 기기 기록이 유일한 사본입니다. 삭제하면 되돌릴 수 없습니다. 계속할까요?';
+    if (!confirm(msg)) return;
+    await WorkoutDB.replaceAll([], []);
+    state.sessions = [];
+    state.customExercises = [];
+    state.session = emptySession(state.date);
+    state.tab = 'home';
+    render();
+    toast('이 기기 기록을 초기화했습니다');
+    if (cloudBacked) syncInBackground();
+  }
+
+  /* Deletes the Firestore data and the Firebase Auth account itself — not
+     just a local reset. Firebase requires a *recent* login for this; if the
+     session is stale it throws auth/requires-recent-login, so we transparently
+     reauthenticate (Google popup, or a password prompt for email accounts)
+     and retry once rather than dead-ending the user. */
+  async function handleDeleteAccount() {
+    if (state.accountBusy) return;
+    if (!confirm('계정을 삭제하면 클라우드에 저장된 모든 운동 기록이 영구적으로 사라집니다. 이 작업은 되돌릴 수 없습니다. 계속할까요?')) return;
+    if (!confirm('정말로 계정과 모든 데이터를 삭제할까요? 마지막 확인입니다.')) return;
+
+    state.accountBusy = true;
+    render();
+    try {
+      await deleteAccountWithReauth();
+      await WorkoutDB.replaceAll([], []);
+      state.user = null;
+      state.guest = false;
+      localStorage.removeItem('fitlog-guest');
+      WorkoutDB.setScope('guest');
+      await WorkoutDB.open();
+      await loadWorkspace();
+      state.accountBusy = false;
+      state.authReady = true;
+      render();
+      toast('계정과 데이터를 삭제했습니다');
+    } catch (err) {
+      state.accountBusy = false;
+      render();
+      toast(err && err.message === 'cancelled' ? '삭제를 취소했습니다' : `삭제 실패: ${Cloud.authMessage(err)}`);
+    }
+  }
+
+  async function deleteAccountWithReauth() {
+    try {
+      await Cloud.deleteAccountAndData();
+    } catch (err) {
+      if (!err || err.code !== 'auth/requires-recent-login') throw err;
+      toast('보안을 위해 다시 로그인이 필요합니다');
+      try {
+        await Cloud.reauthenticate();
+      } catch (_) {
+        throw new Error('cancelled');
+      }
+      await Cloud.deleteAccountAndData();
+    }
+  }
+
   /* ── Init ────────────────────────────────── */
   async function init() {
     render();
+    startRestTicker();
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js').catch(()=>{});
       navigator.serviceWorker.addEventListener('message', event => {
