@@ -47,11 +47,11 @@
 
     /* Sheets */
     pickerPart: null,
+    pickSelection: [],   /* 시트에서 고른 운동들 — 완료를 눌러야 실제로 추가됨 */
     exerciseSearch: '',
     exerciseInfoId: null,
     weightPicker: null,   /* { exId, setId, value } */
     repsPicker:   null,   /* { exId, setId, value } */
-    rpePicker:    null,   /* { exId, setId, value } */
 
     /* Auth */
     authReady: false,
@@ -64,6 +64,9 @@
     authError: '',
     syncing: false,
     accountBusy: false,
+
+    /* History calendar — 보고 있는 달 (YYYY-MM) */
+    histMonth: null,
 
     /* Toast */
     toast: '',
@@ -84,8 +87,11 @@
   function setRestDuration(sec) {
     localStorage.setItem('fitlog-rest-dur', String(sec));
   }
+  /* Warm-ups need far less recovery than a working set. */
+  function restDurationFor(set) {
+    return set && set.warmup ? Math.max(20, Math.round(restDuration() * 0.4)) : restDuration();
+  }
 
-  const RPE_PRESETS = [6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10];
 
   /* ── DOM root ───────────────────────────── */
   const appEl = document.getElementById('app');
@@ -143,6 +149,15 @@
       return sum + (Number.isFinite(kg) && Number.isFinite(reps) ? kg * reps : 0);
     }, 0);
   }
+  /* "2세트" / "웜업" — matches the numbering shown in the set table. */
+  function setLabelFor(ex, setId) {
+    let n = 0;
+    for (const st of ex.sets || []) {
+      if (!st.warmup) n++;
+      if (st.id === setId) return st.warmup ? '웜업' : `${n}세트`;
+    }
+    return '';
+  }
   function exProgress(ex) {
     const sets = ex.sets || [];
     return { done: sets.filter(s => s.done).length, total: sets.length };
@@ -161,45 +176,6 @@
   }
 
   /* ── Chart helpers ───────────────────────── */
-  function renderWeeklyVolumeChart() {
-    const today = new Date();
-    const dow = today.getDay(); // 0=Sun
-    const toMon = dow === 0 ? 6 : dow - 1;
-    const weeks = [];
-    for (let w = 7; w >= 0; w--) {
-      const mon = new Date(today);
-      mon.setDate(today.getDate() - toMon - w * 7);
-      const sun = new Date(mon);
-      sun.setDate(mon.getDate() + 6);
-      const s0 = mon.toISOString().slice(0,10);
-      const s1 = sun.toISOString().slice(0,10);
-      const vol = state.sessions
-        .filter(s => s.date >= s0 && s.date <= s1)
-        .reduce((acc, s) => acc + (s.exercises||[]).reduce((a,ex)=>a+exVolume(ex),0), 0);
-      weeks.push({ label: `${mon.getMonth()+1}/${mon.getDate()}`, vol });
-    }
-    const maxVol = Math.max(...weeks.map(w=>w.vol), 1);
-    const thisVol = weeks[weeks.length-1].vol;
-    const W = 100 / weeks.length;
-    const bars = weeks.map((w, i) => {
-      const h = Math.round((w.vol / maxVol) * 50);
-      const x = (i * W + W * 0.15).toFixed(1);
-      const bw = (W * 0.7).toFixed(1);
-      return `<rect x="${x}%" y="${52-h}" width="${bw}%" height="${h}" rx="2" fill="${w.vol>0?'var(--accent)':'var(--line)'}"/>
-        <text x="${(i*W+W*0.5).toFixed(1)}%" y="68" text-anchor="middle" font-size="6.5" fill="var(--muted)">${w.label}</text>`;
-    }).join('');
-    const infoStr = thisVol > 0
-      ? `이번 주 ${thisVol>=1000?(thisVol/1000).toFixed(1)+'t':fmtNum(thisVol)+'kg'}`
-      : `최고 ${maxVol>=1000?(maxVol/1000).toFixed(1)+'t':fmtNum(maxVol)+'kg'}`;
-    return `<div class="vol-chart-card">
-      <div class="vol-chart-header">
-        <span class="vol-chart-title">주간 볼륨</span>
-        <span class="vol-chart-info">${infoStr}</span>
-      </div>
-      <svg viewBox="0 0 100 72" class="vol-chart-svg" preserveAspectRatio="none">${bars}</svg>
-    </div>`;
-  }
-
   function renderExerciseTrend(exName) {
     const history = [];
     const sorted = [...state.sessions].sort((a,b) => a.date < b.date ? -1 : 1);
@@ -263,12 +239,15 @@
     if (diff === -1) return '내일';
     return `${-diff}일 후`;
   }
+  /* Sunday-first, matching WEEKDAYS_SHORT and the history calendar.
+     (This used to start on Monday while the labels started on Sunday, so
+     every day in the week strip was captioned one day off.) */
   function getWeekDays() {
     const today = new Date();
-    const day = today.getDay(); // 0=Sun
-    const mon = new Date(today); mon.setDate(today.getDate() - ((day+6)%7));
+    const sun = new Date(today);
+    sun.setDate(today.getDate() - today.getDay());
     return Array.from({length:7}, (_,i) => {
-      const d = new Date(mon); d.setDate(mon.getDate()+i);
+      const d = new Date(sun); d.setDate(sun.getDate()+i);
       return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     });
   }
@@ -324,6 +303,37 @@
     }, 1800);
   }
 
+  /* Repaint ONLY the big number inside an open picker sheet.
+     Going through render() would swap appEl.innerHTML, destroying and
+     rebuilding the sheet — which replays its slide-up animation and makes the
+     whole panel appear to blink on every single keypress. */
+  function paintPickerValue() {
+    const p = state.weightPicker || state.repsPicker;
+    if (!p) return;
+    const el = document.querySelector('.picker-big-num');
+    if (!el) { render(); return; }
+    const str = p.str || '';
+    el.textContent = str || (p.value == null || p.value === '' ? '0' : String(p.value));
+  }
+
+  const CHECK_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+
+  function paintPickRow(row, on) {
+    if (!row) return;
+    row.classList.toggle('on', on);
+    const check = row.querySelector('.pick-check');
+    if (check) { check.classList.toggle('on', on); check.innerHTML = on ? CHECK_SVG : ''; }
+  }
+
+  function paintPickFooter() {
+    const btn = document.querySelector('[data-act="commit-picks"]');
+    if (!btn) return;
+    const n = state.pickSelection.length;
+    btn.disabled = !n;
+    btn.classList.toggle('ghost', !n);
+    btn.textContent = n ? `${n}개 운동 추가` : '운동을 선택해 주세요';
+  }
+
   /* ── Rest Timer ─────────────────────────── */
   /* Renders into its own node on <body>, ticked by a single setInterval — never
      through render()'s innerHTML swap, so a live countdown can never steal focus
@@ -374,12 +384,13 @@
   function cancelRestTimer() {
     state.restTimer = null;
     document.querySelector('.rest-timer-bar')?.remove();
+    document.body.classList.remove('has-rest-timer');
   }
 
   function renderRestTimerBar() {
     const rt = state.restTimer;
     let el = document.querySelector('.rest-timer-bar');
-    if (!rt) { el?.remove(); return; }
+    if (!rt) { el?.remove(); document.body.classList.remove('has-rest-timer'); return; }
 
     const remaining = Math.max(0, Math.round((rt.endsAt - Date.now()) / 1000));
     if (remaining <= 0 && !rt.chimed) {
@@ -417,6 +428,7 @@
       el.className = 'rest-timer-bar';
       el.addEventListener('click', onRestTimerClick);
       document.body.appendChild(el);
+      document.body.classList.add('has-rest-timer');
     }
     el.innerHTML = html;
   }
@@ -446,10 +458,10 @@
   }
   function closeAllSheets() {
     state.pickerPart = null;
+    state.pickSelection = [];
     state.exerciseInfoId = null;
     state.weightPicker = null;
     state.repsPicker = null;
-    state.rpePicker = null;
     state.exerciseSearch = '';
   }
 
@@ -474,53 +486,59 @@
     run: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="5" r="2"/><path d="M13 8l-3 3 2 2 1 5M12 13l-2 2-5-1M15 10l2-1 3 2 1-1"/></svg>`,
   };
 
-  /* ── Body Map SVG ─────────────────────────── */
+  /* ── Body Map SVG ─────────────────────────────────────────────────────────
+     An anatomical chart, not a 3D render: muscle groups are drawn as their
+     real shapes (fanned pec, V-taper lat, teardrop quad, the two heads of a
+     calf) and shaded by how hard the exercise hits them — solid red for the
+     prime mover, dimmer red for assisting muscles. Mirroring the right half
+     from the left with a scale(-1) group keeps the body symmetric and halves
+     the number of paths to maintain.
+     ------------------------------------------------------------------------ */
   function bodyMapSVG(primary = [], secondary = []) {
     const P = new Set(primary);
     const S = new Set(secondary);
     function mc(ids) {
       const arr = [].concat(ids);
-      if (arr.some(id => P.has(id))) return 'mp';
-      if (arr.some(id => S.has(id))) return 'ms';
-      return 'mi';
+      if (arr.some(id => P.has(id))) return 'mp';   /* 주동근 — 진한 빨강 */
+      if (arr.some(id => S.has(id))) return 'ms';   /* 협응근 — 옅은 빨강 */
+      return 'mi';                                   /* 미사용 — 어두운 회색 */
     }
 
-    const outline = `
-      <ellipse class="bb" cx="40" cy="11" rx="9" ry="10"/>
-      <path class="bb" d="M31,20 Q40,17 49,20 L58,27 Q68,33 67,46 L67,91 Q67,96 61,97 L55,97 L55,91 L25,91 L25,97 L19,97 Q13,96 13,91 L13,46 Q12,33 22,27 Z"/>
-      <path class="bb" d="M13,42 Q5,47 4,59 L5,73 Q6,79 11,80 L15,79 L15,42 Z"/>
-      <path class="bb" d="M67,42 Q75,47 76,59 L75,73 Q74,79 69,80 L65,79 L65,42 Z"/>
-      <path class="bb" d="M25,91 L20,95 Q14,101 14,117 L15,130 Q16,135 22,136 L29,136 L31,117 L31,91 Z"/>
-      <path class="bb" d="M55,91 L60,95 Q66,101 66,117 L65,130 Q64,135 58,136 L51,136 L49,117 L49,91 Z"/>
-      <rect class="bb" x="29" y="130" width="4" height="16" rx="2"/>
-      <rect class="bb" x="47" y="130" width="4" height="16" rx="2"/>`;
+    /* Silhouette. Head/neck/torso are drawn whole; the arm and leg are drawn
+       as the left limb only and mirrored with the muscles, which keeps the
+       figure symmetric and the coordinates easy to reason about.
+       Landmarks (viewBox 80×152): shoulder line y=28, waist y=60,
+       hip y=86, knee y=118, ankle y=146. */
+    const torso = `
+      <ellipse class="bb" cx="40" cy="10.6" rx="6.8" ry="8.4"/>
+      <path class="bb" d="M36.4 15.6h7.2v7.2c0 1.3-1.2 2-3.6 2s-3.6-.7-3.6-2z"/>
+      <path class="bb" d="M24.5 28q.5-3.5 6.5-4.8Q40 21.6 49 23.2q6 1.3 6.5 4.8 1 8-2 14-2.5 9-3.5 18-.6 8 1.5 16 1 6-2.5 10H31q-3.5-4-2.5-10 2.1-8 1.5-16-1-9-3.5-18-3-6-2-14Z"/>`;
 
-    const frontMuscles = `
-      <ellipse class="${mc('chest')}"      cx="33" cy="38" rx="9" ry="9"/>
-      <ellipse class="${mc('chest')}"      cx="47" cy="38" rx="9" ry="9"/>
-      <ellipse class="${mc('shoulders')}"  cx="14" cy="34" rx="7" ry="7"/>
-      <ellipse class="${mc('shoulders')}"  cx="66" cy="34" rx="7" ry="7"/>
-      <ellipse class="${mc('biceps')}"     cx="9"  cy="55" rx="5" ry="10"/>
-      <ellipse class="${mc('biceps')}"     cx="71" cy="55" rx="5" ry="10"/>
-      <ellipse class="${mc('abs')}"        cx="40" cy="67" rx="8" ry="12"/>
-      <ellipse class="${mc('quads')}"      cx="28" cy="111" rx="9" ry="15"/>
-      <ellipse class="${mc('quads')}"      cx="52" cy="111" rx="9" ry="15"/>
-      <ellipse class="${mc('calves')}"     cx="28" cy="138" rx="6" ry="9"/>
-      <ellipse class="${mc('calves')}"     cx="52" cy="138" rx="6" ry="9"/>`;
+    const limbs = `
+      <path class="bb" d="M24.2 28.2q-4.8 1.2-6.3 6-1.4 6-1.6 13l-.8 13q-.4 8 .4 14 .4 2.6 2.6 2.6t2.6-2.6q.8-6 .4-14l.8-13q.2-7 1.6-12 1.2-4.4-.9-7Z"/>
+      <path class="bb" d="M31 86q-3.5 2-4 10-.6 10 0 20l.6 6q-.6 10 0 18 .4 5.6 3 5.6t3-5.6q.8-8 .4-18l.6-6q1.4-10 2.6-20 .8-6 2.4-10Z"/>`;
 
-    const backMuscles = `
-      <path class="${mc('traps')}"         d="M27,21 Q40,16 53,21 L53,31 Q40,26 27,31 Z"/>
-      <ellipse class="${mc('lats')}"       cx="24" cy="56" rx="10" ry="15"/>
-      <ellipse class="${mc('lats')}"       cx="56" cy="56" rx="10" ry="15"/>
-      <ellipse class="${mc('lower_back')}" cx="40" cy="74" rx="9" ry="9"/>
-      <ellipse class="${mc('triceps')}"    cx="9"  cy="55" rx="5" ry="10"/>
-      <ellipse class="${mc('triceps')}"    cx="71" cy="55" rx="5" ry="10"/>
-      <ellipse class="${mc('shoulders')}"  cx="14" cy="34" rx="7" ry="7"/>
-      <ellipse class="${mc('shoulders')}"  cx="66" cy="34" rx="7" ry="7"/>
-      <ellipse class="${mc('glutes')}"     cx="28" cy="98" rx="12" ry="11"/>
-      <ellipse class="${mc('glutes')}"     cx="52" cy="98" rx="12" ry="11"/>
-      <ellipse class="${mc('hamstrings')}" cx="28" cy="118" rx="9" ry="15"/>
-      <ellipse class="${mc('hamstrings')}" cx="52" cy="118" rx="9" ry="15"/>`;
+    /* Left-half muscle shapes; mirrored to the right side at render time. */
+    const frontHalf = `
+      <path class="${mc('shoulders')}" d="M24.4 28.2q-5 1.2-6.5 6-.9 3.8-.3 6.4.4 1.4 1.8.8 3.6-1.6 5.6-5 1.6-3 1.4-6.4-.1-2-2-1.8Z"/>
+      <path class="${mc('chest')}" d="M39 27.4 28.6 30q-2.6 1.4-2.6 5 0 4.2 3.4 7.2 3.2 2.8 8 3.4 1.6.2 1.6-1.4Z"/>
+      <path class="${mc('abs')}" d="M39 45.8v25q0 1.4-1.4 1.4h-2.6q-1.6 0-1.8-1.6-.6-8-.2-16 .2-5 .8-7.4.2-1.4 1.6-1.4Z"/>
+      <path class="${mc('biceps')}" d="M25.2 33.6q.8 6.4-.2 13-.8 5-2.6 6-1.8.8-2.8-1.2-1.2-2.8-.8-7.4.4-5.6 2.2-9.4 1.6-3.2 3-2.8 1.1.4 1.2 1.8Z"/>
+      <path class="${mc('quads')}" d="M38.2 88.6q-1.2 11.4-3 21.4-1.2 6.6-3.2 7.4-2 .6-3-3-1.4-5.8-.8-14.4.6-8 2.4-11.6 1.4-2.6 4.4-2.2 2.8.4 3.2 2.4Z"/>
+      <path class="${mc('calves')}" d="M34.2 123q.6 7-.2 13.4-.6 4.6-2.6 5.2-2 .4-2.8-3.2-.6-5 0-10.8.6-5.2 2-6.2 1.6-1 2.8 0 .7.6.8 1.6Z"/>`;
+
+    const backHalf = `
+      <path class="${mc('traps')}" d="M40 22.8q-4.2.6-6.8 3.4-2.8 3-3 7.8-.2 4 1.8 6.8 2.4 3.2 6.6 4.6 1.4.4 1.4-.8Z"/>
+      <path class="${mc('shoulders')}" d="M24.4 28.2q-5 1.2-6.5 6-.9 3.8-.3 6.4.4 1.4 1.8.8 3.6-1.6 5.6-5 1.6-3 1.4-6.4-.1-2-2-1.8Z"/>
+      <path class="${mc(['lats','back'])}" d="M39 38.8 28.6 41.4q-1.8 1-1.2 4.8 1 6.4 3.8 10.6 2 3.2 5 5.4 1.8 1.2 2.8.4Z"/>
+      <path class="${mc('triceps')}" d="M25.2 33.6q.8 6.4-.2 13-.8 5-2.6 6-1.8.8-2.8-1.2-1.2-2.8-.8-7.4.4-5.6 2.2-9.4 1.6-3.2 3-2.8 1.1.4 1.2 1.8Z"/>
+      <path class="${mc('lower_back')}" d="M40 61.4v18.2h-4q-1.8 0-2-2-.6-6.6.2-12.6.3-2.6 2-2.8Z"/>
+      <path class="${mc('glutes')}" d="M39.2 73.4q-4.8.8-7.6 3.4-2.8 2.6-2.8 6.6 0 4.2 2.6 6.4 2.8 2.4 7.8 3 1.6.2 1.6-1.2Z"/>
+      <path class="${mc('hamstrings')}" d="M38 92.6q-1 10.4-2.6 19.4-1 5.6-3 6.2-2 .4-3-3.2-1.2-5.4-.8-13 .4-7.4 2-10.4 1.4-2.4 4.4-2 2.6.4 3 3Z"/>
+      <path class="${mc('calves')}" d="M34.2 123q.6 7-.2 13.4-.6 4.6-2.6 5.2-2 .4-2.8-3.2-.6-5 0-10.8.6-5.2 2-6.2 1.6-1 2.8 0 .7.6.8 1.6Z"/>`;
+
+    const mirrored = (half) => `${half}<g transform="translate(80,0) scale(-1,1)">${half}</g>`;
+    const figure = (half) => `${torso}${mirrored(limbs)}${mirrored(half)}`;
 
     return `
       <div class="body-map-wrap">
@@ -531,14 +549,10 @@
           <label for="bv-b" class="bm-tab">뒷면</label>
         </div>
         <div class="bm-panel bm-front">
-          <svg viewBox="0 0 80 160" xmlns="http://www.w3.org/2000/svg">
-            ${outline}${frontMuscles}
-          </svg>
+          <svg viewBox="0 0 80 152" xmlns="http://www.w3.org/2000/svg">${figure(frontHalf)}</svg>
         </div>
         <div class="bm-panel bm-back">
-          <svg viewBox="0 0 80 160" xmlns="http://www.w3.org/2000/svg">
-            ${outline}${backMuscles}
-          </svg>
+          <svg viewBox="0 0 80 152" xmlns="http://www.w3.org/2000/svg">${figure(backHalf)}</svg>
         </div>
       </div>`;
   }
@@ -556,7 +570,6 @@
 
     if (state.weightPicker)   html += renderWeightPickerSheet();
     if (state.repsPicker)     html += renderRepsPickerSheet();
-    if (state.rpePicker)      html += renderRpePickerSheet();
     if (state.exerciseInfoId) html += renderExerciseInfoSheet(state.exerciseInfoId);
     if (state.pickerPart)     html += renderExercisePickerSheet(state.pickerPart);
 
@@ -644,10 +657,8 @@
     /* week stats */
     const weekSessions = state.sessions.filter(s => weekDays.includes(s.date));
     const weekCount = weekSessions.length;
-    const weekVol = weekSessions.reduce((a,s)=>a+(s.exercises||[]).reduce((b,ex)=>b+exVolume(ex),0),0);
+    const weekSets = weekSessions.reduce((a,s)=>a+(s.exercises||[]).reduce((b,ex)=>b+(ex.sets||[]).filter(st=>st.done).length,0),0);
     const weekKm = weekSessions.reduce((a,s)=>a+(Number(s.run?.km)||0),0);
-    const volStr = weekVol >= 1000 ? (weekVol/1000).toFixed(1) : fmtNum(weekVol);
-    const volUnit = weekVol >= 1000 ? 't' : 'kg';
 
     let todayBlock;
     if (todaySess) {
@@ -683,8 +694,8 @@
           const p = PARTS.find(x=>x.id===id);
           return p ? `<span class="pdot" style="background:${p.color}"></span>` : '';
         }).join('');
-        const vol = (s.exercises||[]).reduce((a,ex)=>a+exVolume(ex),0);
-        const metaVol = vol > 0 ? `${vol>=1000?(vol/1000).toFixed(1)+'t':fmtNum(vol)+'kg'} · ` : '';
+        const sets = (s.exercises||[]).reduce((a,ex)=>a+(ex.sets||[]).filter(st=>st.done).length,0);
+        const metaVol = sets ? `${sets}세트 · ` : '';
         return `<button class="recent-row" data-act="open-day" data-date="${s.date}">
           <div class="recent-daybox">
             <div class="recent-day-d">${d}</div>
@@ -713,7 +724,7 @@
         <div class="week-strip">${weekStrip}</div>
         <div class="stat-row">
           <div class="stat-card"><div class="stat-val">${weekCount}<span>일</span></div><div class="stat-lbl">이번 주 운동</div></div>
-          <div class="stat-card"><div class="stat-val">${volStr}<span>${volUnit}</span></div><div class="stat-lbl">주간 볼륨</div></div>
+          <div class="stat-card"><div class="stat-val">${weekSets}<span>세트</span></div><div class="stat-lbl">이번 주 세트</div></div>
           <div class="stat-card"><div class="stat-val">${weekKm?weekKm.toFixed(weekKm%1?1:0):0}<span>km</span></div><div class="stat-lbl">주간 러닝</div></div>
         </div>
         ${todayBlock}
@@ -810,10 +821,11 @@
             <div class="sum-val">${stats.done}<span>/${stats.total}</span></div>
             <div class="sum-lbl">완료 세트</div>
           </div>
+          ${s.exercises.length ? `
           <div class="sum-item">
-            <div class="sum-val">${fmtNum(stats.volume)}<span>kg</span></div>
-            <div class="sum-lbl">총 볼륨</div>
-          </div>
+            <div class="sum-val">${s.exercises.length}<span>개</span></div>
+            <div class="sum-lbl">운동</div>
+          </div>` : ''}
           ${hasRunData(s.run) ? `
           <div class="sum-item">
             <div class="sum-val">${Number.isFinite(runKm)&&runKm?runKm:'-'}<span>km</span></div>
@@ -875,14 +887,18 @@
          </button>`
       : '';
 
-    const sets = ex.sets.map((set, idx) => {
+    /* Warm-ups are labelled W and don't consume a number, so the working sets
+       still read 1, 2, 3 — which is how a lifter counts them. */
+    let workingNo = 0;
+    const sets = ex.sets.map((set) => {
       const done = set.done;
       const warmup = !!set.warmup;
+      if (!warmup) workingNo++;
+      const label = warmup ? 'W' : workingNo;
       const kg   = (set.kg   !== '' && set.kg   != null) ? set.kg   : '--';
       const reps = (set.reps !== '' && set.reps != null) ? set.reps : '--';
-      const rpe  = (set.rpe  !== '' && set.rpe  != null) ? set.rpe  : '–';
       return `<div class="set-row${done?' done':''}${warmup?' warmup':''}">
-        <button class="set-num${warmup?' warmup':''}" data-act="toggle-warmup" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="웜업 세트로 표시" title="탭하면 웜업/일반 세트 전환">${warmup?'W':idx+1}</button>
+        <button class="set-num${warmup?' warmup':''}" data-act="toggle-warmup" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="웜업 세트로 전환" title="탭하면 웜업/일반 세트 전환">${label}</button>
         <button class="val-chip${done?' done':''}" data-act="open-weight" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}">
           <span class="val-chip-num">${kg}</span>
           <span class="val-chip-unit">kg</span>
@@ -890,10 +906,6 @@
         <button class="val-chip${done?' done':''}" data-act="open-reps" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}">
           <span class="val-chip-num">${reps}</span>
           <span class="val-chip-unit">회</span>
-        </button>
-        <button class="rpe-chip${set.rpe?' set':''}" data-act="open-rpe" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="RPE(체감강도) 입력">
-          <span class="rpe-chip-lbl">RPE</span>
-          <span class="rpe-chip-num">${rpe}</span>
         </button>
         <button class="done-toggle${done?' done':''}" data-act="toggle-done" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="세트 완료">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -905,11 +917,9 @@
     }).join('');
 
     const prog = exProgress(ex);
-    const vol = exVolume(ex);
     const allDone = prog.total > 0 && prog.done === prog.total;
     const metaBits = [];
     if (prog.total) metaBits.push(`${prog.done}/${prog.total} 세트`);
-    if (vol > 0)    metaBits.push(`${fmtNum(vol)}kg`);
 
     return `<article class="ex-card${allDone?' all-done':''}">
       <div class="ex-card-head">
@@ -927,7 +937,7 @@
       </div>
       ${prevHint}
       <div class="set-table">
-        <div class="set-table-head"><span>#</span><span>무게</span><span>횟수</span><span>RPE</span><span>완료</span><span></span></div>
+        <div class="set-table-head"><span>#</span><span>무게</span><span>횟수</span><span>완료</span><span></span></div>
         ${sets}
         <button class="add-set-row" data-act="add-set" data-ex="${esc(ex.id)}">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -942,12 +952,7 @@
     const { value, str = '' } = state.weightPicker;
     const display = str || (value == null || value === '' ? '0' : String(value));
     const ex = state.session?.exercises.find(x => x.id === state.weightPicker.exId);
-    const idx = ex ? ex.sets.findIndex(st => st.id === state.weightPicker.setId) : -1;
-    const sub = ex ? `${ex.name} · ${idx+1}세트` : '';
-    const WEIGHT_PRESETS = [20,30,40,50,60,70,80,90,100,110,120,140];
-    const presets = WEIGHT_PRESETS.map(w =>
-      `<button class="preset-chip${Number(value)===w&&!str?' on':''}" data-act="set-weight-preset" data-val="${w}">${w}</button>`
-    ).join('');
+    const sub = ex ? `${ex.name} · ${setLabelFor(ex, state.weightPicker.setId)}` : '';
     const numpadRows = [['7','8','9'],['4','5','6'],['1','2','3'],['.','0','⌫']];
     const numpad = numpadRows.map(row =>
       `<div class="numpad-row">${row.map(k => {
@@ -970,13 +975,6 @@
           <div class="picker-big-unit">kg</div>
         </div>
         <div class="numpad">${numpad}</div>
-        <div class="picker-adj-row">
-          <button class="adj-btn minus" data-act="step-weight" data-delta="-5">−5</button>
-          <button class="adj-btn minus" data-act="step-weight" data-delta="-2.5">−2.5</button>
-          <button class="adj-btn plus" data-act="step-weight" data-delta="2.5">+2.5</button>
-          <button class="adj-btn plus" data-act="step-weight" data-delta="5">+5</button>
-        </div>
-        <div class="presets-scroll">${presets}</div>
         <button class="picker-confirm" data-act="confirm-weight">확인</button>
       </div>
     </div>`;
@@ -987,12 +985,7 @@
     const { value, str = '' } = state.repsPicker;
     const display = str || (value == null || value === '' ? '0' : String(value));
     const ex = state.session?.exercises.find(x => x.id === state.repsPicker.exId);
-    const idx = ex ? ex.sets.findIndex(st => st.id === state.repsPicker.setId) : -1;
-    const sub = ex ? `${ex.name} · ${idx+1}세트` : '';
-    const REPS_PRESETS = [1,3,5,6,8,10,12,15,20,25,30];
-    const presets = REPS_PRESETS.map(r =>
-      `<button class="preset-chip${Number(value)===r&&!str?' on':''}" data-act="set-reps-preset" data-val="${r}">${r}</button>`
-    ).join('');
+    const sub = ex ? `${ex.name} · ${setLabelFor(ex, state.repsPicker.setId)}` : '';
     const numpadRows = [['7','8','9'],['4','5','6'],['1','2','3'],['C','0','⌫']];
     const numpad = numpadRows.map(row =>
       `<div class="numpad-row">${row.map(k => {
@@ -1015,46 +1008,7 @@
           <div class="picker-big-unit">회</div>
         </div>
         <div class="numpad">${numpad}</div>
-        <div class="picker-adj-row">
-          <button class="adj-btn minus" data-act="step-reps" data-delta="-2">−2</button>
-          <button class="adj-btn minus" data-act="step-reps" data-delta="-1">−1</button>
-          <button class="adj-btn plus" data-act="step-reps" data-delta="1">+1</button>
-          <button class="adj-btn plus" data-act="step-reps" data-delta="2">+2</button>
-        </div>
-        <div class="presets-scroll">${presets}</div>
         <button class="picker-confirm" data-act="confirm-reps">확인</button>
-      </div>
-    </div>`;
-  }
-
-  /* ── RPE Picker Sheet ─────────────────────── */
-  /* RPE (Rate of Perceived Exertion): how hard that set felt, 6 (쉬움) ~ 10 (한계). */
-  function renderRpePickerSheet() {
-    const { value } = state.rpePicker;
-    const ex = state.session?.exercises.find(x => x.id === state.rpePicker.exId);
-    const idx = ex ? ex.sets.findIndex(st => st.id === state.rpePicker.setId) : -1;
-    const sub = ex ? `${ex.name} · ${idx+1}세트` : '';
-    const display = (value === '' || value == null) ? '–' : String(value);
-    const presets = RPE_PRESETS.map(r =>
-      `<button class="preset-chip${Number(value)===r?' on':''}" data-act="set-rpe-preset" data-val="${r}">${r}</button>`
-    ).join('');
-    return `<div class="sheet-backdrop">
-      <div class="sheet-panel" id="sheet-rpe">
-        <div class="sheet-grab"></div>
-        <div class="sheet-head">
-          <div><div class="sheet-title">RPE</div>${sub?`<div class="sheet-title-sub">${esc(sub)}</div>`:''}</div>
-          <button class="sheet-x" data-act="close-sheet" aria-label="닫기">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
-        </div>
-        <div class="picker-big">
-          <div class="picker-big-num">${esc(display)}</div>
-          <div class="picker-big-unit">체감강도</div>
-        </div>
-        <p class="rpe-hint">몇 개 더 할 수 있었을까요? — 6: 여유 4개+ · 8: 여유 2개 · 9: 여유 1개 · 10: 한계</p>
-        <div class="presets-scroll">${presets}</div>
-        <button class="picker-confirm ghost" data-act="clear-rpe">기록 안 함</button>
-        <button class="picker-confirm" style="margin-top:8px" data-act="confirm-rpe">확인</button>
       </div>
     </div>`;
   }
@@ -1104,24 +1058,31 @@
     </div>`;
   }
 
-  /* ── Exercise pick items (shared by sheet + live search) ── */
+  /* ── Exercise pick items (shared by sheet + live search) ──
+     Tapping a row toggles it in state.pickSelection instead of adding it
+     immediately, so several exercises can be queued and committed in one go
+     with the 완료 button. Rows already in today's session show as 추가됨. */
   function buildPickItems(partId) {
     const added = new Set((state.session?.exercises||[]).filter(e=>e.part===partId).map(e=>e.name));
-    const q = state.exerciseSearch.toLowerCase();
+    const q = state.exerciseSearch.trim().toLowerCase();
     const library = libraryFor(partId).filter(e => !q || e.name.toLowerCase().includes(q) || (e.nameEn||'').toLowerCase().includes(q));
-    if (!library.length) return '<div class="help-text">검색 결과가 없습니다.</div>';
+    if (!library.length) return '<div class="help-text">검색 결과가 없습니다. 아래에서 직접 추가할 수 있습니다.</div>';
     return library.map(item => {
-      const on = added.has(item.name);
+      /* Three visual states, kept distinct so the footer count always matches
+         what looks selected: already in today's session (muted, "빼기"),
+         newly picked (bright check), and untouched. */
+      const inSession = added.has(item.name);
+      const picked = state.pickSelection.some(x => x.name === item.name);
       const eq = EQUIPMENT_LABEL[item.equipment] || '';
-      return `<div class="pick-item${on?' on':''}">
-        <button class="pick-item-name" data-act="pick-ex" data-part="${partId}" data-name="${esc(item.name)}" data-exid="${esc(item.id||'')}">
+      return `<div class="pick-item${inSession ? ' added' : picked ? ' on' : ''}">
+        <button class="pick-item-name" data-act="toggle-pick" data-part="${partId}" data-name="${esc(item.name)}" data-exid="${esc(item.id||'')}" ${inSession?'disabled':''}>
           <span>${esc(item.name)}</span>
           ${item.nameEn ? `<span class="pick-item-en">${esc(item.nameEn)}</span>` : ''}
         </button>
         ${eq ? `<span class="pick-item-eq">${esc(eq)}</span>` : ''}
-        ${on ? `<button class="custom-del" data-act="quick-del-ex" data-name="${esc(item.name)}" data-part="${partId}">빼기</button>` : ''}
-        ${item.custom ? `<button class="custom-del" data-act="del-custom" data-id="${esc(item.id)}">삭제</button>` : ''}
-        <div class="pick-check">${on ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : ''}</div>
+        ${inSession ? `<span class="pick-added-tag">추가됨</span><button class="custom-del" data-act="quick-del-ex" data-name="${esc(item.name)}" data-part="${partId}">빼기</button>` : ''}
+        ${item.custom && !inSession ? `<button class="custom-del" data-act="del-custom" data-id="${esc(item.id)}">삭제</button>` : ''}
+        ${inSession ? '' : `<div class="pick-check${picked?' on':''}">${picked ? CHECK_SVG : ''}</div>`}
       </div>`;
     }).join('');
   }
@@ -1129,11 +1090,15 @@
   /* ── Exercise Picker Sheet ────────────────── */
   function renderExercisePickerSheet(partId) {
     const part = PARTS.find(p => p.id === partId);
+    const n = state.pickSelection.length;
     return `<div class="sheet-backdrop">
-      <div class="sheet-panel">
+      <div class="sheet-panel picker-sheet">
         <div class="sheet-grab"></div>
         <div class="sheet-head">
-          <div class="sheet-title">${part?part.label:''} 운동</div>
+          <div>
+            <div class="sheet-title">${part?part.label:''} 운동</div>
+            <div class="sheet-title-sub">여러 개를 골라 한 번에 추가할 수 있어요</div>
+          </div>
           <button class="sheet-x" data-act="close-sheet" aria-label="닫기">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
@@ -1147,34 +1112,93 @@
           <input id="custom-name" placeholder="나만의 운동 직접 추가">
           <button class="btn-add-sm" data-act="add-custom" data-part="${partId}">추가</button>
         </div>
+        <div class="picker-footer">
+          <button class="picker-confirm${n?'':' ghost'}" data-act="commit-picks" data-part="${partId}" ${n?'':'disabled'}>
+            ${n ? `${n}개 운동 추가` : '운동을 선택해 주세요'}
+          </button>
+        </div>
       </div>
     </div>`;
   }
 
-  /* ── History Tab ──────────────────────────── */
-  function renderHistory() {
-    if (!state.sessions.length) return `
-      <header class="topbar"><div class="topbar-title">히스토리</div></header>
-      <main class="screen"><div class="empty-state"><div class="empty-icon">📊</div>아직 기록이 없습니다.<br>첫 운동을 기록해 보세요!</div></main>`;
+  /* ── History Tab — month calendar ──────────────────────────────────────
+     A month grid reads at a glance the way a list never does: which days you
+     trained, how the week actually went, where the gaps are. Each trained day
+     is dotted with the colours of the body parts worked; tapping one opens
+     that day's record. state.histMonth is the month being viewed. */
+  function shiftMonth(key, delta) {
+    const [y, m] = key.split('-').map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  }
 
-    const groups = new Map();
-    for (const s of state.sessions) {
-      const k = monthKey(s.date);
-      if (!groups.has(k)) groups.set(k, []);
-      groups.get(k).push(s);
+  function renderCalendar(mKey) {
+    const [y, m] = mKey.split('-').map(Number);
+    const first = new Date(y, m - 1, 1);
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const lead = first.getDay();               /* 0=일 */
+    const today = todayISO();
+
+    const byDate = new Map(state.sessions.map(s => [s.date, s]));
+    let cells = '';
+    for (let i = 0; i < lead; i++) cells += '<div class="cal-cell empty"></div>';
+    for (let d = 1; d <= daysInMonth; d++) {
+      const iso = `${mKey}-${String(d).padStart(2, '0')}`;
+      const s = byDate.get(iso);
+      const isToday = iso === today;
+      const future = iso > today;
+      const dots = s ? (s.parts || []).slice(0, 4).map(id => {
+        const p = PARTS.find(x => x.id === id);
+        return p ? `<span class="cal-dot" style="background:${p.color}"></span>` : '';
+      }).join('') : '';
+      cells += `<button class="cal-cell${s ? ' done' : ''}${isToday ? ' today' : ''}${future ? ' future' : ''}"
+        data-act="open-day" data-date="${iso}"${future ? ' disabled' : ''}>
+        <span class="cal-num">${d}</span>
+        <span class="cal-dots">${dots}</span>
+      </button>`;
     }
-    let body = renderWeeklyVolumeChart();
-    for (const [key, rows] of groups) {
-      body += `<div class="month-label">${fmtMonth(key)}</div><div class="recent-list">`;
+
+    const monthSessions = state.sessions.filter(s => s.date.startsWith(mKey));
+    const monthSets = monthSessions.reduce((a, s) =>
+      a + (s.exercises || []).reduce((b, ex) => b + (ex.sets || []).filter(st => st.done).length, 0), 0);
+    const canGoNext = shiftMonth(mKey, 1) <= monthKey(today);
+
+    return `
+      <div class="cal-card">
+        <div class="cal-head">
+          <button class="cal-nav" data-act="cal-shift" data-delta="-1" aria-label="이전 달">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <div class="cal-title">${fmtMonth(mKey)}</div>
+          <button class="cal-nav" data-act="cal-shift" data-delta="1" aria-label="다음 달"${canGoNext ? '' : ' disabled'}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
+        <div class="cal-dow">${['일','월','화','수','목','금','토'].map((w, i) =>
+          `<span class="${i === 0 ? 'sun' : i === 6 ? 'sat' : ''}">${w}</span>`).join('')}</div>
+        <div class="cal-grid">${cells}</div>
+        <div class="cal-foot">
+          <span><strong>${monthSessions.length}</strong>일 운동</span>
+          <span><strong>${monthSets}</strong>세트 완료</span>
+        </div>
+      </div>`;
+  }
+
+  function renderHistory() {
+    const mKey = state.histMonth || monthKey(todayISO());
+    let body = renderCalendar(mKey);
+
+    const rows = state.sessions.filter(s => s.date.startsWith(mKey));
+    if (rows.length) {
+      body += `<div class="sec-head"><div class="sec-title">이 달의 기록</div></div><div class="recent-list">`;
       for (const s of rows) {
         const [, m, d] = s.date.split('-').map(Number);
         const summary = sessionSummary(s) || '기록';
-        const dots = (s.parts||[]).map(id=>{
-          const p = PARTS.find(x=>x.id===id);
-          return p ? `<span class="pdot" style="background:${p.color}"></span>` : '';
-        }).join('');
-        const vol = (s.exercises||[]).reduce((a,ex)=>a+exVolume(ex),0);
-        const volStr = vol > 0 ? (vol>=1000?(vol/1000).toFixed(1)+'t':fmtNum(vol)+'kg') : '';
+        const sets = (s.exercises || []).reduce((a, ex) => a + (ex.sets || []).filter(st => st.done).length, 0);
+        const meta = [];
+        if ((s.exercises || []).length) meta.push(`${s.exercises.length}개 운동`);
+        if (sets) meta.push(`${sets}세트`);
+        if (hasRunData(s.run)) meta.push(`러닝 ${s.run.km || '-'}km`);
         body += `<button class="recent-row" data-act="open-day" data-date="${s.date}">
           <div class="recent-daybox">
             <div class="recent-day-d">${d}</div>
@@ -1182,14 +1206,16 @@
           </div>
           <div class="recent-mid">
             <div class="recent-parts">${esc(summary)}</div>
-            <div class="recent-meta"><span class="dotline">${dots}</span></div>
+            ${meta.length ? `<div class="recent-meta">${esc(meta.join(' · '))}</div>` : ''}
           </div>
-          ${volStr ? `<div class="recent-vol">${volStr}</div>` : ''}
           <svg class="recent-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
         </button>`;
       }
       body += '</div>';
+    } else {
+      body += `<div class="empty-state" style="margin-top:22px">이 달에는 아직 기록이 없습니다.</div>`;
     }
+
     return `<header class="topbar"><div class="topbar-title">히스토리</div></header>
       <main class="screen">${body}</main>`;
   }
@@ -1278,31 +1304,16 @@
         <div class="settings-item" style="cursor:default;flex-direction:column;align-items:stretch;gap:10px">
           <div class="settings-item-text">
             <div class="settings-item-title">세트 완료 시 기본 휴식 시간</div>
-            <div class="settings-item-sub">세트를 완료 체크하면 자동으로 시작됩니다 (웜업 세트는 40%로 단축)</div>
+            <div class="settings-item-sub">횟수를 입력하거나 완료(✓)를 누르면 자동으로 시작됩니다. 웜업 세트는 더 짧게 잡습니다.</div>
           </div>
           <div class="presets-scroll" style="margin:0">
             ${REST_PRESETS.map(sec => `<button class="preset-chip${restDuration()===sec?' on':''}" data-act="set-rest-dur" data-val="${sec}">${sec}초</button>`).join('')}
           </div>
         </div>
 
-        <div class="settings-label">앱 추가</div>
-        <div class="settings-item" style="cursor:default">
-          <div class="settings-item-icon" style="background:color-mix(in srgb, var(--purple) 15%, var(--surface));color:var(--purple)">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-          </div>
-          <div class="settings-item-text">
-            <div class="settings-item-title">홈 화면에 추가</div>
-            <div class="settings-item-sub">브라우저 메뉴 → 홈 화면에 추가</div>
-          </div>
-        </div>
-
-        <div class="settings-label">FITLOG</div>
-        <div class="settings-item" style="cursor:default">
-          <div class="settings-item-text">
-            <div class="settings-item-title">버전 2.0</div>
-            <div class="settings-item-sub">${state.user ? '기록은 계정 클라우드와 이 기기에 저장됩니다' : '기록은 이 기기 브라우저에만 저장됩니다'}</div>
-          </div>
-        </div>
+        <p class="settings-note">${state.user
+          ? '기록은 계정 클라우드와 이 기기에 함께 저장됩니다.'
+          : '지금은 이 기기에만 저장됩니다. 로그인하면 기기가 바뀌어도 기록이 이어집니다.'}</p>
         <div style="height:24px"></div>
       </main>`;
   }
@@ -1327,10 +1338,15 @@
     if (act === 'go-tab')     { await goTab(btn.dataset.tab); return; }
     if (act === 'today')      { await loadDay(todayISO()); return; }
     if (act === 'open-day')   { await loadDay(btn.dataset.date); return; }
+    if (act === 'cal-shift')  {
+      state.histMonth = shiftMonth(state.histMonth || monthKey(todayISO()), Number(btn.dataset.delta));
+      render(); return;
+    }
 
     /* Sheet openers */
     if (act === 'open-picker') {
       state.pickerPart = btn.dataset.part;
+      state.pickSelection = [];
       state.exerciseSearch = '';
       render(); return;
     }
@@ -1353,49 +1369,28 @@
       state.repsPicker = { exId: btn.dataset.ex, setId: btn.dataset.set, value: set.reps };
       render(); return;
     }
-    if (act === 'open-rpe') {
-      const ex = state.session.exercises.find(x=>x.id===btn.dataset.ex);
-      const set = ex?.sets.find(s=>s.id===btn.dataset.set);
-      if (!set) return;
-      state.rpePicker = { exId: btn.dataset.ex, setId: btn.dataset.set, value: set.rpe };
-      render(); return;
-    }
 
     /* Sheet closers */
     if (act === 'close-picker' || act === 'close-info' || act === 'close-sheet') { closeAllSheets(); render(); return; }
 
     /* Weight picker controls */
-    if (act === 'set-weight-preset') {
-      if (!state.weightPicker) return;
-      state.weightPicker.value = Number(btn.dataset.val);
-      state.weightPicker.str = '';
-      render(); return;
-    }
-    if (act === 'step-weight') {
-      if (!state.weightPicker) return;
-      const p = state.weightPicker;
-      const cur = p.str ? (parseFloat(p.str)||0) : (Number(p.value)||0);
-      const next = Math.max(0, Math.round((cur + Number(btn.dataset.delta)) * 4) / 4);
-      p.value = next; p.str = '';
-      render(); return;
-    }
     if (act === 'numpad-w-digit') {
       if (!state.weightPicker) return;
       const p = state.weightPicker;
       if ((p.str||'').length < 5) p.str = (p.str||'') + btn.dataset.d;
-      render(); return;
+      paintPickerValue(); return;
     }
     if (act === 'numpad-w-dot') {
       if (!state.weightPicker) return;
       const p = state.weightPicker;
       if (!(p.str||'').includes('.') && (p.str||'').length < 5)
         p.str = (p.str||'0') + '.';
-      render(); return;
+      paintPickerValue(); return;
     }
     if (act === 'numpad-w-back') {
       if (!state.weightPicker) return;
       state.weightPicker.str = (state.weightPicker.str||'').slice(0,-1);
-      render(); return;
+      paintPickerValue(); return;
     }
     if (act === 'confirm-weight') {
       if (!state.weightPicker) return;
@@ -1410,36 +1405,22 @@
     }
 
     /* Reps picker controls */
-    if (act === 'set-reps-preset') {
-      if (!state.repsPicker) return;
-      state.repsPicker.value = Number(btn.dataset.val);
-      state.repsPicker.str = '';
-      render(); return;
-    }
-    if (act === 'step-reps') {
-      if (!state.repsPicker) return;
-      const p = state.repsPicker;
-      const cur = p.str ? (parseInt(p.str)||0) : (Number(p.value)||0);
-      const next = Math.max(0, Math.round(cur + Number(btn.dataset.delta)));
-      p.value = next; p.str = '';
-      render(); return;
-    }
     if (act === 'numpad-r-digit') {
       if (!state.repsPicker) return;
       const p = state.repsPicker;
       if ((p.str||'').length < 3) p.str = (p.str||'') + btn.dataset.d;
-      render(); return;
+      paintPickerValue(); return;
     }
     if (act === 'numpad-r-back') {
       if (!state.repsPicker) return;
       state.repsPicker.str = (state.repsPicker.str||'').slice(0,-1);
-      render(); return;
+      paintPickerValue(); return;
     }
     if (act === 'numpad-r-clear') {
       if (!state.repsPicker) return;
       state.repsPicker.str = '';
       state.repsPicker.value = 0;
-      render(); return;
+      paintPickerValue(); return;
     }
     if (act === 'confirm-reps') {
       if (!state.repsPicker) return;
@@ -1448,35 +1429,39 @@
       if (str) value = parseInt(str) || 0;
       const ex = state.session.exercises.find(x=>x.id===exId);
       const set = ex?.sets.find(s=>s.id===setId);
-      if (set) { set.reps = value; await persist(); }
+      if (set) {
+        set.reps = value;
+        /* Entering reps IS finishing the set — that is the last thing you do
+           after racking the weight. Mark it done and start the rest countdown
+           automatically instead of making the user hunt for a second button.
+           The ✓ stays tappable to undo or to tick a set off by hand. */
+        if (value > 0 && !set.done) {
+          set.done = true;
+          startRestTimer(restDurationFor(set), ex ? ex.name : '');
+        }
+        await persist();
+      }
       state.repsPicker = null;
       render(); return;
     }
 
-    /* RPE picker controls */
-    if (act === 'set-rpe-preset') {
-      if (!state.rpePicker) return;
-      state.rpePicker.value = Number(btn.dataset.val);
-      render(); return;
-    }
-    if (act === 'clear-rpe') {
-      if (!state.rpePicker) return;
-      state.rpePicker.value = '';
-      render(); return;
-    }
-    if (act === 'confirm-rpe') {
-      if (!state.rpePicker) return;
-      const { exId, setId, value } = state.rpePicker;
-      const ex = state.session.exercises.find(x=>x.id===exId);
-      const set = ex?.sets.find(s=>s.id===setId);
-      if (set) { set.rpe = value === '' ? '' : Number(value); await persist(); }
-      state.rpePicker = null;
-      render(); return;
-    }
     if (act === 'toggle-warmup') { await handleToggleWarmup(btn.dataset.ex, btn.dataset.set); return; }
 
     /* Exercise actions */
-    if (act === 'pick-ex')  { await handlePickEx(btn.dataset.part, btn.dataset.name, btn.dataset.exid); return; }
+    if (act === 'toggle-pick') {
+      const name = btn.dataset.name;
+      const i = state.pickSelection.findIndex(x => x.name === name);
+      const nowOn = i < 0;
+      if (i >= 0) state.pickSelection.splice(i, 1);
+      else state.pickSelection.push({ part: btn.dataset.part, name, exId: btn.dataset.exid || '' });
+      /* Repaint just this row and the footer count. A full render() would
+         rebuild the sheet and replay its slide-up animation on every tap —
+         and choosing several exercises means several taps in a row. */
+      paintPickRow(btn.closest('.pick-item'), nowOn);
+      paintPickFooter();
+      return;
+    }
+    if (act === 'commit-picks') { await handleCommitPicks(btn.dataset.part); return; }
     if (act === 'quick-del-ex') {
       const s = state.session;
       const name = btn.dataset.name;
@@ -1574,36 +1559,62 @@
     await persist(); render();
   }
 
-  async function handlePickEx(partId, name, exId) {
-    if (!name) return;
+  /* Appends one exercise to the session, pre-filling the first set from the
+     last time this exercise was logged. Does NOT touch sheet state or render —
+     handleCommitPicks drives several of these and then renders once. */
+  function addExerciseToSession(partId, name, exId) {
     const s = state.session;
-    if (s.exercises.some(e=>e.part===partId&&e.name===name)) {
-      toast('이미 추가된 운동입니다');
-      return;
-    }
+    if (!name || s.exercises.some(e => e.part === partId && e.name === name)) return false;
     const last = lastLog(name, s.date);
     const firstSet = last?.sets?.[0] || { kg:'', reps:'' };
-    s.exercises.push({ id: exId||uid(), part: partId, name, sets: [{ id:uid(), kg:firstSet.kg, reps:firstSet.reps, done:false, warmup:false, rpe:'' }] });
+    s.exercises.push({
+      id: exId || uid(), part: partId, name,
+      sets: [{ id: uid(), kg: firstSet.kg, reps: firstSet.reps, done: false, warmup: false }],
+    });
     if (!s.parts.includes(partId)) s.parts.push(partId);
+    return true;
+  }
+
+  async function handlePickEx(partId, name, exId) {
+    if (!addExerciseToSession(partId, name, exId)) { toast('이미 추가된 운동입니다'); return; }
     await persist();
-    state.pickerPart = null;
-    state.exerciseSearch = '';
+    closeAllSheets();
     render();
   }
 
+  /* Commit every exercise queued in the picker in one shot. */
+  async function handleCommitPicks(partId) {
+    const picks = state.pickSelection.slice();
+    if (!picks.length) return;
+    let n = 0;
+    for (const p of picks) if (addExerciseToSession(p.part || partId, p.name, p.exId)) n++;
+    await persist();
+    closeAllSheets();
+    render();
+    toast(n > 1 ? `${n}개 운동을 추가했습니다` : '운동을 추가했습니다');
+  }
+
+  /* Saves a user-defined exercise and queues it in the picker rather than
+     committing straight away, so the sheet stays open and it can be added
+     together with whatever else is already selected. */
   async function handleAddCustom(partId, name) {
     const trimmed = name.trim();
     if (!trimmed) return;
     const lib = libraryFor(partId);
-    if (lib.some(e=>e.name===trimmed)) {
-      await handlePickEx(partId, trimmed, '');
-      return;
+    const existing = lib.find(e => e.name === trimmed);
+    if (!existing) {
+      const item = { id: 'c_' + uid(), part: partId, name: trimmed, custom: true };
+      await WorkoutDB.putCustomExercise(item);
+      await cloudSync(() => Cloud.saveCustom(item));
+      state.customExercises.push(item);
     }
-    const item = { id: 'c_'+uid(), part: partId, name: trimmed, custom: true };
-    await WorkoutDB.putCustomExercise(item);
-    await cloudSync(() => Cloud.saveCustom(item));
-    state.customExercises.push(item);
-    await handlePickEx(partId, trimmed, item.id);
+    const id = existing ? (existing.id || '') : state.customExercises[state.customExercises.length - 1].id;
+    const already = (state.session?.exercises || []).some(e => e.part === partId && e.name === trimmed);
+    if (!already && !state.pickSelection.some(x => x.name === trimmed)) {
+      state.pickSelection.push({ part: partId, name: trimmed, exId: id });
+    }
+    state.exerciseSearch = '';
+    render();
   }
 
   async function handleDeleteCustom(id) {
@@ -1625,7 +1636,7 @@
     const ex = state.session.exercises.find(e=>e.id===exId);
     if (!ex) return;
     const prev = ex.sets[ex.sets.length-1] || { kg:'', reps:'' };
-    ex.sets.push({ id:uid(), kg:prev.kg, reps:prev.reps, done:false, warmup:false, rpe:'' });
+    ex.sets.push({ id:uid(), kg:prev.kg, reps:prev.reps, done:false, warmup:false });
     await persist(); render();
   }
 
@@ -1642,12 +1653,9 @@
     const set = ex?.sets.find(s=>s.id===setId);
     if (!set) return;
     set.done = !set.done;
-    /* Only kick off rest when a set is completed (not when un-checking it).
-       Warm-ups get a shorter rest than working sets by default. */
-    if (set.done) {
-      const dur = set.warmup ? Math.max(20, Math.round(restDuration() * 0.4)) : restDuration();
-      startRestTimer(dur, ex?.name || '');
-    }
+    /* Only kick off rest when a set is completed, not when un-checking it. */
+    if (set.done) startRestTimer(restDurationFor(set), ex?.name || '');
+    else cancelRestTimer();
     await persist(); render();
   }
 
@@ -1664,7 +1672,7 @@
     if (!ex) return;
     const last = lastLog(ex.name, state.session.date);
     if (!last) { toast('이전 기록이 없습니다'); return; }
-    ex.sets = last.sets.map(s=>({ id:uid(), kg:s.kg, reps:s.reps, done:false, warmup:!!s.warmup, rpe:'' }));
+    ex.sets = last.sets.map(s=>({ id:uid(), kg:s.kg, reps:s.reps, done:false, warmup:!!s.warmup }));
     await persist(); render();
     toast('지난 기록을 불러왔습니다');
   }

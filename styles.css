@@ -313,33 +313,36 @@ em { font-style: normal; }
    WORKOUT — body part selection (redesigned)
    ============================================================ */
 .part-grid {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px;
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px;
   margin-bottom: 8px;
 }
 .part-tile {
-  position: relative; display: flex; flex-direction: column; align-items: flex-start;
-  gap: 9px; padding: 13px 12px; border-radius: var(--r-md);
+  position: relative; display: flex; flex-direction: column; align-items: center;
+  gap: 5px; padding: 8px 4px; border-radius: var(--r-md);
   background: var(--surface); border: 1.5px solid var(--line);
   transition: transform .12s, border-color .18s, background .18s;
-  overflow: hidden; text-align: left;
+  overflow: hidden; text-align: center;
 }
 .part-tile:active { transform: scale(.95); }
 .part-tile .pt-icon {
-  width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center;
+  width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
   background: var(--surface-2); color: var(--pt-color, var(--sub));
   transition: background .18s, color .18s;
 }
-.part-tile .pt-icon svg { width: 21px; height: 21px; }
-.part-tile .pt-name { font-size: 14px; font-weight: 800; letter-spacing: -0.02em; }
-.part-tile .pt-count {
-  font-size: 11px; color: var(--muted); font-weight: 700; margin-top: -4px;
+.part-tile .pt-icon svg { width: 17px; height: 17px; }
+.part-tile .pt-name { font-size: 12.5px; font-weight: 800; letter-spacing: -0.02em; }
+/* 개수는 선택된 부위에만 — 안 고른 타일의 "탭하여 추가"는 군더더기라 숨깁니다. */
+.part-tile .pt-count { display: none; }
+.part-tile.on .pt-count {
+  display: block; font-size: 10.5px; font-weight: 700; margin-top: -2px;
 }
 .part-tile .pt-check {
-  position: absolute; top: 9px; right: 9px; width: 20px; height: 20px; border-radius: 50%;
+  position: absolute; top: 5px; right: 5px; width: 15px; height: 15px; border-radius: 50%;
   display: grid; place-items: center; opacity: 0; transform: scale(.5);
   background: var(--pt-color, var(--accent)); color: #0b0e05;
   transition: opacity .18s, transform .18s;
 }
+.part-tile .pt-check svg { width: 9px; height: 9px; }
 .part-tile.on {
   border-color: var(--pt-color, var(--accent));
   background: color-mix(in srgb, var(--pt-color, var(--accent)) 12%, var(--surface));
@@ -416,9 +419,11 @@ em { font-style: normal; }
 .rpe-hint { font-size: 12px; color: var(--muted); font-weight: 600; line-height: 1.5; margin: -6px 0 14px; }
 .val-chip {
   height: 46px; border-radius: var(--r-sm); background: var(--surface-2);
-  border: 1px solid var(--line); display: flex; align-items: baseline;
+  border: 1px solid var(--line); display: flex; align-items: center;
   justify-content: center; gap: 3px; transition: border-color .15s, background .15s, transform .1s;
 }
+/* 숫자와 단위의 시각적 균형만 살짝 맞춥니다 (정렬은 가운데 기준). */
+.val-chip-unit { transform: translateY(1px); }
 .val-chip:active { transform: scale(.96); border-color: var(--line-2); }
 .val-chip-num { font-size: 18px; font-weight: 800; letter-spacing: -0.03em; }
 .val-chip-unit { font-size: 11px; color: var(--muted); font-weight: 700; }
@@ -594,6 +599,12 @@ em { font-style: normal; }
   min-height: 56px;
 }
 .pick-item.on { border-color: var(--accent-line); background: color-mix(in srgb, var(--accent) 8%, var(--surface-2)); }
+/* Already in today's session: present but visually settled, not "selected". */
+.pick-item.added { border-color: transparent; background: var(--surface-3); opacity: .72; }
+.pick-added-tag {
+  font-size: 11px; font-weight: 800; color: var(--accent); flex-shrink: 0;
+  padding: 3px 9px; border-radius: 999px; background: var(--accent-soft);
+}
 .pick-item-name {
   flex: 1; text-align: left; padding: 15px 8px; font-size: 15px; font-weight: 700;
   display: flex; flex-direction: column; gap: 3px; min-width: 0;
@@ -613,6 +624,14 @@ em { font-style: normal; }
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
   border-color: transparent; color: var(--accent-ink);
 }
+.pick-item-name:disabled { opacity: .6; }
+/* Sticky commit bar so the count stays reachable in a long list. */
+.picker-footer {
+  position: sticky; bottom: 0; z-index: 2;
+  padding: 12px 0 calc(4px + var(--safe-bot));
+  background: linear-gradient(to top, var(--surface) 72%, transparent);
+}
+.picker-confirm:disabled { opacity: .75; }
 .custom-add-row { display: flex; gap: 8px; margin-top: 10px; padding-top: 14px; border-top: 1px solid var(--line); }
 .custom-add-row input {
   flex: 1; height: 46px; background: var(--surface-2); border: 1px solid var(--line);
@@ -653,14 +672,20 @@ em { font-style: normal; }
 .bm-panel { display: flex; justify-content: center; }
 #bv-f:checked ~ .bm-back { display: none; }
 #bv-b:checked ~ .bm-front { display: none; }
-.bm-panel svg { width: 132px; height: 210px; }
+.bm-panel svg { width: 150px; height: 285px; }
 
-.bb { fill: #262a36; }
-.mi { fill: #2f3441; }
-.ms { fill: color-mix(in srgb, var(--orange) 42%, #2f3441); }
-.mp { fill: var(--accent); }
-@keyframes mpulse { 0%,100% { opacity: .82; filter: drop-shadow(0 0 3px var(--accent)); } 50% { opacity: 1; filter: drop-shadow(0 0 8px var(--accent)); } }
-.mp { animation: mpulse 2.1s ease-in-out infinite; }
+/* Heat map: the harder a muscle works, the hotter it reads.
+   bb = body silhouette, mi = unused, ms = assisting, mp = prime mover. */
+.bb { fill: #232734; }
+.mi { fill: #2e3340; }
+.ms { fill: #8a3a3f; }
+.mp { fill: #FF4757; }
+@keyframes mpulse {
+  0%,100% { opacity: .9;  filter: drop-shadow(0 0 2px rgba(255,71,87,.55)); }
+  50%     { opacity: 1;   filter: drop-shadow(0 0 7px rgba(255,71,87,.9)); }
+}
+.mp { animation: mpulse 2.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .mp { animation: none; } }
 
 .muscle-legend { margin-bottom: 16px; }
 .muscle-legend-title { font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
@@ -707,6 +732,56 @@ em { font-style: normal; }
 .recent-vol { font-size: 12px; font-weight: 800; color: var(--sub); flex-shrink: 0; }
 
 /* ============================================================
+   HISTORY CALENDAR
+   ============================================================ */
+.cal-card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); padding: 14px 12px 12px; box-shadow: var(--sh-card);
+  margin-bottom: 6px;
+}
+.cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.cal-title { font-size: 16px; font-weight: 800; letter-spacing: -0.03em; }
+.cal-nav {
+  width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
+  background: var(--surface-2); border: 1px solid var(--line); color: var(--sub);
+  transition: transform .1s, background .15s;
+}
+.cal-nav:active { transform: scale(.92); background: var(--surface-3); }
+.cal-nav:disabled { opacity: .28; }
+.cal-dow {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 6px;
+}
+.cal-dow span {
+  text-align: center; font-size: 11px; font-weight: 800; color: var(--muted);
+  letter-spacing: .02em;
+}
+.cal-dow .sun { color: var(--red); }
+.cal-dow .sat { color: var(--blue); }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.cal-cell {
+  aspect-ratio: 1 / 1; border-radius: 10px; position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  background: transparent; border: 1.5px solid transparent;
+  transition: background .15s, border-color .15s, transform .1s;
+}
+.cal-cell.empty { pointer-events: none; }
+.cal-cell:not(.empty):not(.future):active { transform: scale(.9); }
+.cal-num { font-size: 13px; font-weight: 700; color: var(--sub); line-height: 1; }
+.cal-cell.future .cal-num { color: var(--muted); opacity: .45; }
+.cal-cell.done { background: var(--surface-2); }
+.cal-cell.done .cal-num { color: var(--text); font-weight: 800; }
+.cal-cell.today { border-color: var(--accent); }
+.cal-cell.today .cal-num { color: var(--accent); font-weight: 900; }
+.cal-dots { display: flex; gap: 2px; height: 5px; align-items: center; }
+.cal-dot { width: 4px; height: 4px; border-radius: 50%; }
+.cal-foot {
+  display: flex; gap: 16px; justify-content: center;
+  margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--line);
+  font-size: 12.5px; color: var(--muted); font-weight: 600;
+}
+.cal-foot strong { color: var(--text); font-weight: 800; }
+
+/* ============================================================
    SETTINGS
    ============================================================ */
 .settings-label { font-size: 12px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 22px 2px 10px; }
@@ -727,6 +802,10 @@ em { font-style: normal; }
 .settings-item-title { font-size: 15px; font-weight: 800; }
 .settings-item-sub { font-size: 12.5px; color: var(--muted); font-weight: 600; margin-top: 2px; }
 .settings-item-arrow { color: var(--muted); flex-shrink: 0; }
+.settings-note {
+  font-size: 12.5px; color: var(--muted); font-weight: 600; line-height: 1.6;
+  margin: 20px 4px 0; text-align: center;
+}
 
 /* ============================================================
    LOGIN / SPLASH
@@ -812,3 +891,5 @@ em { font-style: normal; }
   background: var(--surface-2); border: 1px solid var(--line); transition: transform .1s;
 }
 .rest-timer-close:active { transform: scale(.9); }
+/* 타이머 바가 떠 있는 동안 마지막 항목이 가려지지 않도록 여백 확보 */
+body.has-rest-timer .screen { padding-bottom: calc(var(--nav-h) + var(--safe-bot) + 92px); }
