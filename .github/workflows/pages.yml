@@ -25,7 +25,7 @@ jobs:
       - name: Prepare site files
         run: |
           mkdir _site
-          cp index.html styles.css app.js db.js exercises.js sw.js manifest.json .nojekyll _site/
+          cp index.html styles.css app.js db.js exercises.js sw.js manifest.json .nojekyll firebase-config.js cloud.js _site/
           cp -r icons _site/icons
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

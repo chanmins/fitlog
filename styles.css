@@ -1021,3 +1021,111 @@ img,svg { display:block; }
   width: 100%;
 }
 .date-pick:focus { border-color: var(--accent); }
+
+/* ─ Login ─────────────────────────────────── */
+.login-screen {
+  flex: 1;
+  min-height: 100dvh;
+  padding: calc(48px + var(--safe-top)) 24px calc(32px + var(--safe-bot));
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.login-title {
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  line-height: 1.25;
+  margin: 28px 0 10px;
+}
+.login-sub {
+  color: var(--sub);
+  font-size: 15px;
+  line-height: 1.55;
+  margin: 0 0 28px;
+}
+.btn-google {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  border-radius: 16px;
+  background: #fff;
+  color: #1f1f1f;
+  font-size: 16px;
+  font-weight: 800;
+}
+.btn-google:active { transform: scale(.98); }
+.btn-google:disabled,
+.btn-hero:disabled { opacity: .55; pointer-events: none; }
+.login-or {
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  margin: 22px 0 12px;
+}
+.login-input {
+  width: 100%;
+  height: 50px;
+  background: var(--card2);
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 0 14px;
+  font-size: 16px;
+  outline: none;
+  color-scheme: dark;
+  margin-bottom: 8px;
+}
+.login-input:focus { border-color: var(--accent); }
+.login-error {
+  color: var(--red);
+  font-size: 13px;
+  font-weight: 700;
+  margin: 4px 0 0;
+}
+.login-switch,
+.login-guest {
+  margin-top: 14px;
+  min-height: 44px;
+  color: var(--sub);
+  font-size: 14px;
+  font-weight: 700;
+}
+.login-guest { color: var(--muted); }
+.login-setup {
+  background: var(--card);
+  border-radius: var(--r);
+  padding: 14px 16px;
+  color: var(--sub);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.account-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--card);
+  border-radius: var(--r-sm);
+  padding: 14px 16px;
+  margin-bottom: 6px;
+}
+.account-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.account-avatar.fallback {
+  display: grid;
+  place-items: center;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-weight: 800;
+  font-size: 18px;
+}
+

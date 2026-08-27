@@ -1,11 +1,13 @@
-const CACHE = "fitlog-v5";
+const CACHE = "fitlog-v6";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=5",
-  "./app.js?v=5",
-  "./db.js?v=5",
-  "./exercises.js?v=5",
+  "./styles.css?v=6",
+  "./app.js?v=6",
+  "./db.js?v=6",
+  "./exercises.js?v=6",
+  "./cloud.js?v=6",
+  "./firebase-config.js?v=6",
   "./manifest.json",
   "./icons/icon.svg",
   "./icons/icon-192.png",
@@ -30,6 +32,11 @@ self.addEventListener("activate", event => {
 
 self.addEventListener("fetch", event => {
   if (event.request.method !== "GET") return;
+  const url = new URL(event.request.url);
+  if (url.hostname.endsWith("gstatic.com") || url.hostname.endsWith("googleapis.com") || url.hostname.endsWith("firebaseio.com")) {
+    event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
+    return;
+  }
   event.respondWith(
     fetch(event.request)
       .then(response => {

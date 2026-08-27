@@ -40,6 +40,17 @@
     weightPicker: null,   /* { exId, setId, value } */
     repsPicker:   null,   /* { exId, setId, value } */
 
+    /* Auth */
+    authReady: false,
+    user: null,
+    guest: false,
+    authMode: 'signin',
+    authEmail: '',
+    authPassword: '',
+    authBusy: false,
+    authError: '',
+    syncing: false,
+
     /* Toast */
     toast: '',
     toastTimer: 0,
@@ -108,19 +119,29 @@
     _pq = _pq.then(doSave, doSave);
     return _pq;
   }
+  function cloudSync(task) {
+    if (!state.user) return Promise.resolve();
+    return Promise.resolve()
+      .then(task)
+      .catch((err) => console.warn('cloud sync failed', err));
+  }
+
   async function doSave() {
     const s = state.session;
     if (!s) return;
     if (!worthSaving(s)) {
       await WorkoutDB.deleteSession(s.date);
       state.sessions = state.sessions.filter(x => x.date !== s.date);
+      await cloudSync(() => Cloud.deleteSession(s.date));
       return;
     }
+    s.updatedAt = Date.now();
     await WorkoutDB.putSession(clone(s));
     const idx = state.sessions.findIndex(x => x.date === s.date);
     const copy = clone(s);
     if (idx >= 0) state.sessions[idx] = copy; else state.sessions.push(copy);
     state.sessions.sort((a,b) => b.date.localeCompare(a.date));
+    await cloudSync(() => Cloud.saveSession(copy));
   }
 
   /* ── Toast ──────────────────────────────── */
@@ -235,6 +256,16 @@
 
   /* ── Render Root ─────────────────────────── */
   function render() {
+    if (!state.authReady) {
+      appEl.innerHTML = renderSplash();
+      return;
+    }
+    if (!state.user && !state.guest) {
+      appEl.innerHTML = renderLogin();
+      bindEvents();
+      return;
+    }
+
     let html = '';
     if (state.tab === 'home')     html = renderHome();
     else if (state.tab === 'workout') html = renderWorkout();
@@ -250,6 +281,44 @@
     html += renderBottomNav();
     appEl.innerHTML = html;
     bindEvents();
+  }
+
+  /* ── Auth screens ────────────────────────── */
+  function renderSplash() {
+    return `<main class="login-screen">
+      <div class="topbar-brand" style="font-size:32px">FIT<span>LOG</span></div>
+      <p class="login-sub">불러오는 중…</p>
+    </main>`;
+  }
+
+  function renderLogin() {
+    const configured = typeof Cloud !== 'undefined' && Cloud.configured();
+    const busy = state.authBusy ? ' disabled' : '';
+    const emailMode = state.authMode === 'signup';
+    return `<main class="login-screen">
+      <div class="topbar-brand" style="font-size:32px">FIT<span>LOG</span></div>
+      <h1 class="login-title">내 운동 기록,<br>계정에 저장하세요</h1>
+      <p class="login-sub">구글 또는 이메일로 로그인하면<br>폰과 PC에서 같은 기록이 이어집니다.</p>
+      ${configured ? `
+        <button class="btn-google${busy}" data-act="login-google"${state.authBusy?' disabled':''}>
+          <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 8 3.1l5.7-5.7C34.2 6.1 29.4 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.3-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 12 24 12c3.1 0 5.8 1.2 8 3.1l5.7-5.7C34.2 6.1 29.4 4 24 4 16.3 4 9.6 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 10-2 13.6-5.2l-6.3-5.3C29.2 35.1 26.7 36 24 36c-5.3 0-9.7-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-1.1 3.2-3.5 5.8-6.7 7.5l6.3 5.3C37.3 38.2 44 33 44 24c0-1.2-.1-2.3-.4-3.5z"/></svg>
+          Google로 계속하기
+        </button>
+        <div class="login-or">또는 이메일</div>
+        <input class="login-input" data-auth="email" type="email" inputmode="email" autocomplete="email" placeholder="이메일" value="${esc(state.authEmail)}">
+        <input class="login-input" data-auth="password" type="password" autocomplete="${emailMode?'new-password':'current-password'}" placeholder="비밀번호 (6자 이상)" value="${esc(state.authPassword)}">
+        ${state.authError ? `<p class="login-error">${esc(state.authError)}</p>` : ''}
+        <button class="btn-hero" style="margin-top:8px" data-act="login-email"${state.authBusy?' disabled':''}>
+          ${state.authBusy ? '처리 중…' : (emailMode ? '이메일로 회원가입' : '이메일로 로그인')}
+        </button>
+        <button class="login-switch" data-act="toggle-auth-mode">
+          ${emailMode ? '이미 계정이 있나요? 로그인' : '처음이신가요? 회원가입'}
+        </button>
+      ` : `
+        <div class="login-setup">Firebase 연결 전에는 이 기기에서만 사용할 수 있습니다.</div>
+      `}
+      <button class="login-guest" data-act="login-guest">로그인 없이 이 기기에서만 쓰기</button>
+    </main>`;
   }
 
   /* ── Bottom Nav ──────────────────────────── */
@@ -661,13 +730,45 @@
 
   /* ── Settings Tab ─────────────────────────── */
   function renderSettings() {
+    const u = state.user;
+    const account = u ? `
+      <div class="settings-label">계정</div>
+      <div class="account-card">
+        ${u.photoURL ? `<img class="account-avatar" src="${esc(u.photoURL)}" alt="">` : `<div class="account-avatar fallback">${esc((u.displayName||'?').slice(0,1))}</div>`}
+        <div class="settings-item-text">
+          <div class="settings-item-title">${esc(u.displayName || '사용자')}</div>
+          <div class="settings-item-sub">${esc(u.email || '클라우드에 동기화 중')}</div>
+        </div>
+      </div>
+      <button class="settings-item" data-act="logout">
+        <div class="settings-item-icon" style="background:color-mix(in srgb, var(--red) 14%, var(--bg));color:var(--red)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        </div>
+        <div class="settings-item-text">
+          <div class="settings-item-title">로그아웃</div>
+          <div class="settings-item-sub">이 기기에서 계정 연결 해제</div>
+        </div>
+      </button>` : `
+      <div class="settings-label">계정</div>
+      <button class="settings-item" data-act="show-login">
+        <div class="settings-item-icon" style="background:var(--accent-bg);color:var(--accent)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </div>
+        <div class="settings-item-text">
+          <div class="settings-item-title">로그인</div>
+          <div class="settings-item-sub">지금 기록은 이 기기에만 저장됩니다</div>
+        </div>
+        <svg class="settings-item-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>`;
+
     return `
       <header class="topbar">
         <div class="topbar-brand">FIT<span>LOG</span></div>
       </header>
       <main class="screen">
         <div style="height:12px"></div>
-        <div class="settings-label">데이터</div>
+        ${account}
+        <div class="settings-label" style="margin-top:20px">데이터</div>
         <button class="settings-item" data-act="export">
           <div class="settings-item-icon" style="background:var(--accent-bg);color:var(--accent)">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -703,8 +804,8 @@
         <div class="settings-label" style="margin-top:20px">FITLOG</div>
         <div class="settings-item" style="cursor:default">
           <div class="settings-item-text">
-            <div class="settings-item-title">버전 1.0</div>
-            <div class="settings-item-sub">기록은 이 기기 브라우저에만 저장됩니다</div>
+            <div class="settings-item-title">버전 1.1</div>
+            <div class="settings-item-sub">${state.user ? '기록은 계정 클라우드와 이 기기에 저장됩니다' : '기록은 이 기기 브라우저에만 저장됩니다'}</div>
           </div>
         </div>
         <div style="height:24px"></div>
@@ -839,11 +940,28 @@
     if (act === 'delete-day') { await handleDeleteDay(); return; }
     if (act === 'export') { await exportJson(); return; }
     if (act === 'import') { importInput.click(); return; }
+    if (act === 'login-google') { await handleGoogleLogin(); return; }
+    if (act === 'login-email') { await handleEmailLogin(); return; }
+    if (act === 'login-guest') { await enterApp(null, { guest: true }); return; }
+    if (act === 'toggle-auth-mode') {
+      state.authMode = state.authMode === 'signup' ? 'signin' : 'signup';
+      state.authError = '';
+      render(); return;
+    }
+    if (act === 'show-login') {
+      state.guest = false;
+      localStorage.removeItem('fitlog-guest');
+      state.authError = '';
+      render(); return;
+    }
+    if (act === 'logout') { await handleLogout(); return; }
   }
 
   /* ── Input handler ───────────────────────── */
   async function onInput(e) {
     const t = e.target;
+    if (t.dataset.auth === 'email') { state.authEmail = t.value; return; }
+    if (t.dataset.auth === 'password') { state.authPassword = t.value; return; }
     if (t.dataset.run != null) {
       const val = parseNum(t.value);
       state.session.run[t.dataset.run] = val !== '' ? val : t.value;
@@ -934,6 +1052,7 @@
     }
     const item = { id: 'c_'+uid(), part: partId, name: trimmed, custom: true };
     await WorkoutDB.putCustomExercise(item);
+    await cloudSync(() => Cloud.saveCustom(item));
     state.customExercises.push(item);
     await handlePickEx(partId, trimmed, item.id);
   }
@@ -944,6 +1063,7 @@
     if (!confirm(`'${item.name}'을(를) 목록에서 삭제할까요?`)) return;
     await WorkoutDB.deleteCustomExercise(id);
     state.customExercises = state.customExercises.filter(e=>e.id!==id);
+    await cloudSync(() => Cloud.deleteCustom(id));
     render();
   }
 
@@ -982,6 +1102,7 @@
     if (!confirm('이 날 기록을 삭제할까요?')) return;
     await WorkoutDB.deleteSession(state.session.date);
     state.sessions = state.sessions.filter(s=>s.date!==state.session.date);
+    await cloudSync(() => Cloud.deleteSession(state.session.date));
     state.session = emptySession(state.date);
     state.tab = 'home';
     render(); toast('삭제했습니다');
@@ -1004,6 +1125,7 @@
     await WorkoutDB.importAll(payload);
     state.sessions = await WorkoutDB.getAllSessions();
     state.customExercises = await WorkoutDB.getCustomExercises();
+    await cloudSync(() => Cloud.pushAll(state.sessions, state.customExercises));
     state.tab = 'home';
     render(); toast('가져왔습니다');
   }
@@ -1014,19 +1136,199 @@
     if (file) await importJson(file);
   });
 
-  /* ── Init ────────────────────────────────── */
-  async function init() {
-    await WorkoutDB.open();
+  function mergeByDate(localRows, cloudRows) {
+    const map = new Map();
+    for (const row of localRows || []) {
+      if (row && row.date) map.set(row.date, row);
+    }
+    for (const row of cloudRows || []) {
+      if (!row || !row.date) continue;
+      const prev = map.get(row.date);
+      if (!prev || (row.updatedAt || 0) >= (prev.updatedAt || 0)) map.set(row.date, row);
+    }
+    return [...map.values()].sort((a, b) => b.date.localeCompare(a.date));
+  }
+
+  function mergeCustom(localRows, cloudRows) {
+    const map = new Map();
+    for (const row of [...(localRows || []), ...(cloudRows || [])]) {
+      if (row && row.id) map.set(row.id, row);
+    }
+    return [...map.values()];
+  }
+
+  async function adoptLocalDataIfNeeded(cloudData) {
+    const cloudEmpty = !(cloudData.sessions && cloudData.sessions.length);
+    if (!cloudEmpty) return cloudData;
+    const guest = await WorkoutDB.readGuest();
+    const legacy = await WorkoutDB.readLegacy();
+    const localSessions = [...(guest.sessions || []), ...(legacy.sessions || [])];
+    const localCustom = [...(guest.customExercises || []), ...(legacy.customExercises || [])];
+    if (!localSessions.length && !localCustom.length) return cloudData;
+    if (!confirm('이 기기에 있던 이전 기록을 이 계정으로 가져올까요?')) return cloudData;
+    return {
+      sessions: mergeByDate(localSessions, cloudData.sessions),
+      customExercises: mergeCustom(localCustom, cloudData.customExercises),
+    };
+  }
+
+  async function loadWorkspace() {
+    const today = todayISO();
+    state.date = today;
     state.sessions = await WorkoutDB.getAllSessions();
     state.customExercises = await WorkoutDB.getCustomExercises();
-    /* Pre-load today's session */
-    const today = todayISO();
     const saved = await WorkoutDB.getSession(today);
     state.session = normalizeSession(saved || emptySession(today));
+    closeAllSheets();
+    state.tab = 'home';
+  }
+
+  async function enterApp(user, opts = {}) {
+    if (user && state.user && state.user.uid === user.uid && state.authReady && !opts.force) return;
+    const arrivedFromLogin = !state.authReady || (!state.user && !state.guest);
+    state.user = user || null;
+    state.guest = !user && !!opts.guest;
+    state.authBusy = false;
+    state.authError = '';
+    if (state.guest) localStorage.setItem('fitlog-guest', '1');
+    else localStorage.removeItem('fitlog-guest');
+
+    WorkoutDB.setScope(user ? user.uid : 'guest');
+    await WorkoutDB.open();
+
+    if (!user) {
+      const current = await WorkoutDB.getAllSessions();
+      if (!current.length) {
+        const legacy = await WorkoutDB.readLegacy();
+        if ((legacy.sessions || []).length || (legacy.customExercises || []).length) {
+          await WorkoutDB.replaceAll(legacy.sessions, legacy.customExercises);
+        }
+      }
+    }
+
+    if (user) {
+      state.syncing = true;
+      try {
+        await Cloud.touchProfile();
+        let cloudData = await Cloud.pullAll();
+        cloudData = await adoptLocalDataIfNeeded(cloudData);
+        const localSessions = await WorkoutDB.getAllSessions();
+        const localCustom = await WorkoutDB.getCustomExercises();
+        const sessions = mergeByDate(localSessions, cloudData.sessions);
+        const customExercises = mergeCustom(localCustom, cloudData.customExercises);
+        await WorkoutDB.replaceAll(sessions, customExercises);
+        await Cloud.pushAll(sessions, customExercises);
+      } catch (err) {
+        console.warn('cloud pull failed', err);
+      }
+      state.syncing = false;
+    }
+
+    await loadWorkspace();
+    state.authReady = true;
+    render();
+    if (user && arrivedFromLogin) toast('로그인했습니다');
+  }
+
+  async function handleGoogleLogin() {
+    if (state.authBusy) return;
+    if (!Cloud.configured()) { state.authError = 'Firebase가 아직 연결되지 않았습니다.'; render(); return; }
+    state.authBusy = true;
+    state.authError = '';
+    render();
+    try {
+      const user = await Cloud.signInGoogle();
+      if (user) await enterApp(user);
+      else {
+        /* redirect in progress */
+        state.authError = '';
+        render();
+      }
+    } catch (err) {
+      state.authBusy = false;
+      state.authError = Cloud.authMessage(err);
+      render();
+    }
+  }
+
+  async function handleEmailLogin() {
+    if (state.authBusy) return;
+    if (!Cloud.configured()) { state.authError = 'Firebase가 아직 연결되지 않았습니다.'; render(); return; }
+    const email = state.authEmail.trim();
+    const password = state.authPassword;
+    if (!email || !password) {
+      state.authError = '이메일과 비밀번호를 입력해 주세요.';
+      render(); return;
+    }
+    state.authBusy = true;
+    state.authError = '';
+    render();
+    try {
+      const user = state.authMode === 'signup'
+        ? await Cloud.signUpEmail(email, password)
+        : await Cloud.signInEmail(email, password);
+      await enterApp(user);
+    } catch (err) {
+      state.authBusy = false;
+      state.authError = Cloud.authMessage(err);
+      render();
+    }
+  }
+
+  async function handleLogout() {
+    if (!confirm('로그아웃할까요? 이 기기 기록은 남아 있고, 계정 기록은 클라우드에 유지됩니다.')) return;
+    state.user = null;
+    state.guest = false;
+    localStorage.removeItem('fitlog-guest');
+    WorkoutDB.setScope('guest');
+    await WorkoutDB.open();
+    await loadWorkspace();
+    state.authReady = true;
+    render();
+    await Cloud.signOut();
+    toast('로그아웃했습니다');
+  }
+
+  /* ── Init ────────────────────────────────── */
+  async function init() {
     render();
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js').catch(()=>{});
     }
+    Cloud.init();
+    try { await Cloud.completeRedirect(); } catch (err) {
+      state.authError = Cloud.authMessage(err);
+    }
+    const existing = await Cloud.waitAuth();
+    Cloud.onAuth(async (user) => {
+      if (!state.authReady) return;
+      if (user && (!state.user || state.user.uid !== user.uid)) {
+        await enterApp(user);
+      }
+      if (!user && state.user) {
+        state.user = null;
+        state.guest = false;
+        localStorage.removeItem('fitlog-guest');
+        WorkoutDB.setScope('guest');
+        await WorkoutDB.open();
+        await loadWorkspace();
+        render();
+      }
+    });
+    if (existing) {
+      await enterApp(existing);
+      return;
+    }
+    WorkoutDB.setScope('guest');
+    await WorkoutDB.open();
+    const legacy = await WorkoutDB.readLegacy();
+    const hasLegacy = (legacy.sessions || []).length || (legacy.customExercises || []).length;
+    if (localStorage.getItem('fitlog-guest') === '1' || hasLegacy) {
+      await enterApp(null, { guest: true });
+      return;
+    }
+    state.authReady = true;
+    render();
   }
 
   init().catch(err => {
