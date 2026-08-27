@@ -83,6 +83,15 @@
     onboarding: false,
     profileEditing: false,
 
+    /* Pre-login records found on this device, offered on the home screen.
+       null when there is nothing to offer or the user has dismissed it. */
+    pendingImport: null,
+
+    /* Password reset screen */
+    resetTarget: '',      /* address resolved from 아이디, awaiting confirmation */
+    resetSent: '',        /* masked address once the mail has gone out */
+    resetCooldown: 0,     /* seconds left before 다시 보내기 is allowed */
+
     /* History calendar — 보고 있는 달 (YYYY-MM) */
     histMonth: null,
 
@@ -200,6 +209,18 @@
   }
   function fmtNum(n) {
     return Math.round(n).toLocaleString('ko-KR');
+  }
+
+  /* Korean subject particle: 이 after a final consonant, 가 after a vowel.
+     Needed because the phrase it follows is assembled at runtime — it can end
+     in "기록" (consonant → 이) or "3개" (vowel → 가), and a hard-coded particle
+     is wrong half the time. */
+  function subjectParticle(word) {
+    const ch = String(word || '').trim().slice(-1);
+    if (!ch) return '이';
+    const code = ch.charCodeAt(0);
+    if (code < 0xAC00 || code > 0xD7A3) return '이';
+    return (code - 0xAC00) % 28 === 0 ? '가' : '이';
   }
 
   /* ── Chart helpers ───────────────────────── */
@@ -647,7 +668,9 @@
   function render() {
     if (!state.authReady) { appEl.innerHTML = renderSplash(); return; }
     if (!state.user && !state.guest) {
-      appEl.innerHTML = state.authMode === 'signup' ? renderSignup() : renderLogin();
+      appEl.innerHTML = state.authMode === 'signup' ? renderSignup()
+                      : state.authMode === 'reset'  ? renderReset()
+                      : renderLogin();
       bindEvents(); return;
     }
     /* Signed in but no 아이디 yet — finish setting the account up first. */
@@ -740,6 +763,91 @@
     </main>`;
   }
 
+  /* ── Password reset ───────────────────────────────────────────────────────
+     A dedicated screen, not a one-tap action on the login form.
+
+     Sending the link IS the identity check — someone who has forgotten their
+     password has no other credential to prove with, so every service settles
+     for "only the owner of the registered inbox can open the link". Nothing
+     extra can meaningfully be verified beforehand.
+
+     What was missing is the part in front of it: a confirmation step. The old
+     button fired immediately off whatever was in the login field, so a stray
+     tap sent mail and the user never learned which address it went to. Now the
+     address is resolved first, shown masked, and only then sent. */
+  function maskEmail(addr) {
+    const at = String(addr || '').indexOf('@');
+    if (at < 1) return addr || '';
+    const local = addr.slice(0, at);
+    const domain = addr.slice(at);
+    if (local.length <= 2) return local[0] + '*'.repeat(3) + domain;
+    return local[0] + '*'.repeat(Math.min(local.length - 2, 6)) + local[local.length - 1] + domain;
+  }
+
+  function renderReset() {
+    const busy = state.authBusy;
+    const sent = state.resetSent;
+    const wait = state.resetCooldown > 0;
+
+    if (sent) {
+      return `<main class="login-screen signup-screen">
+        <div class="signup-head">
+          <button class="signup-back" data-act="reset-back" aria-label="뒤로">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+        </div>
+        <div class="reset-sent-icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5"/><polyline points="3 6.5 12 13 21 6.5"/></svg>
+        </div>
+        <h1 class="signup-title">메일을 보냈습니다</h1>
+        <p class="signup-sub"><strong class="reset-addr">${esc(sent)}</strong> 로 재설정 링크를 보냈습니다.<br>링크를 열어 새 비밀번호를 정해 주세요.</p>
+        <div class="signup-note">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="16" x2="12" y2="11"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <span>몇 분이 지나도 오지 않으면 스팸함을 확인해 주세요. 메일은 Firebase(noreply@fitlog-4fe54.firebaseapp.com)에서 발송됩니다.</span>
+        </div>
+        <div class="signup-body"></div>
+        <div class="signup-actions">
+          <button class="btn-hero" data-act="reset-back">로그인으로 돌아가기</button>
+          <button class="login-link" data-act="reset-resend" ${busy || wait ? 'disabled' : ''}>
+            ${wait ? `다시 보내기 (${state.resetCooldown}초)` : '메일이 오지 않았나요? 다시 보내기'}
+          </button>
+        </div>
+      </main>`;
+    }
+
+    return `<main class="login-screen signup-screen">
+      <div class="signup-head">
+        <button class="signup-back" data-act="reset-back" aria-label="뒤로">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+      </div>
+      <h1 class="signup-title">비밀번호 재설정</h1>
+      <p class="signup-sub">가입할 때 등록한 이메일로 재설정 링크를 보냅니다.</p>
+
+      ${state.authError ? `<p class="login-error">${esc(state.authError)}</p>` : ''}
+
+      <div class="signup-body">
+        <label class="field-label" for="reset-id">아이디 또는 이메일</label>
+        <input class="login-input" id="reset-id" data-su="resetId" type="text"
+               inputmode="text" autocapitalize="none" autocorrect="off" spellcheck="false"
+               autocomplete="username" placeholder="아이디 또는 가입 이메일" value="${esc(state.signup.resetId || '')}">
+        <p class="field-hint">아이디를 넣으면 등록된 주소를 찾아 그쪽으로만 보냅니다.</p>
+
+        ${state.resetTarget ? `
+        <div class="reset-confirm">
+          <div class="reset-confirm-label">이 주소로 보냅니다</div>
+          <div class="reset-confirm-addr">${esc(maskEmail(state.resetTarget))}</div>
+        </div>` : ''}
+      </div>
+
+      <div class="signup-actions">
+        <button class="btn-hero" data-act="${state.resetTarget ? 'reset-send' : 'reset-lookup'}" ${busy ? 'disabled' : ''}>
+          ${busy ? '처리 중…' : state.resetTarget ? '재설정 메일 보내기' : '다음'}
+        </button>
+      </div>
+    </main>`;
+  }
+
   /* ── Signup wizard ────────────────────────────────────────────────────────
      Three short steps instead of one wall of inputs. The old screen asked for
      email, password and password-confirm at once, under a pair of tabs that
@@ -805,7 +913,7 @@
 
   function renderSignupStep3() {
     const s = state.signup;
-    const genders = [['male','남성'],['female','여성'],['other','기타']];
+    const genders = [['male','남성'],['female','여성']];
     return `
       <label class="field-label" for="su-name">이름</label>
       <input class="login-input" id="su-name" data-su="name" type="text"
@@ -875,7 +983,7 @@
      the usernames/{id} pointer that sign-in depends on. */
   function renderProfileSheet() {
     const s = state.signup;
-    const genders = [['male','남성'],['female','여성'],['other','기타']];
+    const genders = [['male','남성'],['female','여성']];
     const uname = state.profile?.username || '';
     return `<div class="sheet-backdrop">
       <div class="sheet-panel" id="sheet-profile">
@@ -932,7 +1040,7 @@
     const chkText = chk.status === 'checking' ? '확인 중…'
       : chk.status === 'free' ? '사용할 수 있는 아이디예요'
       : chk.message || '사용할 수 없는 아이디입니다';
-    const genders = [['male','남성'],['female','여성'],['other','기타']];
+    const genders = [['male','남성'],['female','여성']];
     const busy = state.authBusy;
     return `<main class="login-screen signup-screen">
       <div class="signup-head"><div class="topbar-brand">FIT<span>LOG</span></div></div>
@@ -1147,6 +1255,29 @@
     </div>`;
   }
 
+  /* Offers pre-login records without interrupting anything. States what was
+     found and where it came from, so "가져오기" is an informed choice rather
+     than a yes/no to a question the user didn't expect. */
+  function renderImportCard() {
+    const p = state.pendingImport;
+    if (!p || !state.user) return '';
+    const days = p.sessions.length;
+    const bits = [];
+    if (days) bits.push(`${days}일치 운동 기록`);
+    if (p.customExercises.length) bits.push(`직접 만든 운동 ${p.customExercises.length}개`);
+    return `<div class="import-card">
+      <div class="import-head">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        로그인 전 기록이 있어요
+      </div>
+      <p class="import-body">이 기기에서 <strong>로그인하지 않고 기록한</strong> ${esc(bits.join(' · '))}${subjectParticle(bits[bits.length - 1])} 남아 있습니다. 내 계정으로 가져올까요?</p>
+      <div class="import-actions">
+        <button class="btn-ghost" data-act="dismiss-import">아니요</button>
+        <button class="btn-ghost import-yes" data-act="import-local">가져오기</button>
+      </div>
+    </div>`;
+  }
+
   /* ── Home Tab ─────────────────────────────── */
   function renderHome() {
     const today = todayISO();
@@ -1259,6 +1390,7 @@
           <div class="stat-card"><div class="stat-val">${streakDays()}<span>일</span></div><div class="stat-lbl">연속 기록</div></div>
           ${everRan ? `<div class="stat-card"><div class="stat-val">${weekKm?weekKm.toFixed(weekKm%1?1:0):0}<span>km</span></div><div class="stat-lbl">주간 러닝</div></div>` : ''}
         </div>
+        ${renderImportCard()}
         ${todayBlock}
         ${renderBalanceCard()}
         ${recentHtml}
@@ -1879,7 +2011,7 @@
     const u = state.user;
     const p = state.profile || {};
     const bits = [];
-    if (p.gender) bits.push({ male:'남성', female:'여성', other:'기타' }[p.gender]);
+    if (p.gender) bits.push({ male: '남성', female: '여성' }[p.gender]);
     if (p.birthYear) bits.push(`${new Date().getFullYear() - Number(p.birthYear) + 1}세`);
     if (p.heightCm) bits.push(`${p.heightCm}cm`);
     if (p.weightKg) bits.push(`${p.weightKg}kg`);
@@ -2202,7 +2334,28 @@
     if (act === 'import') { importInput.click(); return; }
     if (act === 'login-google') { await handleGoogleLogin(); return; }
     if (act === 'login-id') { await handleIdLogin(); return; }
-    if (act === 'reset-password') { await handleResetPassword(); return; }
+    if (act === 'reset-password') {
+      const idEl = document.getElementById('auth-id');
+      state.signup.resetId = (idEl ? idEl.value : state.authId).trim();
+      state.resetTarget = ''; state.resetSent = ''; state.authError = '';
+      state.authMode = 'reset';
+      render(); return;
+    }
+    if (act === 'reset-back') {
+      state.authMode = 'signin';
+      state.resetTarget = ''; state.resetSent = ''; state.authError = '';
+      render(); return;
+    }
+    if (act === 'reset-lookup') { await handleResetLookup(); return; }
+    if (act === 'reset-send') { await handleResetSend(); return; }
+    if (act === 'reset-resend') { await handleResetSend({ resend: true }); return; }
+    if (act === 'import-local') { await handleImportLocal(); return; }
+    if (act === 'dismiss-import') {
+      if (!confirm('가져오지 않으면 이 기록은 계정에 올라가지 않습니다.\n다음부터 다시 묻지 않습니다. 계속할까요?')) return;
+      try { localStorage.setItem(importDismissKey(), '1'); } catch (_) {}
+      state.pendingImport = null;
+      render(); return;
+    }
     if (act === 'login-guest') { await enterApp(null, { guest: true }); return; }
     if (act === 'go-signup') {
       resetSignup();
@@ -2747,19 +2900,40 @@
     return [...map.values()];
   }
 
-  async function adoptLocalDataIfNeeded(cloudData) {
-    const cloudEmpty = !(cloudData.sessions && cloudData.sessions.length);
-    if (!cloudEmpty) return cloudData;
+  /* ── Importing pre-login records ──────────────────────────────────────────
+     Someone can log workouts without an account, then sign up later — that
+     data is theirs and should be offered, not silently stranded.
+
+     But it must never be a modal. The old version threw a raw browser
+     confirm() from inside background sync: it interrupted at an arbitrary
+     moment, looked nothing like the app, and hit every brand-new account the
+     instant it finished signing up — asking about "이전 기록" that the user has
+     no reason to know exists. Worse, an unexplained yes could pull in whatever
+     a previous person left on a shared device.
+
+     So detection is all that happens automatically. The offer becomes a card on
+     the home screen that says where the data came from and how much there is,
+     and it waits until the user chooses. Dismissing it is remembered, so it
+     asks once and never nags. */
+  function importDismissKey() {
+    return `fitlog-import-dismissed:${state.user ? state.user.uid : 'guest'}`;
+  }
+  function importDismissed() {
+    try { return localStorage.getItem(importDismissKey()) === '1'; } catch (_) { return false; }
+  }
+
+  async function detectImportableLocal(cloudData) {
+    /* Only relevant for an account with nothing in the cloud yet — once there
+       is real history, merging in stray device data would be a surprise. */
+    if (cloudData.sessions && cloudData.sessions.length) return null;
+    if (importDismissed()) return null;
     const guest = await WorkoutDB.readGuest();
     const legacy = await WorkoutDB.readLegacy();
-    const localSessions = [...(guest.sessions || []), ...(legacy.sessions || [])];
-    const localCustom = [...(guest.customExercises || []), ...(legacy.customExercises || [])];
-    if (!localSessions.length && !localCustom.length) return cloudData;
-    if (!confirm('이 기기에 있던 이전 기록을 이 계정으로 가져올까요?')) return cloudData;
-    return {
-      sessions: mergeByDate(localSessions, cloudData.sessions),
-      customExercises: mergeCustom(localCustom, cloudData.customExercises),
-    };
+    const sessions = [...(guest.sessions || []), ...(legacy.sessions || [])]
+      .filter(s => s && s.date && hasAnyWork(s));
+    const customExercises = [...(guest.customExercises || []), ...(legacy.customExercises || [])];
+    if (!sessions.length && !customExercises.length) return null;
+    return { sessions, customExercises };
   }
 
   async function loadWorkspace() {
@@ -2865,7 +3039,8 @@
     try {
       await withTimeout(Cloud.touchProfile(), 8000, '프로필');
       let cloudData = await withTimeout(Cloud.pullAll(), 12000, '불러오기');
-      cloudData = await adoptLocalDataIfNeeded(cloudData);
+      /* Detect only — importing is the user's call, made from the home screen. */
+      state.pendingImport = await detectImportableLocal(cloudData);
       const localSessions = await WorkoutDB.getAllSessions();
       const localCustom = await WorkoutDB.getCustomExercises();
       const sessions = mergeByDate(localSessions, cloudData.sessions);
@@ -2951,32 +3126,91 @@
     }
   }
 
-  /* Also the escape hatch for an account that was created with Google and so
-     has no password: the reset link attaches one to that same account. */
-  async function handleResetPassword() {
+  /* Step 1 — turn the 아이디 into an address and show it for confirmation.
+     Nothing is sent here, so a mistyped id costs a message, not an email to a
+     stranger. Also the escape hatch for a Google-created account with no
+     password: the reset link attaches one to that same account. */
+  async function handleResetLookup() {
     if (state.authBusy) return;
     if (!Cloud.configured()) { state.authError = 'Firebase가 아직 연결되지 않았습니다.'; render(); return; }
+    const el = document.getElementById('reset-id');
+    const raw = (el ? el.value : state.signup.resetId || '').trim();
+    state.signup.resetId = raw;
+    if (!raw) { state.authError = '아이디 또는 가입할 때 쓴 이메일을 입력해 주세요.'; render(); return; }
 
-    const idEl = document.getElementById('auth-id');
-    const raw = (idEl ? idEl.value : state.authId).trim();
-    if (!raw) {
-      state.authError = '아이디 또는 가입할 때 쓴 이메일을 입력한 뒤 다시 눌러 주세요.';
-      render(); return;
-    }
-
-    state.authId = raw;
-    state.authBusy  = true;
-    state.authError = '';
+    state.authBusy = true; state.authError = '';
     render();
     try {
-      await Cloud.sendPasswordResetFor(raw);
+      state.resetTarget = await Cloud.resolveResetTarget(raw);
       state.authBusy = false;
       render();
-      toast('비밀번호 재설정 메일을 보냈습니다 — 메일함을 확인해 주세요');
+    } catch (err) {
+      state.authBusy = false;
+      state.resetTarget = '';
+      state.authError = Cloud.authMessage(err);
+      render();
+    }
+  }
+
+  /* Step 2 — actually send, then show where it went. */
+  async function handleResetSend(opts = {}) {
+    if (state.authBusy) return;
+    if (state.resetCooldown > 0 && opts.resend) return;
+    const target = state.resetTarget || state.signup.resetId;
+    state.authBusy = true; state.authError = '';
+    render();
+    try {
+      const addr = await Cloud.sendPasswordResetFor(target);
+      state.authBusy = false;
+      state.resetSent = maskEmail(addr);
+      startResetCooldown(60);
+      render();
     } catch (err) {
       state.authBusy = false;
       state.authError = Cloud.authMessage(err);
       render();
+    }
+  }
+
+  /* Rate-limits 다시 보내기 so an impatient tap doesn't fire five mails, and
+     so Firebase's own abuse throttle isn't what the user runs into first. */
+  let resetTimer = 0;
+  function startResetCooldown(sec) {
+    clearInterval(resetTimer);
+    state.resetCooldown = sec;
+    resetTimer = setInterval(() => {
+      state.resetCooldown -= 1;
+      if (state.resetCooldown <= 0) { clearInterval(resetTimer); state.resetCooldown = 0; }
+      if (state.authMode === 'reset' && state.resetSent) render();
+    }, 1000);
+  }
+
+  /* Merges pre-login records into the signed-in account, then pushes them so
+     the other devices see them too. */
+  async function handleImportLocal() {
+    const p = state.pendingImport;
+    if (!p || !state.user) return;
+    state.pendingImport = null;
+    render();
+    try {
+      const localSessions = await WorkoutDB.getAllSessions();
+      const localCustom = await WorkoutDB.getCustomExercises();
+      const sessions = mergeByDate(localSessions, p.sessions);
+      const customExercises = mergeCustom(localCustom, p.customExercises);
+      await WorkoutDB.replaceAll(sessions, customExercises);
+      state.sessions = await WorkoutDB.getAllSessions();
+      state.customExercises = await WorkoutDB.getCustomExercises();
+      const saved = await WorkoutDB.getSession(state.date);
+      if (saved) state.session = normalizeSession(saved);
+      try { localStorage.setItem(importDismissKey(), '1'); } catch (_) {}
+      render();
+      toast(`${p.sessions.length}일치 기록을 가져왔습니다`);
+      cloudSync(() => Cloud.pushAll(sessions, customExercises));
+    } catch (err) {
+      console.warn('import failed', err);
+      state.pendingImport = p;
+      render();
+      toast('가져오기에 실패했습니다');
     }
   }
 

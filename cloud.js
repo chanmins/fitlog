@@ -380,19 +380,29 @@ const Cloud = (() => {
     return id;
   }
 
-  /* Accepts 아이디 or an email — people rarely remember which one they used. */
-  async function sendPasswordResetFor(idOrEmail) {
-    if (!auth) throw new Error("Firebase가 설정되지 않았습니다.");
+  /* Resolves 아이디 (or an email) to the address a reset link would go to,
+     WITHOUT sending anything. Lets the UI show the user where the mail is
+     headed and ask for confirmation first, instead of firing on one tap. */
+  async function resolveResetTarget(idOrEmail) {
     const raw = String(idOrEmail || "").trim();
     if (!raw) throw new Error("아이디 또는 이메일을 입력해 주세요.");
-    if (raw.includes("@")) return sendPasswordReset(raw);
+    if (raw.includes("@")) return raw;
     const rec = await lookupUsername(raw);
     if (!rec || !rec.email) {
       const e = new Error("no such username");
       e.code = "fitlog/no-username";
       throw e;
     }
-    return sendPasswordReset(rec.email);
+    return rec.email;
+  }
+
+  /* Accepts 아이디 or an email — people rarely remember which one they used.
+     Returns the address it sent to so the caller can confirm it on screen. */
+  async function sendPasswordResetFor(idOrEmail) {
+    if (!auth) throw new Error("Firebase가 설정되지 않았습니다.");
+    const addr = await resolveResetTarget(idOrEmail);
+    await sendPasswordReset(addr);
+    return addr;
   }
 
   /* ── Profile ─────────────────────────────────────────────────────────────
@@ -406,7 +416,7 @@ const Cloud = (() => {
     const src = raw || {};
     const out = {};
     if (src.name != null && String(src.name).trim()) out.name = String(src.name).trim().slice(0, 40);
-    if (src.gender === "male" || src.gender === "female" || src.gender === "other") out.gender = src.gender;
+    if (src.gender === "male" || src.gender === "female") out.gender = src.gender;
     const yr = Number(src.birthYear);
     const thisYear = new Date().getFullYear();
     if (Number.isFinite(yr) && yr >= 1900 && yr <= thisYear) out.birthYear = Math.round(yr);
@@ -595,6 +605,7 @@ const Cloud = (() => {
     usernameError,
     sendPasswordReset,
     sendPasswordResetFor,
+    resolveResetTarget,
     saveProfile,
     loadProfile,
     signOut,
