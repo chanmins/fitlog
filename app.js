@@ -1,7 +1,7 @@
-/* FITLOG â€” Main Application */
+/* FITLOG ??Main Application */
 (() => {
-  /* â”€â”€ Utilities â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-  const WEEKDAYS = ['ì¼','ì›”','í™”','ìˆ˜','ëª©','ê¸ˆ','í† '];
+  /* ?€?€ Utilities ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€ */
+  const WEEKDAYS = ['??,'??,'??,'??,'ëª?,'ê¸?,'??];
   const WEEKDAYS_SHORT = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
 
   function todayISO() {
@@ -10,9 +10,9 @@
   }
   function isoToDate(iso)  { const [y,m,d] = iso.split('-').map(Number); return new Date(y,m-1,d); }
   function shortDate(iso)  { const [,m,d] = iso.split('-'); return `${Number(m)}.${Number(d)}`; }
-  function longDate(iso)   { const [y,m,d] = iso.split('-').map(Number); return `${m}ì›” ${d}ì¼ (${WEEKDAYS[new Date(y,m-1,d).getDay()]})`; }
+  function longDate(iso)   { const [y,m,d] = iso.split('-').map(Number); return `${m}??${d}??(${WEEKDAYS[new Date(y,m-1,d).getDay()]})`; }
   function monthKey(iso)   { return iso.slice(0,7); }
-  function fmtMonth(key)   { const [y,m] = key.split('-'); return `${y}ë…„ ${Number(m)}ì›”`; }
+  function fmtMonth(key)   { const [y,m] = key.split('-'); return `${y}??${Number(m)}??; }
   function clone(v)        { return JSON.parse(JSON.stringify(v)); }
   function uid()           { return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
   function esc(s)          {
@@ -32,12 +32,12 @@
     return Promise.race([
       Promise.resolve(promise).finally(() => clearTimeout(timer)),
       new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`${label || 'ì‘ì—…'} ì‹œê°„ ì´ˆê³¼`)), ms);
+        timer = setTimeout(() => reject(new Error(`${label || '?‘ì—…'} ?œê°„ ì´ˆê³¼`)), ms);
       }),
     ]);
   }
 
-  /* â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ?€?€ State ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€ */
   const state = {
     tab: 'home',
     date: todayISO(),
@@ -68,11 +68,11 @@
     toastTimer: 0,
   };
 
-  /* â”€â”€ DOM root â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ?€?€ DOM root ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€ */
   const appEl = document.getElementById('app');
   const importInput = document.getElementById('import-file');
 
-  /* â”€â”€ Data helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ?€?€ Data helpers ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€ */
   function emptySession(date) {
     return { date, parts: [], notes: '', exercises: [], run: { km:'', minutes:'', notes:'' } };
   }
@@ -138,7 +138,7 @@
     return Math.round(n).toLocaleString('ko-KR');
   }
 
-  /* â”€â”€ Chart helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ?€?€ Chart helpers ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€ */
   function renderWeeklyVolumeChart() {
     const today = new Date();
     const dow = today.getDay(); // 0=Sun
@@ -167,7 +167,7 @@
         <text x="${(i*W+W*0.5).toFixed(1)}%" y="68" text-anchor="middle" font-size="6.5" fill="var(--muted)">${w.label}</text>`;
     }).join('');
     const infoStr = thisVol > 0
-      ? `ì´ë²ˆ ì£¼ ${thisVol>=1000?(thisVol/1000).toFixed(1)+'t':fmtNum(thisVol)+'kg'}`
+      ? `?´ë²ˆ ì£?${thisVol>=1000?(thisVol/1000).toFixed(1)+'t':fmtNum(thisVol)+'kg'}`
       : `ìµœê³  ${maxVol>=1000?(maxVol/1000).toFixed(1)+'t':fmtNum(maxVol)+'kg'}`;
     return `<div class="vol-chart-card">
       <div class="vol-chart-header">
@@ -232,13 +232,13 @@
   }
   function relDayLabel(iso) {
     const today = todayISO();
-    if (iso === today) return 'ì˜¤ëŠ˜';
+    if (iso === today) return '?¤ëŠ˜';
     const diff = Math.round((isoToDate(today) - isoToDate(iso)) / 86400000);
-    if (diff === 1) return 'ì–´ì œ';
+    if (diff === 1) return '?´ì œ';
     if (diff === 2) return 'ê·¸ì œ';
-    if (diff > 0)   return `${diff}ì¼ ì „`;
-    if (diff === -1) return 'ë‚´ì¼';
-    return `${-diff}ì¼ í›„`;
+    if (diff > 0)   return `${diff}????;
+    if (diff === -1) return '?´ì¼';
+    return `${-diff}????;
   }
   function getWeekDays() {
     const today = new Date();
@@ -250,7 +250,7 @@
     });
   }
 
-  /* â”€â”€ Persist queue â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ?€?€ Persist queue ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€ */
   let _pq = Promise.resolve();
   function persist() {
     _pq = _pq.then(doSave, doSave);
@@ -260,7 +260,7 @@
      this runs, so a slow or unreachable Firestore must never block the UI. */
   function cloudSync(task) {
     if (!state.user) return Promise.resolve();
-    withTimeout(Promise.resolve().then(task), 10000, 'ë™ê¸°í™”')
+    withTimeout(Promise.resolve().then(task), 10000, '?™ê¸°??)
       .catch((err) => console.warn('cloud sync failed', err));
     return Promise.resolve();
   }
@@ -283,7 +283,7 @@
     await cloudSync(() => Cloud.saveSession(copy));
   }
 
-  /* â”€â”€ Toast â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ?€?€ Toast ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€ */
   function toast(msg) {
     state.toast = msg;
     clearTimeout(state.toastTimer);
@@ -301,7 +301,7 @@
     }, 1800);
   }
 
-  /* â”€â”€ Navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ?€?€ Navigation ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€ */
   async function goTab(tab) {
     state.tab = tab;
     closeAllSheets();
@@ -327,7 +327,7 @@
     render();
   }
 
-  /* â”€â”€ Body Map SVG â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ?€?€ Body Map SVG ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€ */
   function bodyMapSVG(primary = [], secondary = []) {
     const P = new Set(primary);
     const S = new Set(secondary);
@@ -380,8 +380,8 @@
         <input type="radio" name="bv" id="bv-f" class="bv-radio" checked>
         <input type="radio" name="bv" id="bv-b" class="bv-radio">
         <div class="bm-tabs">
-          <label for="bv-f" class="bm-tab">ì•ë©´</label>
-          <label for="bv-b" class="bm-tab">ë’·ë©´</label>
+          <label for="bv-f" class="bm-tab">?ë©´</label>
+          <label for="bv-b" class="bm-tab">?·ë©´</label>
         </div>
         <div class="bm-panel bm-front">
           <svg viewBox="0 0 80 160" xmlns="http://www.w3.org/2000/svg">
@@ -396,7 +396,7 @@
       </div>`;
   }
 
-  /* â”€â”€ Render Root â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ?€?€ Render Root ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€ */
   function render() {
     if (!state.authReady) {
       appEl.innerHTML = renderSplash();
@@ -425,11 +425,11 @@
     bindEvents();
   }
 
-  /* â”€â”€ Auth screens â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ?€?€ Auth screens ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€ */
   function renderSplash() {
     return `<main class="login-screen">
       <div class="topbar-brand" style="font-size:32px">FIT<span>LOG</span></div>
-      <p class="login-sub">ë¶ˆëŸ¬ì˜¤ëŠ” ì¤‘â€¦</p>
+      <p class="login-sub">ë¶ˆëŸ¬?¤ëŠ” ì¤‘â€?/p>
     </main>`;
   }
 
@@ -439,43 +439,43 @@
     const busy = state.authBusy;
     return `<main class="login-screen">
       <div class="topbar-brand" style="font-size:32px">FIT<span>LOG</span></div>
-      <h1 class="login-title">ë‚´ ìš´ë™ ê¸°ë¡,<br>ê³„ì •ì— ì €ì¥í•˜ì„¸ìš”</h1>
-      <p class="login-sub">í°ê³¼ PCì—ì„œ ê°™ì€ ê¸°ë¡ì´ ì´ì–´ì§‘ë‹ˆë‹¤.</p>
+      <h1 class="login-title">???´ë™ ê¸°ë¡,<br>ê³„ì •???€?¥í•˜?¸ìš”</h1>
+      <p class="login-sub">?°ê³¼ PC?ì„œ ê°™ì? ê¸°ë¡???´ì–´ì§‘ë‹ˆ??</p>
       ${configured ? `
-        ${busy ? `<p class="login-sub" style="color:var(--accent);margin-bottom:16px">ì²˜ë¦¬ ì¤‘â€¦</p>` : ''}
+        ${busy ? `<p class="login-sub" style="color:var(--accent);margin-bottom:16px">ì²˜ë¦¬ ì¤‘â€?/p>` : ''}
         ${state.authError ? `<p class="login-error">${esc(state.authError)}</p>` : ''}
         <button class="btn-google" data-act="login-google" ${busy ? 'disabled' : ''}>
           <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 8 3.1l5.7-5.7C34.2 6.1 29.4 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.3-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 12 24 12c3.1 0 5.8 1.2 8 3.1l5.7-5.7C34.2 6.1 29.4 4 24 4 16.3 4 9.6 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 10-2 13.6-5.2l-6.3-5.3C29.2 35.1 26.7 36 24 36c-5.3 0-9.7-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-1.1 3.2-3.5 5.8-6.7 7.5l6.3 5.3C37.3 38.2 44 33 44 24c0-1.2-.1-2.3-.4-3.5z"/></svg>
-          Googleë¡œ ê³„ì†í•˜ê¸°
+          Googleë¡?ê³„ì†?˜ê¸°
         </button>
-        <div class="login-or">ë˜ëŠ” ì´ë©”ì¼ë¡œ ê³„ì†í•˜ê¸°</div>
+        <div class="login-or">?ëŠ” ?´ë©”?¼ë¡œ ê³„ì†?˜ê¸°</div>
         <div class="login-tabs">
-          <button class="login-tab${!isSignup?' active':''}" data-act="toggle-auth-mode" data-mode="signin">ë¡œê·¸ì¸</button>
-          <button class="login-tab${isSignup?' active':''}" data-act="toggle-auth-mode" data-mode="signup">íšŒì›ê°€ì…</button>
+          <button class="login-tab${!isSignup?' active':''}" data-act="toggle-auth-mode" data-mode="signin">ë¡œê·¸??/button>
+          <button class="login-tab${isSignup?' active':''}" data-act="toggle-auth-mode" data-mode="signup">?Œì›ê°€??/button>
         </div>
-        <input class="login-input" id="auth-email" type="email" inputmode="email" autocomplete="email" placeholder="ì´ë©”ì¼" value="${esc(state.authEmail)}">
-        <input class="login-input" id="auth-password" type="password" autocomplete="${isSignup?'new-password':'current-password'}" placeholder="ë¹„ë°€ë²ˆí˜¸ (6ì ì´ìƒ)" value="${esc(state.authPassword)}">
-        ${isSignup ? `<input class="login-input" id="auth-password2" type="password" autocomplete="new-password" placeholder="ë¹„ë°€ë²ˆí˜¸ í™•ì¸" value="">` : ''}
+        <input class="login-input" id="auth-email" type="email" inputmode="email" autocomplete="email" placeholder="?´ë©”?? value="${esc(state.authEmail)}">
+        <input class="login-input" id="auth-password" type="password" autocomplete="${isSignup?'new-password':'current-password'}" placeholder="ë¹„ë?ë²ˆí˜¸ (6???´ìƒ)" value="${esc(state.authPassword)}">
+        ${isSignup ? `<input class="login-input" id="auth-password2" type="password" autocomplete="new-password" placeholder="ë¹„ë?ë²ˆí˜¸ ?•ì¸" value="">` : ''}
         <button class="btn-hero" style="margin-top:8px" data-act="login-email" ${busy ? 'disabled' : ''}>
-          ${isSignup ? 'ì´ë©”ì¼ë¡œ íšŒì›ê°€ì…' : 'ì´ë©”ì¼ë¡œ ë¡œê·¸ì¸'}
+          ${isSignup ? '?´ë©”?¼ë¡œ ?Œì›ê°€?? : '?´ë©”?¼ë¡œ ë¡œê·¸??}
         </button>
       ` : `
-        <div class="login-setup">Firebase ì—°ê²° ì „ì—ëŠ” ì´ ê¸°ê¸°ì—ì„œë§Œ ì‚¬ìš©í•  ìˆ˜ ìˆìŠµë‹ˆë‹¤.</div>
+        <div class="login-setup">Firebase ?°ê²° ?„ì—????ê¸°ê¸°?ì„œë§??¬ìš©?????ˆìŠµ?ˆë‹¤.</div>
       `}
-      <button class="login-guest" data-act="login-guest" ${busy ? 'disabled' : ''}>ë¡œê·¸ì¸ ì—†ì´ ì´ ê¸°ê¸°ì—ì„œë§Œ ì“°ê¸°</button>
+      <button class="login-guest" data-act="login-guest" ${busy ? 'disabled' : ''}>ë¡œê·¸???†ì´ ??ê¸°ê¸°?ì„œë§??°ê¸°</button>
     </main>`;
   }
 
-  /* â”€â”€ Bottom Nav â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ?€?€ Bottom Nav ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€ */
   function renderBottomNav() {
     const tabs = [
-      { id:'home',     label:'í™ˆ',
+      { id:'home',     label:'??,
         icon:`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>` },
       { id:'workout',  label:'ê¸°ë¡',
         icon:`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>` },
-      { id:'history',  label:'íˆìŠ¤í† ë¦¬',
+      { id:'history',  label:'?ˆìŠ¤? ë¦¬',
         icon:`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>` },
-      { id:'settings', label:'ì„¤ì •',
+      { id:'settings', label:'?¤ì •',
         icon:`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>` },
     ];
     return `<nav class="bottom-nav">${tabs.map(t=>`
@@ -484,7 +484,7 @@
       </button>`).join('')}</nav>`;
   }
 
-  /* â”€â”€ Home Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ?€?€ Home Tab ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€ */
   function renderHome() {
     const today = todayISO();
     const todaySess = state.sessions.find(s => s.date === today);
@@ -497,18 +497,18 @@
       const isToday = iso === today;
       const isPast  = iso < today;
       return `<div class="week-day${hasSess?' done':''}${isToday?' today':''}">
-        <div class="dot">${hasSess ? 'âœ“' : (isPast ? 'Â·' : '')}</div>
+        <div class="dot">${hasSess ? '?? : (isPast ? 'Â·' : '')}</div>
         <span>${WEEKDAYS_SHORT[i]}</span>
       </div>`;
     }).join('');
 
     let todayBlock;
     if (todaySess) {
-      const summary = sessionSummary(todaySess) || 'ê¸°ë¡ ì™„ë£Œ';
+      const summary = sessionSummary(todaySess) || 'ê¸°ë¡ ?„ë£Œ';
       todayBlock = `<div class="today-card">
         <div class="today-card-top">
-          <div class="today-status-badge done">âœ“ ì˜¤ëŠ˜ ì™„ë£Œ</div>
-          <button class="btn-ghost" style="height:32px;padding:0 12px;font-size:13px" data-act="today">í¸ì§‘</button>
+          <div class="today-status-badge done">???¤ëŠ˜ ?„ë£Œ</div>
+          <button class="btn-ghost" style="height:32px;padding:0 12px;font-size:13px" data-act="today">?¸ì§‘</button>
         </div>
         <div style="font-size:15px;color:var(--sub);font-weight:600">${esc(summary)}</div>
       </div>`;
@@ -516,7 +516,7 @@
       todayBlock = `<div style="margin-bottom:20px">
         <button class="btn-hero" data-act="today">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          ì˜¤ëŠ˜ ìš´ë™ ê¸°ë¡í•˜ê¸°
+          ?¤ëŠ˜ ?´ë™ ê¸°ë¡?˜ê¸°
         </button>
       </div>`;
     }
@@ -532,7 +532,7 @@
            </button>`).join('')}</div>`
       : '';
 
-    const greetings = ['íŒŒì´íŒ…! ğŸ’ª', 'ê¾¸ì¤€í•¨ì´ ë‹µì…ë‹ˆë‹¤ ğŸ”¥', 'ì˜¤ëŠ˜ë„ í•œ ê±¸ìŒ ë” ğŸš€', 'ëª¸ì´ ìì‚°ì…ë‹ˆë‹¤ âš¡'];
+    const greetings = ['?Œì´?? ?’ª', 'ê¾¸ì??¨ì´ ?µì…?ˆë‹¤ ?”¥', '?¤ëŠ˜????ê±¸ìŒ ????', 'ëª¸ì´ ?ì‚°?…ë‹ˆ????];
     const greeting = greetings[new Date().getDay() % greetings.length];
     const weekCount = weekDays.filter(iso => state.sessions.some(s => s.date === iso)).length;
 
@@ -542,8 +542,8 @@
       </header>
       <main class="screen">
         <div class="home-greeting">
-          <div class="home-date">${todayDate.getMonth()+1}ì›” ${todayDate.getDate()}ì¼ (${WEEKDAYS[todayDate.getDay()]}) Â· ì´ë²ˆ ì£¼ ${weekCount}íšŒ</div>
-          <div class="home-title">ì˜¤ëŠ˜ë„ <em>${greeting}</em></div>
+          <div class="home-date">${todayDate.getMonth()+1}??${todayDate.getDate()}??(${WEEKDAYS[todayDate.getDay()]}) Â· ?´ë²ˆ ì£?${weekCount}??/div>
+          <div class="home-title">?¤ëŠ˜??<em>${greeting}</em></div>
         </div>
         <div class="week-strip">${weekStrip}</div>
         ${todayBlock}
@@ -551,12 +551,12 @@
       </main>`;
   }
 
-  /* â”€â”€ Workout Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ?€?€ Workout Tab ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€ */
   function renderWorkout() {
     const s = state.session;
     if (!s) return `<header class="topbar"><div class="topbar-title">ê¸°ë¡</div></header>
-      <main class="screen"><div class="empty-state"><div class="empty-icon">ğŸ‹ï¸</div>ì˜¤ëŠ˜ì˜ ìš´ë™ì„ ì‹œì‘í•˜ì„¸ìš”</div>
-      <button class="btn-hero" data-act="today">ì˜¤ëŠ˜ ê¸°ë¡ ì‹œì‘í•˜ê¸°</button></main>`;
+      <main class="screen"><div class="empty-state"><div class="empty-icon">?‹ï¸?/div>?¤ëŠ˜???´ë™???œì‘?˜ì„¸??/div>
+      <button class="btn-hero" data-act="today">?¤ëŠ˜ ê¸°ë¡ ?œì‘?˜ê¸°</button></main>`;
 
     const chips = PARTS.map(p => {
       const on = s.parts.includes(p.id);
@@ -571,7 +571,7 @@
     if (s.parts.includes('run')) {
       blocks += `<div class="run-card">
         <div class="sec-head" style="margin-top:0">
-          <div class="sec-title" style="color:var(--blue)">ëŸ¬ë‹</div>
+          <div class="sec-title" style="color:var(--blue)">?¬ë‹</div>
         </div>
         <div class="run-fields">
           <div>
@@ -582,10 +582,10 @@
             </div>
           </div>
           <div>
-            <label>ì‹œê°„</label>
+            <label>?œê°„</label>
             <div class="run-input-wrap">
               <input class="run-input" data-run="minutes" inputmode="decimal" value="${esc(s.run.minutes)}" placeholder="0">
-              <span class="run-unit">ë¶„</span>
+              <span class="run-unit">ë¶?/span>
             </div>
           </div>
         </div>
@@ -599,14 +599,14 @@
       const exercises = s.exercises.filter(e => e.part === part.id);
       blocks += `<div class="sec-head">
         <div class="sec-title" style="color:${part.color}">${part.label}</div>
-        <button class="btn-add-sm" data-act="open-picker" data-part="${part.id}">+ ìš´ë™ ì¶”ê°€</button>
+        <button class="btn-add-sm" data-act="open-picker" data-part="${part.id}">+ ?´ë™ ì¶”ê?</button>
       </div>`;
       if (exercises.length) {
         blocks += exercises.map(ex => renderExerciseCard(ex)).join('');
       } else {
         blocks += `<button class="add-ex-cta" data-act="open-picker" data-part="${part.id}">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          ${part.label} ìš´ë™ ì¶”ê°€í•˜ê¸°
+          ${part.label} ?´ë™ ì¶”ê??˜ê¸°
         </button>`;
       }
     }
@@ -616,8 +616,8 @@
         <div class="pick-prompt-icon">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6.5 6.5h11M6.5 17.5h11M4 9.5v5M20 9.5v5M9 12h6"/></svg>
         </div>
-        <div class="pick-prompt-title">ì–´ë–¤ ë¶€ìœ„ë¥¼ í–ˆë‚˜ìš”?</div>
-        <div class="pick-prompt-sub">ìœ„ì—ì„œ ë¶€ìœ„ë¥¼ ê³ ë¥´ë©´ ìš´ë™ì„ ê¸°ë¡í•  ìˆ˜ ìˆìŠµë‹ˆë‹¤.</div>
+        <div class="pick-prompt-title">?´ë–¤ ë¶€?„ë? ?ˆë‚˜??</div>
+        <div class="pick-prompt-sub">?„ì—??ë¶€?„ë? ê³ ë¥´ë©??´ë™??ê¸°ë¡?????ˆìŠµ?ˆë‹¤.</div>
       </div>`;
     }
 
@@ -632,16 +632,16 @@
         <div class="sum-grid">
           <div class="sum-item">
             <div class="sum-val">${stats.done}<span>/${stats.total}</span></div>
-            <div class="sum-lbl">ì™„ë£Œ ì„¸íŠ¸</div>
+            <div class="sum-lbl">?„ë£Œ ?¸íŠ¸</div>
           </div>
           <div class="sum-item">
             <div class="sum-val">${fmtNum(stats.volume)}<span>kg</span></div>
-            <div class="sum-lbl">ì´ ë³¼ë¥¨</div>
+            <div class="sum-lbl">ì´?ë³¼ë¥¨</div>
           </div>
           ${hasRunData(s.run) ? `
           <div class="sum-item">
             <div class="sum-val">${Number.isFinite(runKm)&&runKm?runKm:'-'}<span>km</span></div>
-            <div class="sum-lbl">ëŸ¬ë‹</div>
+            <div class="sum-lbl">?¬ë‹</div>
           </div>` : ''}
         </div>
         ${stats.total ? `<div class="sum-bar"><div class="sum-bar-fill" style="width:${pct}%"></div></div>` : ''}
@@ -653,33 +653,33 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
         <div class="topbar-title">ê¸°ë¡</div>
-        ${isToday ? '' : `<button class="btn-today" data-act="today">ì˜¤ëŠ˜ë¡œ</button>`}
+        ${isToday ? '' : `<button class="btn-today" data-act="today">?¤ëŠ˜ë¡?/button>`}
         <button class="btn-icon danger" data-act="delete-day">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
         </button>
       </header>
       <main class="screen">
         <div class="day-nav">
-          <button class="day-nav-arrow" data-act="shift-day" data-delta="-1" aria-label="ì´ì „ ë‚ ">
+          <button class="day-nav-arrow" data-act="shift-day" data-delta="-1" aria-label="?´ì „ ??>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><polyline points="15 18 9 12 15 6"/></svg>
           </button>
           <label class="day-nav-mid">
             <div class="day-nav-date">${esc(longDate(s.date))}</div>
             <div class="day-nav-rel">${esc(relDayLabel(s.date))}</div>
-            <input type="date" data-act="change-date" value="${s.date}" max="${todayISO()}" aria-label="ë‚ ì§œ ì„ íƒ">
+            <input type="date" data-act="change-date" value="${s.date}" max="${todayISO()}" aria-label="? ì§œ ? íƒ">
           </label>
-          <button class="day-nav-arrow" data-act="shift-day" data-delta="1" aria-label="ë‹¤ìŒ ë‚ "${isToday?' disabled':''}>
+          <button class="day-nav-arrow" data-act="shift-day" data-delta="1" aria-label="?¤ìŒ ??${isToday?' disabled':''}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><polyline points="9 18 15 12 9 6"/></svg>
           </button>
         </div>
         ${summary}
-        <div class="sec-head" style="margin-top:18px"><div class="sec-title">ë¶€ìœ„ ì„ íƒ</div></div>
+        <div class="sec-head" style="margin-top:18px"><div class="sec-title">ë¶€??? íƒ</div></div>
         <div class="part-chips">${chips}</div>
         ${blocks}
       </main>`;
   }
 
-  /* â”€â”€ Exercise Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ?€?€ Exercise Card ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€ */
   function renderExerciseCard(ex) {
     const libEx = findExercise(ex.id) || state.customExercises.find(e => e.id === ex.id);
     const last = lastLog(ex.name, state.session.date);
@@ -694,7 +694,7 @@
     const prevHint = last
       ? `<button class="prev-hint" data-act="copy-last" data-ex="${esc(ex.id)}">
            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.7"/></svg>
-           <strong>ì§€ë‚œë²ˆ ${shortDate(last.date)}</strong> Â· ${esc(fmtSets(last.sets)||'ê¸°ë¡ ìˆìŒ')} â€” íƒ­í•˜ë©´ ë¶ˆëŸ¬ì˜¤ê¸°
+           <strong>ì§€?œë²ˆ ${shortDate(last.date)}</strong> Â· ${esc(fmtSets(last.sets)||'ê¸°ë¡ ?ˆìŒ')} ????•˜ë©?ë¶ˆëŸ¬?¤ê¸°
          </button>`
       : '';
 
@@ -710,12 +710,12 @@
         </button>
         <button class="val-chip${done?' done':''}" data-act="open-reps" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}">
           <div class="val-chip-num">${reps}</div>
-          <div class="val-chip-unit">íšŒ</div>
+          <div class="val-chip-unit">??/div>
         </button>
-        <button class="done-toggle${done?' done':''}" data-act="toggle-done" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="ì„¸íŠ¸ ì™„ë£Œ">
+        <button class="done-toggle${done?' done':''}" data-act="toggle-done" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="?¸íŠ¸ ?„ë£Œ">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8"><polyline points="20 6 9 17 4 12"/></svg>
         </button>
-        <button class="set-del" data-act="del-set" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="ì„¸íŠ¸ ì‚­ì œ">
+        <button class="set-del" data-act="del-set" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="?¸íŠ¸ ?? œ">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>`;
@@ -725,13 +725,13 @@
     const vol = exVolume(ex);
     const allDone = prog.total > 0 && prog.done === prog.total;
     const metaBits = [];
-    if (prog.total) metaBits.push(`${prog.done}/${prog.total} ì„¸íŠ¸`);
+    if (prog.total) metaBits.push(`${prog.done}/${prog.total} ?¸íŠ¸`);
     if (vol > 0)    metaBits.push(`${fmtNum(vol)}kg`);
 
     return `<article class="ex-card${allDone?' all-done':''}">
       <div class="ex-card-head">
         <div style="flex:1;min-width:0">
-          <div class="ex-card-name">${allDone?'<span class="ex-done-tick">âœ“</span> ':''}${esc(ex.name)}</div>
+          <div class="ex-card-name">${allDone?'<span class="ex-done-tick">??/span> ':''}${esc(ex.name)}</div>
           <div class="ex-card-sub">${muscleTags}</div>
           ${metaBits.length ? `<div class="ex-card-meta">${esc(metaBits.join(' Â· '))}</div>` : ''}
         </div>
@@ -744,17 +744,17 @@
       </div>
       ${prevHint}
       <div class="set-table">
-        <div class="set-table-head"><span>#</span><span>ë¬´ê²Œ</span><span>íšŸìˆ˜</span><span>ì™„ë£Œ</span><span></span></div>
+        <div class="set-table-head"><span>#</span><span>ë¬´ê²Œ</span><span>?Ÿìˆ˜</span><span>?„ë£Œ</span><span></span></div>
         ${sets}
         <button class="add-set-row" data-act="add-set" data-ex="${esc(ex.id)}">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          ì„¸íŠ¸ ì¶”ê°€
+          ?¸íŠ¸ ì¶”ê?
         </button>
       </div>
     </article>`;
   }
 
-  /* â”€â”€ Weight Picker Sheet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ?€?€ Weight Picker Sheet ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€ */
   function renderWeightPickerSheet() {
     const { value, str = '' } = state.weightPicker;
     const display = str || (value == null || value === '' ? '0' : String(value));
@@ -763,11 +763,11 @@
     const presets = WEIGHT_PRESETS.map(w =>
       `<button class="preset-chip${Number(value)===w&&!str?' on':''}" data-act="set-weight-preset" data-val="${w}">${w}</button>`
     ).join('');
-    const numpadRows = [['7','8','9'],['4','5','6'],['1','2','3'],['.','0','âŒ«']];
+    const numpadRows = [['7','8','9'],['4','5','6'],['1','2','3'],['.','0','??]];
     const numpad = numpadRows.map(row =>
       `<div class="numpad-row">${row.map(k => {
-        const act = k==='âŒ«' ? 'numpad-w-back' : k==='.' ? 'numpad-w-dot' : 'numpad-w-digit';
-        const cls = k==='âŒ«' ? 'numpad-key back' : 'numpad-key';
+        const act = k==='?? ? 'numpad-w-back' : k==='.' ? 'numpad-w-dot' : 'numpad-w-digit';
+        const cls = k==='?? ? 'numpad-key back' : 'numpad-key';
         return `<button class="${cls}" data-act="${act}" data-d="${k}">${k}</button>`;
       }).join('')}</div>`
     ).join('');
@@ -780,18 +780,18 @@
         </div>
         <div class="numpad">${numpad}</div>
         <div class="picker-adj-row">
-          <button class="adj-btn minus" data-act="step-weight" data-delta="-5">âˆ’5</button>
-          <button class="adj-btn minus" data-act="step-weight" data-delta="-2.5">âˆ’2.5</button>
+          <button class="adj-btn minus" data-act="step-weight" data-delta="-5">??</button>
+          <button class="adj-btn minus" data-act="step-weight" data-delta="-2.5">??.5</button>
           <button class="adj-btn plus" data-act="step-weight" data-delta="2.5">+2.5</button>
           <button class="adj-btn plus" data-act="step-weight" data-delta="5">+5</button>
         </div>
         <div class="presets-scroll">${presets}</div>
-        <button class="picker-confirm" data-act="confirm-weight">í™•ì¸</button>
+        <button class="picker-confirm" data-act="confirm-weight">?•ì¸</button>
       </div>
     </div>`;
   }
 
-  /* â”€â”€ Reps Picker Sheet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ?€?€ Reps Picker Sheet ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€ */
   function renderRepsPickerSheet() {
     const { value, str = '' } = state.repsPicker;
     const display = str || (value == null || value === '' ? '0' : String(value));
@@ -799,11 +799,11 @@
     const presets = REPS_PRESETS.map(r =>
       `<button class="preset-chip${Number(value)===r&&!str?' on':''}" data-act="set-reps-preset" data-val="${r}">${r}</button>`
     ).join('');
-    const numpadRows = [['7','8','9'],['4','5','6'],['1','2','3'],['C','0','âŒ«']];
+    const numpadRows = [['7','8','9'],['4','5','6'],['1','2','3'],['C','0','??]];
     const numpad = numpadRows.map(row =>
       `<div class="numpad-row">${row.map(k => {
-        const act = k==='âŒ«' ? 'numpad-r-back' : k==='C' ? 'numpad-r-clear' : 'numpad-r-digit';
-        const cls = k==='âŒ«' ? 'numpad-key back' : k==='C' ? 'numpad-key clear' : 'numpad-key';
+        const act = k==='?? ? 'numpad-r-back' : k==='C' ? 'numpad-r-clear' : 'numpad-r-digit';
+        const cls = k==='?? ? 'numpad-key back' : k==='C' ? 'numpad-key clear' : 'numpad-key';
         return `<button class="${cls}" data-act="${act}" data-d="${k}">${k}</button>`;
       }).join('')}</div>`
     ).join('');
@@ -812,22 +812,22 @@
         <div class="sheet-grab"></div>
         <div class="picker-big">
           <div class="picker-big-num">${esc(display)}</div>
-          <div class="picker-big-unit">íšŒ</div>
+          <div class="picker-big-unit">??/div>
         </div>
         <div class="numpad">${numpad}</div>
         <div class="picker-adj-row">
-          <button class="adj-btn minus" data-act="step-reps" data-delta="-2">âˆ’2</button>
-          <button class="adj-btn minus" data-act="step-reps" data-delta="-1">âˆ’1</button>
+          <button class="adj-btn minus" data-act="step-reps" data-delta="-2">??</button>
+          <button class="adj-btn minus" data-act="step-reps" data-delta="-1">??</button>
           <button class="adj-btn plus" data-act="step-reps" data-delta="1">+1</button>
           <button class="adj-btn plus" data-act="step-reps" data-delta="2">+2</button>
         </div>
         <div class="presets-scroll">${presets}</div>
-        <button class="picker-confirm" data-act="confirm-reps">í™•ì¸</button>
+        <button class="picker-confirm" data-act="confirm-reps">?•ì¸</button>
       </div>
     </div>`;
   }
 
-  /* â”€â”€ Exercise Info Sheet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ?€?€ Exercise Info Sheet ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€ */
   function renderExerciseInfoSheet(exId) {
     /* exId may be a library id, custom id, or exercise name */
     const libEx = findExercise(exId) || state.customExercises.find(e => e.id === exId || e.name === exId);
@@ -835,8 +835,8 @@
 
     const primary   = libEx.primary || [];
     const secondary = libEx.secondary || [];
-    const diffStars = 'â˜…'.repeat(libEx.difficulty||1) + 'â˜†'.repeat(3-(libEx.difficulty||1));
-    const eq = EQUIPMENT_LABEL[libEx.equipment] || libEx.equipment || 'ê¸°íƒ€';
+    const diffStars = '??.repeat(libEx.difficulty||1) + '??.repeat(3-(libEx.difficulty||1));
+    const eq = EQUIPMENT_LABEL[libEx.equipment] || libEx.equipment || 'ê¸°í?';
 
     const primaryPills   = primary.map(m => `<span class="muscle-pill primary"><span class="muscle-pill-dot"></span>${esc(MUSCLE_GROUPS[m]||m)}</span>`).join('');
     const secondaryPills = secondary.map(m => `<span class="muscle-pill secondary"><span class="muscle-pill-dot"></span>${esc(MUSCLE_GROUPS[m]||m)}</span>`).join('');
@@ -862,18 +862,18 @@
         </div>
         ${bodyMapSVG(primary, secondary)}
         <div class="muscle-legend">
-          <div class="muscle-legend-title">ì£¼ë™ê·¼</div>
+          <div class="muscle-legend-title">ì£¼ë™ê·?/div>
           <div class="muscle-legend-row">${primaryPills}</div>
-          ${secondary.length ? `<div class="muscle-legend-title" style="margin-top:8px">í˜‘ë ¥ê·¼</div><div class="muscle-legend-row">${secondaryPills}</div>` : ''}
+          ${secondary.length ? `<div class="muscle-legend-title" style="margin-top:8px">?‘ë ¥ê·?/div><div class="muscle-legend-row">${secondaryPills}</div>` : ''}
         </div>
         ${renderExerciseTrend(libEx.name)}
         ${libEx.description ? `<p class="info-desc">${esc(libEx.description)}</p>` : ''}
-        ${tips ? `<div class="sec-title" style="margin-bottom:10px">ìˆ˜í–‰ íŒ</div><ul class="tips-list">${tips}</ul>` : ''}
+        ${tips ? `<div class="sec-title" style="margin-bottom:10px">?˜í–‰ ??/div><ul class="tips-list">${tips}</ul>` : ''}
       </div>
     </div>`;
   }
 
-  /* â”€â”€ Exercise Picker Sheet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ?€?€ Exercise Picker Sheet ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€ */
   function renderExercisePickerSheet(partId) {
     const part = PARTS.find(p => p.id === partId);
     const added = new Set((state.session?.exercises||[]).filter(e=>e.part===partId).map(e=>e.name));
@@ -889,7 +889,7 @@
         </button>
         ${eq ? `<span class="pick-item-eq">${esc(eq)}</span>` : ''}
         ${on ? `<button class="custom-del" data-act="quick-del-ex" data-name="${esc(item.name)}" data-part="${partId}">ë¹¼ê¸°</button>` : ''}
-        ${item.custom ? `<button class="custom-del" data-act="del-custom" data-id="${esc(item.id)}">ì‚­ì œ</button>` : ''}
+        ${item.custom ? `<button class="custom-del" data-act="del-custom" data-id="${esc(item.id)}">?? œ</button>` : ''}
         <div class="pick-check">${on ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>' : ''}</div>
       </div>`;
     }).join('');
@@ -898,27 +898,27 @@
       <div class="sheet-panel">
         <div class="sheet-grab"></div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-          <div class="sheet-title" style="margin:0">${part?part.label:''} ìš´ë™</div>
-          <button class="btn-ghost" style="height:36px;padding:0 14px;font-size:14px" data-act="close-picker">ì™„ë£Œ</button>
+          <div class="sheet-title" style="margin:0">${part?part.label:''} ?´ë™</div>
+          <button class="btn-ghost" style="height:36px;padding:0 14px;font-size:14px" data-act="close-picker">?„ë£Œ</button>
         </div>
         <div class="search-bar">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input id="picker-search" placeholder="ìš´ë™ ê²€ìƒ‰" value="${esc(state.exerciseSearch)}" data-act="search-ex">
+          <input id="picker-search" placeholder="?´ë™ ê²€?? value="${esc(state.exerciseSearch)}" data-act="search-ex">
         </div>
-        <div class="pick-list">${items || '<div class="help-text">ê²€ìƒ‰ ê²°ê³¼ê°€ ì—†ìŠµë‹ˆë‹¤.</div>'}</div>
+        <div class="pick-list">${items || '<div class="help-text">ê²€??ê²°ê³¼ê°€ ?†ìŠµ?ˆë‹¤.</div>'}</div>
         <div class="custom-add-row">
-          <input id="custom-name" placeholder="ì—†ëŠ” ìš´ë™ ì§ì ‘ ì¶”ê°€">
-          <button class="btn-add-sm" data-act="add-custom" data-part="${partId}">ì¶”ê°€</button>
+          <input id="custom-name" placeholder="?†ëŠ” ?´ë™ ì§ì ‘ ì¶”ê?">
+          <button class="btn-add-sm" data-act="add-custom" data-part="${partId}">ì¶”ê?</button>
         </div>
       </div>
     </div>`;
   }
 
-  /* â”€â”€ History Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ?€?€ History Tab ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€ */
   function renderHistory() {
     if (!state.sessions.length) return `
-      <header class="topbar"><div class="topbar-title">íˆìŠ¤í† ë¦¬</div></header>
-      <main class="screen"><div class="empty-state"><div class="empty-icon">ğŸ“‹</div>ì•„ì§ ê¸°ë¡ì´ ì—†ìŠµë‹ˆë‹¤.<br>ì²« ìš´ë™ì„ ê¸°ë¡í•´ ë³´ì„¸ìš”!</div></main>`;
+      <header class="topbar"><div class="topbar-title">?ˆìŠ¤? ë¦¬</div></header>
+      <main class="screen"><div class="empty-state"><div class="empty-icon">?“‹</div>?„ì§ ê¸°ë¡???†ìŠµ?ˆë‹¤.<br>ì²??´ë™??ê¸°ë¡??ë³´ì„¸??</div></main>`;
 
     const groups = new Map();
     for (const s of state.sessions) {
@@ -942,11 +942,11 @@
       }
       body += '</div>';
     }
-    return `<header class="topbar"><div class="topbar-title">íˆìŠ¤í† ë¦¬</div></header>
+    return `<header class="topbar"><div class="topbar-title">?ˆìŠ¤? ë¦¬</div></header>
       <main class="screen">${body}</main>`;
   }
 
-  /* â”€â”€ Settings Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ?€?€ Settings Tab ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€ */
   function renderSettings() {
     const u = state.user;
     const account = u ? `
@@ -954,8 +954,8 @@
       <div class="account-card">
         ${u.photoURL ? `<img class="account-avatar" src="${esc(u.photoURL)}" alt="">` : `<div class="account-avatar fallback">${esc((u.displayName||'?').slice(0,1))}</div>`}
         <div class="settings-item-text">
-          <div class="settings-item-title">${esc(u.displayName || 'ì‚¬ìš©ì')}</div>
-          <div class="settings-item-sub">${esc(u.email || 'í´ë¼ìš°ë“œì— ë™ê¸°í™” ì¤‘')}</div>
+          <div class="settings-item-title">${esc(u.displayName || '?¬ìš©??)}</div>
+          <div class="settings-item-sub">${esc(u.email || '?´ë¼?°ë“œ???™ê¸°??ì¤?)}</div>
         </div>
       </div>
       <button class="settings-item" data-act="logout">
@@ -963,8 +963,8 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         </div>
         <div class="settings-item-text">
-          <div class="settings-item-title">ë¡œê·¸ì•„ì›ƒ</div>
-          <div class="settings-item-sub">ì´ ê¸°ê¸°ì—ì„œ ê³„ì • ì—°ê²° í•´ì œ</div>
+          <div class="settings-item-title">ë¡œê·¸?„ì›ƒ</div>
+          <div class="settings-item-sub">??ê¸°ê¸°?ì„œ ê³„ì • ?°ê²° ?´ì œ</div>
         </div>
       </button>` : `
       <div class="settings-label">ê³„ì •</div>
@@ -973,8 +973,8 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         </div>
         <div class="settings-item-text">
-          <div class="settings-item-title">ë¡œê·¸ì¸</div>
-          <div class="settings-item-sub">ì§€ê¸ˆ ê¸°ë¡ì€ ì´ ê¸°ê¸°ì—ë§Œ ì €ì¥ë©ë‹ˆë‹¤</div>
+          <div class="settings-item-title">ë¡œê·¸??/div>
+          <div class="settings-item-sub">ì§€ê¸?ê¸°ë¡?€ ??ê¸°ê¸°?ë§Œ ?€?¥ë©?ˆë‹¤</div>
         </div>
         <svg class="settings-item-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
       </button>`;
@@ -986,14 +986,14 @@
       <main class="screen">
         <div style="height:12px"></div>
         ${account}
-        <div class="settings-label" style="margin-top:20px">ë°ì´í„°</div>
+        <div class="settings-label" style="margin-top:20px">?°ì´??/div>
         <button class="settings-item" data-act="export">
           <div class="settings-item-icon" style="background:var(--accent-bg);color:var(--accent)">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           </div>
           <div class="settings-item-text">
-            <div class="settings-item-title">ë°±ì—… ë‚´ë³´ë‚´ê¸°</div>
-            <div class="settings-item-sub">JSON íŒŒì¼ë¡œ ì €ì¥</div>
+            <div class="settings-item-title">ë°±ì—… ?´ë³´?´ê¸°</div>
+            <div class="settings-item-sub">JSON ?Œì¼ë¡??€??/div>
           </div>
           <svg class="settings-item-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
         </button>
@@ -1002,20 +1002,20 @@
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           </div>
           <div class="settings-item-text">
-            <div class="settings-item-title">ë°±ì—… ê°€ì ¸ì˜¤ê¸°</div>
-            <div class="settings-item-sub">JSON íŒŒì¼ì—ì„œ ë³µì›</div>
+            <div class="settings-item-title">ë°±ì—… ê°€?¸ì˜¤ê¸?/div>
+            <div class="settings-item-sub">JSON ?Œì¼?ì„œ ë³µì›</div>
           </div>
           <svg class="settings-item-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
         </button>
 
-        <div class="settings-label" style="margin-top:20px">ì•± ì¶”ê°€</div>
+        <div class="settings-label" style="margin-top:20px">??ì¶”ê?</div>
         <div class="settings-item" style="cursor:default">
           <div class="settings-item-icon" style="background:color-mix(in srgb, var(--purple) 14%, var(--bg));color:var(--purple)">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
           </div>
           <div class="settings-item-text">
-            <div class="settings-item-title">í™ˆ í™”ë©´ì— ì¶”ê°€</div>
-            <div class="settings-item-sub">í¬ë¡¬ ë©”ë‰´ â†’ í™ˆ í™”ë©´ì— ì¶”ê°€</div>
+            <div class="settings-item-title">???”ë©´??ì¶”ê?</div>
+            <div class="settings-item-sub">?¬ë¡¬ ë©”ë‰´ ?????”ë©´??ì¶”ê?</div>
           </div>
         </div>
 
@@ -1023,14 +1023,14 @@
         <div class="settings-item" style="cursor:default">
           <div class="settings-item-text">
             <div class="settings-item-title">ë²„ì „ 1.1</div>
-            <div class="settings-item-sub">${state.user ? 'ê¸°ë¡ì€ ê³„ì • í´ë¼ìš°ë“œì™€ ì´ ê¸°ê¸°ì— ì €ì¥ë©ë‹ˆë‹¤' : 'ê¸°ë¡ì€ ì´ ê¸°ê¸° ë¸Œë¼ìš°ì €ì—ë§Œ ì €ì¥ë©ë‹ˆë‹¤'}</div>
+            <div class="settings-item-sub">${state.user ? 'ê¸°ë¡?€ ê³„ì • ?´ë¼?°ë“œ?€ ??ê¸°ê¸°???€?¥ë©?ˆë‹¤' : 'ê¸°ë¡?€ ??ê¸°ê¸° ë¸Œë¼?°ì??ë§Œ ?€?¥ë©?ˆë‹¤'}</div>
           </div>
         </div>
         <div style="height:24px"></div>
       </main>`;
   }
 
-  /* â”€â”€ Event Binding â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ?€?€ Event Binding ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€ */
   function bindEvents() {
     appEl.onclick  = onClick;
     appEl.oninput  = onInput;
@@ -1044,7 +1044,7 @@
     });
   }
 
-  /* â”€â”€ Click handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ?€?€ Click handler ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€ */
   async function onClick(e) {
     /* del-custom needs to stop before pick-item fires */
     const delCustom = e.target.closest('[data-act="del-custom"]');
@@ -1229,7 +1229,7 @@
     if (act === 'logout') { await handleLogout(); return; }
   }
 
-  /* â”€â”€ Input handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ?€?€ Input handler ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€ */
   async function onInput(e) {
     const t = e.target;
     if (t.dataset.auth === 'email') { state.authEmail = t.value; return; }
@@ -1257,10 +1257,10 @@
             </button>
             ${eq ? `<span class="pick-item-eq">${esc(eq)}</span>` : ''}
             ${on ? `<button class="custom-del" data-act="quick-del-ex" data-name="${esc(item.name)}" data-part="${partId}">ë¹¼ê¸°</button>` : ''}
-            ${item.custom ? `<button class="custom-del" data-act="del-custom" data-id="${esc(item.id)}">ì‚­ì œ</button>` : ''}
+            ${item.custom ? `<button class="custom-del" data-act="del-custom" data-id="${esc(item.id)}">?? œ</button>` : ''}
             <div class="pick-check">${on ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>' : ''}</div>
           </div>`;
-        }).join('') || '<div class="help-text">ê²€ìƒ‰ ê²°ê³¼ê°€ ì—†ìŠµë‹ˆë‹¤.</div>';
+        }).join('') || '<div class="help-text">ê²€??ê²°ê³¼ê°€ ?†ìŠµ?ˆë‹¤.</div>';
         bindEvents();
       }
     }
@@ -1274,7 +1274,7 @@
     }
   }
 
-  /* â”€â”€ Action handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ?€?€ Action handlers ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€ */
   async function handleTogglePart(partId) {
     const s = state.session;
     const on = s.parts.includes(partId);
@@ -1282,7 +1282,7 @@
       const hasEx = s.exercises.some(e=>e.part===partId);
       const runBusy = partId === 'run' && hasRunData(s.run);
       if (hasEx || runBusy) {
-        if (!confirm('ì´ ë¶€ìœ„ ê¸°ë¡ì„ í•¨ê»˜ ì§€ìš¸ê¹Œìš”?')) return;
+        if (!confirm('??ë¶€??ê¸°ë¡???¨ê»˜ ì§€?¸ê¹Œ??')) return;
         s.exercises = s.exercises.filter(e=>e.part!==partId);
         if (partId === 'run') s.run = { km:'', minutes:'', notes:'' };
       }
@@ -1297,7 +1297,7 @@
     if (!name) return;
     const s = state.session;
     if (s.exercises.some(e=>e.part===partId&&e.name===name)) {
-      toast('ì´ë¯¸ ì¶”ê°€ëœ ìš´ë™ì…ë‹ˆë‹¤');
+      toast('?´ë? ì¶”ê????´ë™?…ë‹ˆ??);
       return;
     }
     const last = lastLog(name, s.date);
@@ -1328,7 +1328,7 @@
   async function handleDeleteCustom(id) {
     const item = state.customExercises.find(e=>e.id===id);
     if (!item) return;
-    if (!confirm(`'${item.name}'ì„(ë¥¼) ëª©ë¡ì—ì„œ ì‚­ì œí• ê¹Œìš”?`)) return;
+    if (!confirm(`'${item.name}'??ë¥? ëª©ë¡?ì„œ ?? œ? ê¹Œ??`)) return;
     await WorkoutDB.deleteCustomExercise(id);
     state.customExercises = state.customExercises.filter(e=>e.id!==id);
     await cloudSync(() => Cloud.deleteCustom(id));
@@ -1351,7 +1351,7 @@
   async function handleDeleteSet(exId, setId) {
     const ex = state.session.exercises.find(e=>e.id===exId);
     if (!ex) return;
-    if (ex.sets.length <= 1) { toast('ë§ˆì§€ë§‰ ì„¸íŠ¸ëŠ” ì§€ìš¸ ìˆ˜ ì—†ìŠµë‹ˆë‹¤'); return; }
+    if (ex.sets.length <= 1) { toast('ë§ˆì?ë§??¸íŠ¸??ì§€?????†ìŠµ?ˆë‹¤'); return; }
     ex.sets = ex.sets.filter(s => s.id !== setId);
     await persist(); render();
   }
@@ -1368,20 +1368,20 @@
     const ex = state.session.exercises.find(e=>e.id===exId);
     if (!ex) return;
     const last = lastLog(ex.name, state.session.date);
-    if (!last) { toast('ì´ì „ ê¸°ë¡ì´ ì—†ìŠµë‹ˆë‹¤'); return; }
+    if (!last) { toast('?´ì „ ê¸°ë¡???†ìŠµ?ˆë‹¤'); return; }
     ex.sets = last.sets.map(s=>({ id:uid(), kg:s.kg, reps:s.reps, done:false }));
     await persist(); render();
-    toast('ì§€ë‚œ ê¸°ë¡ì„ ë¶ˆëŸ¬ì™”ìŠµë‹ˆë‹¤');
+    toast('ì§€??ê¸°ë¡??ë¶ˆëŸ¬?”ìŠµ?ˆë‹¤');
   }
 
   async function handleDeleteDay() {
-    if (!confirm('ì´ ë‚  ê¸°ë¡ì„ ì‚­ì œí• ê¹Œìš”?')) return;
+    if (!confirm('????ê¸°ë¡???? œ? ê¹Œ??')) return;
     await WorkoutDB.deleteSession(state.session.date);
     state.sessions = state.sessions.filter(s=>s.date!==state.session.date);
     await cloudSync(() => Cloud.deleteSession(state.session.date));
     state.session = emptySession(state.date);
     state.tab = 'home';
-    render(); toast('ì‚­ì œí–ˆìŠµë‹ˆë‹¤');
+    render(); toast('?? œ?ˆìŠµ?ˆë‹¤');
   }
 
   async function exportJson() {
@@ -1391,19 +1391,19 @@
     const a = document.createElement('a');
     a.href = url; a.download = `fitlog-backup-${todayISO()}.json`; a.click();
     URL.revokeObjectURL(url);
-    toast('íŒŒì¼ì„ ì €ì¥í–ˆìŠµë‹ˆë‹¤');
+    toast('?Œì¼???€?¥í–ˆ?µë‹ˆ??);
   }
 
   async function importJson(file) {
     let payload;
-    try { payload = JSON.parse(await file.text()); } catch { alert('JSONì„ ì½ì„ ìˆ˜ ì—†ìŠµë‹ˆë‹¤.'); return; }
-    if (!confirm('í˜„ì¬ ê¸°ë¡ì„ ë°±ì—… íŒŒì¼ë¡œ êµì²´í• ê¹Œìš”?')) return;
+    try { payload = JSON.parse(await file.text()); } catch { alert('JSON???½ì„ ???†ìŠµ?ˆë‹¤.'); return; }
+    if (!confirm('?„ì¬ ê¸°ë¡??ë°±ì—… ?Œì¼ë¡?êµì²´? ê¹Œ??')) return;
     await WorkoutDB.importAll(payload);
     state.sessions = await WorkoutDB.getAllSessions();
     state.customExercises = await WorkoutDB.getCustomExercises();
     await cloudSync(() => Cloud.pushAll(state.sessions, state.customExercises));
     state.tab = 'home';
-    render(); toast('ê°€ì ¸ì™”ìŠµë‹ˆë‹¤');
+    render(); toast('ê°€?¸ì™”?µë‹ˆ??);
   }
 
   importInput.addEventListener('change', async () => {
@@ -1441,7 +1441,7 @@
     const localSessions = [...(guest.sessions || []), ...(legacy.sessions || [])];
     const localCustom = [...(guest.customExercises || []), ...(legacy.customExercises || [])];
     if (!localSessions.length && !localCustom.length) return cloudData;
-    if (!confirm('ì´ ê¸°ê¸°ì— ìˆë˜ ì´ì „ ê¸°ë¡ì„ ì´ ê³„ì •ìœ¼ë¡œ ê°€ì ¸ì˜¬ê¹Œìš”?')) return cloudData;
+    if (!confirm('??ê¸°ê¸°???ˆë˜ ?´ì „ ê¸°ë¡????ê³„ì •?¼ë¡œ ê°€?¸ì˜¬ê¹Œìš”?')) return cloudData;
     return {
       sessions: mergeByDate(localSessions, cloudData.sessions),
       customExercises: mergeCustom(localCustom, cloudData.customExercises),
@@ -1483,12 +1483,12 @@
     }
 
     /* Show the app immediately. Cloud sync runs in the background and must never
-       block entry â€” the Firestore SDK retries silently forever when the database
+       block entry ??the Firestore SDK retries silently forever when the database
        is missing or unreachable, which would otherwise freeze the splash screen. */
     await loadWorkspace();
     state.authReady = true;
     render();
-    if (user && arrivedFromLogin) toast('ë¡œê·¸ì¸í–ˆìŠµë‹ˆë‹¤');
+    if (user && arrivedFromLogin) toast('ë¡œê·¸?¸í–ˆ?µë‹ˆ??);
 
     if (user) syncInBackground();
   }
@@ -1497,17 +1497,17 @@
     if (state.syncing) return;
     state.syncing = true;
     try {
-      await withTimeout(Cloud.touchProfile(), 8000, 'í”„ë¡œí•„');
-      let cloudData = await withTimeout(Cloud.pullAll(), 12000, 'ë¶ˆëŸ¬ì˜¤ê¸°');
+      await withTimeout(Cloud.touchProfile(), 8000, '?„ë¡œ??);
+      let cloudData = await withTimeout(Cloud.pullAll(), 12000, 'ë¶ˆëŸ¬?¤ê¸°');
       cloudData = await adoptLocalDataIfNeeded(cloudData);
       const localSessions = await WorkoutDB.getAllSessions();
       const localCustom = await WorkoutDB.getCustomExercises();
       const sessions = mergeByDate(localSessions, cloudData.sessions);
       const customExercises = mergeCustom(localCustom, cloudData.customExercises);
       await WorkoutDB.replaceAll(sessions, customExercises);
-      await withTimeout(Cloud.pushAll(sessions, customExercises), 15000, 'ì €ì¥');
+      await withTimeout(Cloud.pushAll(sessions, customExercises), 15000, '?€??);
 
-      /* Refresh data in place â€” loadWorkspace() would reset the tab and close
+      /* Refresh data in place ??loadWorkspace() would reset the tab and close
          sheets, yanking the user out of whatever they were editing. */
       state.sessions = await WorkoutDB.getAllSessions();
       state.customExercises = await WorkoutDB.getCustomExercises();
@@ -1520,13 +1520,13 @@
       console.warn('cloud sync failed', err);
       state.syncing = false;
       render();
-      toast('í´ë¼ìš°ë“œ ë™ê¸°í™” ì‹¤íŒ¨ â€” ê¸°ë¡ì€ ì´ ê¸°ê¸°ì— ì €ì¥ë©ë‹ˆë‹¤');
+      toast('?´ë¼?°ë“œ ?™ê¸°???¤íŒ¨ ??ê¸°ë¡?€ ??ê¸°ê¸°???€?¥ë©?ˆë‹¤');
     }
   }
 
   async function handleGoogleLogin() {
     if (state.authBusy) return;
-    if (!Cloud.configured()) { state.authError = 'Firebaseê°€ ì•„ì§ ì—°ê²°ë˜ì§€ ì•Šì•˜ìŠµë‹ˆë‹¤.'; render(); return; }
+    if (!Cloud.configured()) { state.authError = 'Firebaseê°€ ?„ì§ ?°ê²°?˜ì? ?Šì•˜?µë‹ˆ??'; render(); return; }
     state.authBusy = true;
     state.authError = '';
     render();
@@ -1545,7 +1545,7 @@
 
   async function handleEmailLogin() {
     if (state.authBusy) return;
-    if (!Cloud.configured()) { state.authError = 'Firebaseê°€ ì•„ì§ ì—°ê²°ë˜ì§€ ì•Šì•˜ìŠµë‹ˆë‹¤.'; render(); return; }
+    if (!Cloud.configured()) { state.authError = 'Firebaseê°€ ?„ì§ ?°ê²°?˜ì? ?Šì•˜?µë‹ˆ??'; render(); return; }
 
     /* Read directly from DOM so we don't rely on oninput timing */
     const emailEl = document.getElementById('auth-email');
@@ -1555,11 +1555,11 @@
     const password = passEl ? passEl.value : state.authPassword;
 
     if (!email || !password) {
-      state.authError = 'ì´ë©”ì¼ê³¼ ë¹„ë°€ë²ˆí˜¸ë¥¼ ì…ë ¥í•´ ì£¼ì„¸ìš”.';
+      state.authError = '?´ë©”?¼ê³¼ ë¹„ë?ë²ˆí˜¸ë¥??…ë ¥??ì£¼ì„¸??';
       render(); return;
     }
     if (state.authMode === 'signup' && pass2El && pass2El.value !== password) {
-      state.authError = 'ë¹„ë°€ë²ˆí˜¸ê°€ ì¼ì¹˜í•˜ì§€ ì•ŠìŠµë‹ˆë‹¤.';
+      state.authError = 'ë¹„ë?ë²ˆí˜¸ê°€ ?¼ì¹˜?˜ì? ?ŠìŠµ?ˆë‹¤.';
       render(); return;
     }
 
@@ -1581,7 +1581,7 @@
   }
 
   async function handleLogout() {
-    if (!confirm('ë¡œê·¸ì•„ì›ƒí• ê¹Œìš”? ì´ ê¸°ê¸° ê¸°ë¡ì€ ë‚¨ì•„ ìˆê³ , ê³„ì • ê¸°ë¡ì€ í´ë¼ìš°ë“œì— ìœ ì§€ë©ë‹ˆë‹¤.')) return;
+    if (!confirm('ë¡œê·¸?„ì›ƒ? ê¹Œ?? ??ê¸°ê¸° ê¸°ë¡?€ ?¨ì•„ ?ˆê³ , ê³„ì • ê¸°ë¡?€ ?´ë¼?°ë“œ??? ì??©ë‹ˆ??')) return;
     state.user = null;
     state.guest = false;
     localStorage.removeItem('fitlog-guest');
@@ -1591,10 +1591,10 @@
     state.authReady = true;
     render();
     await Cloud.signOut();
-    toast('ë¡œê·¸ì•„ì›ƒí–ˆìŠµë‹ˆë‹¤');
+    toast('ë¡œê·¸?„ì›ƒ?ˆìŠµ?ˆë‹¤');
   }
 
-  /* â”€â”€ Init â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+  /* ?€?€ Init ?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€?€ */
   async function init() {
     render();
     if ('serviceWorker' in navigator) {
@@ -1609,14 +1609,14 @@
     /* Watchdog: never leave the user staring at the splash screen. */
     const watchdog = setTimeout(() => {
       if (!state.authReady) {
-        console.warn('init watchdog fired â€” forcing app to render');
+        console.warn('init watchdog fired ??forcing app to render');
         state.authReady = true;
         render();
       }
     }, 10000);
 
     let redirectUser = null;
-    try { redirectUser = await withTimeout(Cloud.completeRedirect(), 8000, 'ë¡œê·¸ì¸ í™•ì¸'); }
+    try { redirectUser = await withTimeout(Cloud.completeRedirect(), 8000, 'ë¡œê·¸???•ì¸'); }
     catch (err) { console.warn('redirect result failed', err); }
 
     Cloud.onAuth(async (user) => {
@@ -1642,7 +1642,7 @@
     }
 
     let existing = null;
-    try { existing = await withTimeout(Cloud.waitAuth(), 8000, 'ì¸ì¦ í™•ì¸'); }
+    try { existing = await withTimeout(Cloud.waitAuth(), 8000, '?¸ì¦ ?•ì¸'); }
     catch (err) { console.warn('waitAuth failed', err); }
 
     clearTimeout(watchdog);
@@ -1674,10 +1674,10 @@
         state.guest = true;
         state.authReady = true;
         render();
-        toast('ì˜¤í”„ë¼ì¸ ëª¨ë“œë¡œ ì‹œì‘í–ˆìŠµë‹ˆë‹¤');
+        toast('?¤í”„?¼ì¸ ëª¨ë“œë¡??œì‘?ˆìŠµ?ˆë‹¤');
       } catch (e) {
         appEl.innerHTML = `<main style="padding:40px 24px;color:#f87171;font-family:system-ui">
-          ì €ì¥ì†Œ ì˜¤ë¥˜: ${String(e)}</main>`;
+          ?€?¥ì†Œ ?¤ë¥˜: ${String(e)}</main>`;
       }
     })();
   });
