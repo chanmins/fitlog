@@ -1,13 +1,13 @@
-const CACHE = "fitlog-v17";
+const CACHE = "fitlog-v18";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=17",
-  "./app.js?v=17",
-  "./db.js?v=17",
-  "./exercises.js?v=17",
-  "./cloud.js?v=17",
-  "./firebase-config.js?v=17",
+  "./styles.css?v=18",
+  "./app.js?v=18",
+  "./db.js?v=18",
+  "./exercises.js?v=18",
+  "./cloud.js?v=18",
+  "./firebase-config.js?v=18",
   "./manifest.json",
   "./icons/icon.svg",
   "./icons/icon-192.png",
@@ -27,6 +27,12 @@ self.addEventListener("activate", event => {
     caches.keys()
       .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
+      .then(() => {
+        /* Tell all open tabs to reload so they get the new files */
+        return self.clients.matchAll({ type: 'window' }).then(clients => {
+          clients.forEach(client => client.postMessage({ type: 'SW_UPDATED', version: CACHE }));
+        });
+      })
   );
 });
 

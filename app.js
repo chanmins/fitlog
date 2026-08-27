@@ -1599,6 +1599,10 @@
     render();
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js').catch(()=>{});
+      /* Auto-reload when a new SW activates so stale caches are replaced */
+      navigator.serviceWorker.addEventListener('message', e => {
+        if (e.data?.type === 'SW_UPDATED') window.location.reload();
+      });
     }
     Cloud.init();
 
