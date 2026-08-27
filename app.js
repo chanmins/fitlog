@@ -328,13 +328,25 @@
   }
 
   /* ── Body Map SVG ────────────────────────── */
+  /* ── Part icons ───────────────────────────── */
+  const PART_ICONS = {
+    chest: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5c2.6-1.7 5.4-1.1 7.5.6M21 7.5c-2.6-1.7-5.4-1.1-7.5.6"/><path d="M3 7.5v3.5c0 3 2.4 5 5.5 5 2.2 0 3.5-1.3 3.5-3.4M21 7.5v3.5c0 3-2.4 5-5.5 5-2.2 0-3.5-1.3-3.5-3.4"/></svg>`,
+    back: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M12 6.5C10 4.2 6.6 4.2 4.5 6.3c1 3.4 3.3 4.7 5.5 4.7M12 6.5c2-2.3 5.4-2.3 7.5-.2-1 3.4-3.3 4.7-5.5 4.7"/></svg>`,
+    shoulders: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="10" r="3.2"/><circle cx="18" cy="10" r="3.2"/><path d="M9 11.5h6"/></svg>`,
+    arms: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="8.5" width="3" height="7" rx="1.2"/><rect x="18.5" y="8.5" width="3" height="7" rx="1.2"/><path d="M5.5 12h2M16.5 12h2M8 12h8"/></svg>`,
+    legs: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v6l-1.5 12M15 3v6l1.5 12M9 9h6"/></svg>`,
+    core: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="4" width="10" height="16" rx="3.5"/><line x1="12" y1="5" x2="12" y2="19"/><line x1="7.5" y1="10" x2="16.5" y2="10"/><line x1="7.5" y1="14" x2="16.5" y2="14"/></svg>`,
+    run: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="5" r="2"/><path d="M13 8l-3 3 2 2 1 5M12 13l-2 2-5-1M15 10l2-1 3 2 1-1"/></svg>`,
+  };
+
+  /* ── Body Map SVG ─────────────────────────── */
   function bodyMapSVG(primary = [], secondary = []) {
     const P = new Set(primary);
     const S = new Set(secondary);
     function mc(ids) {
       const arr = [].concat(ids);
-      if (arr.some(id=>P.has(id))) return 'mp';
-      if (arr.some(id=>S.has(id))) return 'ms';
+      if (arr.some(id => P.has(id))) return 'mp';
+      if (arr.some(id => S.has(id))) return 'ms';
       return 'mi';
     }
 
@@ -396,25 +408,17 @@
       </div>`;
   }
 
-  /* ── Render Root ─────────────────────────── */
+  /* ── Render Root ──────────────────────────── */
   function render() {
-    if (!state.authReady) {
-      appEl.innerHTML = renderSplash();
-      return;
-    }
-    if (!state.user && !state.guest) {
-      appEl.innerHTML = renderLogin();
-      bindEvents();
-      return;
-    }
+    if (!state.authReady) { appEl.innerHTML = renderSplash(); return; }
+    if (!state.user && !state.guest) { appEl.innerHTML = renderLogin(); bindEvents(); return; }
 
     let html = '';
-    if (state.tab === 'home')     html = renderHome();
-    else if (state.tab === 'workout') html = renderWorkout();
-    else if (state.tab === 'history') html = renderHistory();
+    if (state.tab === 'home')          html = renderHome();
+    else if (state.tab === 'workout')  html = renderWorkout();
+    else if (state.tab === 'history')  html = renderHistory();
     else if (state.tab === 'settings') html = renderSettings();
 
-    /* Sheets on top */
     if (state.weightPicker)   html += renderWeightPickerSheet();
     if (state.repsPicker)     html += renderRepsPickerSheet();
     if (state.exerciseInfoId) html += renderExerciseInfoSheet(state.exerciseInfoId);
@@ -425,11 +429,11 @@
     bindEvents();
   }
 
-  /* ── Auth screens ────────────────────────── */
+  /* ── Auth screens ─────────────────────────── */
   function renderSplash() {
-    return `<main class="login-screen">
-      <div class="topbar-brand" style="font-size:32px">FIT<span>LOG</span></div>
-      <p class="login-sub">불러오는 중…</p>
+    return `<main class="splash-wrap">
+      <div class="splash-brand">FIT<span>LOG</span></div>
+      <div class="spinner"></div>
     </main>`;
   }
 
@@ -438,15 +442,14 @@
     const isSignup = state.authMode === 'signup';
     const busy = state.authBusy;
     return `<main class="login-screen">
-      <div class="topbar-brand" style="font-size:32px">FIT<span>LOG</span></div>
-      <h1 class="login-title">내 운동 기록,<br>계정에 저장하세요</h1>
-      <p class="login-sub">폰과 PC에서 같은 기록이 이어집니다.</p>
+      <div class="topbar-brand">FIT<span>LOG</span></div>
+      <h1 class="login-title">오늘의 운동을<br>가장 멋지게 기록하세요</h1>
+      <p class="login-sub">폰과 PC에서 기록이 자동으로 이어집니다.</p>
       ${configured ? `
-        ${busy ? `<p class="login-sub" style="color:var(--accent);margin-bottom:16px">처리 중…</p>` : ''}
         ${state.authError ? `<p class="login-error">${esc(state.authError)}</p>` : ''}
         <button class="btn-google" data-act="login-google" ${busy ? 'disabled' : ''}>
           <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 8 3.1l5.7-5.7C34.2 6.1 29.4 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.3-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 12 24 12c3.1 0 5.8 1.2 8 3.1l5.7-5.7C34.2 6.1 29.4 4 24 4 16.3 4 9.6 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 10-2 13.6-5.2l-6.3-5.3C29.2 35.1 26.7 36 24 36c-5.3 0-9.7-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-1.1 3.2-3.5 5.8-6.7 7.5l6.3 5.3C37.3 38.2 44 33 44 24c0-1.2-.1-2.3-.4-3.5z"/></svg>
-          Google로 계속하기
+          ${busy ? '처리 중…' : 'Google로 계속하기'}
         </button>
         <div class="login-or">또는 이메일로 계속하기</div>
         <div class="login-tabs">
@@ -456,7 +459,7 @@
         <input class="login-input" id="auth-email" type="email" inputmode="email" autocomplete="email" placeholder="이메일" value="${esc(state.authEmail)}">
         <input class="login-input" id="auth-password" type="password" autocomplete="${isSignup?'new-password':'current-password'}" placeholder="비밀번호 (6자 이상)" value="${esc(state.authPassword)}">
         ${isSignup ? `<input class="login-input" id="auth-password2" type="password" autocomplete="new-password" placeholder="비밀번호 확인" value="">` : ''}
-        <button class="btn-hero" style="margin-top:8px" data-act="login-email" ${busy ? 'disabled' : ''}>
+        <button class="btn-hero" style="margin-top:6px" data-act="login-email" ${busy ? 'disabled' : ''}>
           ${isSignup ? '이메일로 회원가입' : '이메일로 로그인'}
         </button>
       ` : `
@@ -466,17 +469,17 @@
     </main>`;
   }
 
-  /* ── Bottom Nav ──────────────────────────── */
+  /* ── Bottom Nav ───────────────────────────── */
   function renderBottomNav() {
     const tabs = [
       { id:'home',     label:'홈',
-        icon:`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>` },
+        icon:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>` },
       { id:'workout',  label:'기록',
-        icon:`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>` },
+        icon:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="9" width="3" height="6" rx="1.2"/><rect x="18.5" y="9" width="3" height="6" rx="1.2"/><path d="M5.5 12h2M16.5 12h2M8 12h8"/></svg>` },
       { id:'history',  label:'히스토리',
-        icon:`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>` },
+        icon:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>` },
       { id:'settings', label:'설정',
-        icon:`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>` },
+        icon:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>` },
     ];
     return `<nav class="bottom-nav">${tabs.map(t=>`
       <button class="nav-tab${state.tab===t.id?' active':''}" data-act="go-tab" data-tab="${t.id}">
@@ -484,94 +487,131 @@
       </button>`).join('')}</nav>`;
   }
 
-  /* ── Home Tab ────────────────────────────── */
+  /* ── Home Tab ─────────────────────────────── */
   function renderHome() {
     const today = todayISO();
     const todaySess = state.sessions.find(s => s.date === today);
     const weekDays = getWeekDays();
-    const todayDate = new Date();
+    const td = new Date();
 
     const weekStrip = weekDays.map((iso, i) => {
-      const [,m,d] = iso.split('-').map(Number);
+      const [, , d] = iso.split('-').map(Number);
       const hasSess = state.sessions.some(s => s.date === iso);
       const isToday = iso === today;
-      const isPast  = iso < today;
       return `<div class="week-day${hasSess?' done':''}${isToday?' today':''}">
-        <div class="dot">${hasSess ? '✓' : (isPast ? '·' : '')}</div>
-        <span>${WEEKDAYS_SHORT[i]}</span>
+        <div class="ring">${hasSess ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : d}</div>
+        <span class="wd-label">${WEEKDAYS_SHORT[i]}</span>
       </div>`;
     }).join('');
 
+    /* week stats */
+    const weekSessions = state.sessions.filter(s => weekDays.includes(s.date));
+    const weekCount = weekSessions.length;
+    const weekVol = weekSessions.reduce((a,s)=>a+(s.exercises||[]).reduce((b,ex)=>b+exVolume(ex),0),0);
+    const weekKm = weekSessions.reduce((a,s)=>a+(Number(s.run?.km)||0),0);
+    const volStr = weekVol >= 1000 ? (weekVol/1000).toFixed(1) : fmtNum(weekVol);
+    const volUnit = weekVol >= 1000 ? 't' : 'kg';
+
     let todayBlock;
     if (todaySess) {
-      const summary = sessionSummary(todaySess) || '기록 완료';
+      const parts = (todaySess.parts||[]).map(id=>{
+        const p = PARTS.find(x=>x.id===id);
+        return p ? `<span class="muscle-tag" style="background:color-mix(in srgb,${p.color} 16%,var(--surface-2));color:${p.color}">${p.label}</span>` : '';
+      }).join('');
       todayBlock = `<div class="today-card">
         <div class="today-card-top">
-          <div class="today-status-badge done">✓ 오늘 완료</div>
-          <button class="btn-ghost" style="height:32px;padding:0 12px;font-size:13px" data-act="today">편집</button>
+          <div class="badge-done">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            오늘 운동 완료
+          </div>
+          <button class="btn-ghost" style="height:34px" data-act="today">기록 편집</button>
         </div>
-        <div style="font-size:15px;color:var(--sub);font-weight:600">${esc(summary)}</div>
+        <div class="today-card-parts">${parts || '<span class="sec-sub">기록 완료</span>'}</div>
       </div>`;
     } else {
       todayBlock = `<div style="margin-bottom:20px">
         <button class="btn-hero" data-act="today">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           오늘 운동 기록하기
         </button>
       </div>`;
     }
 
     const recent = state.sessions.slice(0, 8);
-    const recentHtml = recent.length
-      ? `<div class="sec-head"><div class="sec-title">최근 기록</div></div>
-         <div class="recent-list">${recent.map(s => `
-           <button class="recent-row" data-act="open-day" data-date="${s.date}">
-             <div class="recent-date">${shortDate(s.date)}</div>
-             <div class="recent-parts">${esc(sessionSummary(s) || '기록')}</div>
-             <svg class="recent-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-           </button>`).join('')}</div>`
-      : '';
+    const recentHtml = recent.length ? `
+      <div class="sec-head"><div class="sec-title">최근 기록</div></div>
+      <div class="recent-list">${recent.map(s => {
+        const [, m, d] = s.date.split('-').map(Number);
+        const dots = (s.parts||[]).map(id=>{
+          const p = PARTS.find(x=>x.id===id);
+          return p ? `<span class="pdot" style="background:${p.color}"></span>` : '';
+        }).join('');
+        const vol = (s.exercises||[]).reduce((a,ex)=>a+exVolume(ex),0);
+        const metaVol = vol > 0 ? `${vol>=1000?(vol/1000).toFixed(1)+'t':fmtNum(vol)+'kg'} · ` : '';
+        return `<button class="recent-row" data-act="open-day" data-date="${s.date}">
+          <div class="recent-daybox">
+            <div class="recent-day-d">${d}</div>
+            <div class="recent-day-m">${m}월</div>
+          </div>
+          <div class="recent-mid">
+            <div class="recent-parts">${esc(sessionSummary(s) || '기록')}</div>
+            <div class="recent-meta">${metaVol}<span class="dotline">${dots}</span></div>
+          </div>
+          <svg class="recent-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>`;
+      }).join('')}</div>` : '';
 
-    const greetings = ['파이팅! 💪', '꾸준함이 답입니다 🔥', '오늘도 한 걸음 더 🚀', '몸이 자산입니다 ⚡'];
-    const greeting = greetings[new Date().getDay() % greetings.length];
-    const weekCount = weekDays.filter(iso => state.sessions.some(s => s.date === iso)).length;
+    const hour = td.getHours();
+    const greet = hour < 5 ? '늦은 밤이네요' : hour < 12 ? '좋은 아침이에요' : hour < 18 ? '좋은 오후예요' : '좋은 저녁이에요';
 
     return `
       <header class="topbar">
         <div class="topbar-brand">FIT<span>LOG</span></div>
       </header>
       <main class="screen">
-        <div class="home-greeting">
-          <div class="home-date">${todayDate.getMonth()+1}월 ${todayDate.getDate()}일 (${WEEKDAYS[todayDate.getDay()]}) · 이번 주 ${weekCount}회</div>
-          <div class="home-title">오늘도 <em>${greeting}</em></div>
+        <div class="home-hero">
+          <div class="home-date">${td.getMonth()+1}월 ${td.getDate()}일 (${WEEKDAYS[td.getDay()]})</div>
+          <div class="home-title">${greet},<br><em>오늘도 가볍게</em> 시작해요</div>
         </div>
         <div class="week-strip">${weekStrip}</div>
+        <div class="stat-row">
+          <div class="stat-card"><div class="stat-val">${weekCount}<span>일</span></div><div class="stat-lbl">이번 주 운동</div></div>
+          <div class="stat-card"><div class="stat-val">${volStr}<span>${volUnit}</span></div><div class="stat-lbl">주간 볼륨</div></div>
+          <div class="stat-card"><div class="stat-val">${weekKm?weekKm.toFixed(weekKm%1?1:0):0}<span>km</span></div><div class="stat-lbl">주간 러닝</div></div>
+        </div>
         ${todayBlock}
         ${recentHtml}
       </main>`;
   }
 
-  /* ── Workout Tab ─────────────────────────── */
+  /* ── Workout Tab ──────────────────────────── */
   function renderWorkout() {
     const s = state.session;
     if (!s) return `<header class="topbar"><div class="topbar-title">기록</div></header>
       <main class="screen"><div class="empty-state"><div class="empty-icon">🏋️</div>오늘의 운동을 시작하세요</div>
       <button class="btn-hero" data-act="today">오늘 기록 시작하기</button></main>`;
 
-    const chips = PARTS.map(p => {
+    const partTiles = PARTS.map(p => {
       const on = s.parts.includes(p.id);
       const count = p.kind === 'weight' ? s.exercises.filter(e => e.part === p.id).length : 0;
-      return `<button class="part-chip${on?' on':''}" style="color:${p.color}" data-act="toggle-part" data-part="${p.id}">
-        <div class="dot"></div>${p.label}${count ? `<span class="chip-count">${count}</span>` : ''}</button>`;
+      const sub = on
+        ? (p.kind === 'weight' ? `${count}개 운동` : '기록 중')
+        : '탭하여 추가';
+      return `<button class="part-tile${on?' on':''}" style="--pt-color:${p.color}" data-act="toggle-part" data-part="${p.id}">
+        <span class="pt-check"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+        <span class="pt-icon">${PART_ICONS[p.id]||''}</span>
+        <span class="pt-name">${p.label}</span>
+        <span class="pt-count">${sub}</span>
+      </button>`;
     }).join('');
 
     let blocks = '';
 
-    /* Running */
     if (s.parts.includes('run')) {
       blocks += `<div class="run-card">
-        <div class="sec-head" style="margin-top:0">
-          <div class="sec-title" style="color:var(--blue)">러닝</div>
+        <div class="run-card-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="5" r="2"/><path d="M13 8l-3 3 2 2 1 5M12 13l-2 2-5-1M15 10l2-1 3 2 1-1"/></svg>
+          러닝
         </div>
         <div class="run-fields">
           <div>
@@ -592,7 +632,6 @@
       </div>`;
     }
 
-    /* Weight exercises by part */
     for (const part of PARTS) {
       if (part.kind !== 'weight') continue;
       if (!s.parts.includes(part.id)) continue;
@@ -605,7 +644,7 @@
         blocks += exercises.map(ex => renderExerciseCard(ex)).join('');
       } else {
         blocks += `<button class="add-ex-cta" data-act="open-picker" data-part="${part.id}">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           ${part.label} 운동 추가하기
         </button>`;
       }
@@ -616,8 +655,8 @@
         <div class="pick-prompt-icon">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6.5 6.5h11M6.5 17.5h11M4 9.5v5M20 9.5v5M9 12h6"/></svg>
         </div>
-        <div class="pick-prompt-title">어떤 부위를 했나요?</div>
-        <div class="pick-prompt-sub">위에서 부위를 고르면 운동을 기록할 수 있습니다.</div>
+        <div class="pick-prompt-title">오늘은 어디를 단련할까요?</div>
+        <div class="pick-prompt-sub">위에서 부위를 선택하면<br>운동을 기록할 수 있어요.</div>
       </div>`;
     }
 
@@ -649,19 +688,20 @@
 
     return `
       <header class="topbar">
-        <button class="btn-icon" data-act="go-tab" data-tab="home">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+        <button class="btn-icon ghost" data-act="go-tab" data-tab="home">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
-        <div class="topbar-title">기록</div>
+        <div class="topbar-title">운동 기록</div>
+        <div class="topbar-spacer"></div>
         ${isToday ? '' : `<button class="btn-today" data-act="today">오늘로</button>`}
         <button class="btn-icon danger" data-act="delete-day">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
         </button>
       </header>
       <main class="screen">
         <div class="day-nav">
           <button class="day-nav-arrow" data-act="shift-day" data-delta="-1" aria-label="이전 날">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><polyline points="15 18 9 12 15 6"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
           </button>
           <label class="day-nav-mid">
             <div class="day-nav-date">${esc(longDate(s.date))}</div>
@@ -669,17 +709,17 @@
             <input type="date" data-act="change-date" value="${s.date}" max="${todayISO()}" aria-label="날짜 선택">
           </label>
           <button class="day-nav-arrow" data-act="shift-day" data-delta="1" aria-label="다음 날"${isToday?' disabled':''}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><polyline points="9 18 15 12 9 6"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
           </button>
         </div>
         ${summary}
         <div class="sec-head" style="margin-top:18px"><div class="sec-title">부위 선택</div></div>
-        <div class="part-chips">${chips}</div>
+        <div class="part-grid">${partTiles}</div>
         ${blocks}
       </main>`;
   }
 
-  /* ── Exercise Card ───────────────────────── */
+  /* ── Exercise Card ────────────────────────── */
   function renderExerciseCard(ex) {
     const libEx = findExercise(ex.id) || state.customExercises.find(e => e.id === ex.id);
     const last = lastLog(ex.name, state.session.date);
@@ -693,8 +733,8 @@
 
     const prevHint = last
       ? `<button class="prev-hint" data-act="copy-last" data-ex="${esc(ex.id)}">
-           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.7"/></svg>
-           <strong>지난번 ${shortDate(last.date)}</strong> · ${esc(fmtSets(last.sets)||'기록 있음')} — 탭하면 불러오기
+           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+           <span><strong>지난 기록 ${shortDate(last.date)}</strong> · ${esc(fmtSets(last.sets)||'기록 없음')} · 탭하면 불러오기</span>
          </button>`
       : '';
 
@@ -705,18 +745,18 @@
       return `<div class="set-row${done?' done':''}">
         <div class="set-num">${idx+1}</div>
         <button class="val-chip${done?' done':''}" data-act="open-weight" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}">
-          <div class="val-chip-num">${kg}</div>
-          <div class="val-chip-unit">kg</div>
+          <span class="val-chip-num">${kg}</span>
+          <span class="val-chip-unit">kg</span>
         </button>
         <button class="val-chip${done?' done':''}" data-act="open-reps" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}">
-          <div class="val-chip-num">${reps}</div>
-          <div class="val-chip-unit">회</div>
+          <span class="val-chip-num">${reps}</span>
+          <span class="val-chip-unit">회</span>
         </button>
         <button class="done-toggle${done?' done':''}" data-act="toggle-done" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="세트 완료">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8"><polyline points="20 6 9 17 4 12"/></svg>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
         </button>
         <button class="set-del" data-act="del-set" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="세트 삭제">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>`;
     }).join('');
@@ -731,15 +771,15 @@
     return `<article class="ex-card${allDone?' all-done':''}">
       <div class="ex-card-head">
         <div style="flex:1;min-width:0">
-          <div class="ex-card-name">${allDone?'<span class="ex-done-tick">✓</span> ':''}${esc(ex.name)}</div>
-          <div class="ex-card-sub">${muscleTags}</div>
+          <div class="ex-card-name">${allDone?'<span class="ex-done-tick"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>':''}${esc(ex.name)}</div>
+          ${muscleTags ? `<div class="ex-card-sub">${muscleTags}</div>` : ''}
           ${metaBits.length ? `<div class="ex-card-meta">${esc(metaBits.join(' · '))}</div>` : ''}
         </div>
-        <button class="btn-icon" style="margin-top:2px" data-act="show-ex-info" data-exid="${esc(ex.id)}" data-exname="${esc(ex.name)}">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        <button class="btn-icon ghost" data-act="show-ex-info" data-exid="${esc(ex.id)}" data-exname="${esc(ex.name)}">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
         </button>
-        <button class="btn-icon danger" data-act="del-ex" data-ex="${esc(ex.id)}">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        <button class="btn-icon ghost danger" data-act="del-ex" data-ex="${esc(ex.id)}">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
       ${prevHint}
@@ -747,18 +787,20 @@
         <div class="set-table-head"><span>#</span><span>무게</span><span>횟수</span><span>완료</span><span></span></div>
         ${sets}
         <button class="add-set-row" data-act="add-set" data-ex="${esc(ex.id)}">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           세트 추가
         </button>
       </div>
     </article>`;
   }
 
-  /* ── Weight Picker Sheet ─────────────────── */
+  /* ── Weight Picker Sheet ──────────────────── */
   function renderWeightPickerSheet() {
     const { value, str = '' } = state.weightPicker;
     const display = str || (value == null || value === '' ? '0' : String(value));
-    const effectiveVal = str ? parseFloat(str) || 0 : (Number(value) || 0);
+    const ex = state.session?.exercises.find(x => x.id === state.weightPicker.exId);
+    const idx = ex ? ex.sets.findIndex(st => st.id === state.weightPicker.setId) : -1;
+    const sub = ex ? `${ex.name} · ${idx+1}세트` : '';
     const WEIGHT_PRESETS = [20,30,40,50,60,70,80,90,100,110,120,140];
     const presets = WEIGHT_PRESETS.map(w =>
       `<button class="preset-chip${Number(value)===w&&!str?' on':''}" data-act="set-weight-preset" data-val="${w}">${w}</button>`
@@ -771,9 +813,15 @@
         return `<button class="${cls}" data-act="${act}" data-d="${k}">${k}</button>`;
       }).join('')}</div>`
     ).join('');
-    return `<div class="sheet-backdrop" data-act="close-picker">
+    return `<div class="sheet-backdrop">
       <div class="sheet-panel" id="sheet-weight">
         <div class="sheet-grab"></div>
+        <div class="sheet-head">
+          <div><div class="sheet-title">무게</div>${sub?`<div class="sheet-title-sub">${esc(sub)}</div>`:''}</div>
+          <button class="sheet-x" data-act="close-sheet" aria-label="닫기">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
         <div class="picker-big">
           <div class="picker-big-num">${esc(display)}</div>
           <div class="picker-big-unit">kg</div>
@@ -795,6 +843,9 @@
   function renderRepsPickerSheet() {
     const { value, str = '' } = state.repsPicker;
     const display = str || (value == null || value === '' ? '0' : String(value));
+    const ex = state.session?.exercises.find(x => x.id === state.repsPicker.exId);
+    const idx = ex ? ex.sets.findIndex(st => st.id === state.repsPicker.setId) : -1;
+    const sub = ex ? `${ex.name} · ${idx+1}세트` : '';
     const REPS_PRESETS = [1,3,5,6,8,10,12,15,20,25,30];
     const presets = REPS_PRESETS.map(r =>
       `<button class="preset-chip${Number(value)===r&&!str?' on':''}" data-act="set-reps-preset" data-val="${r}">${r}</button>`
@@ -807,9 +858,15 @@
         return `<button class="${cls}" data-act="${act}" data-d="${k}">${k}</button>`;
       }).join('')}</div>`
     ).join('');
-    return `<div class="sheet-backdrop" data-act="close-picker">
+    return `<div class="sheet-backdrop">
       <div class="sheet-panel" id="sheet-reps">
         <div class="sheet-grab"></div>
+        <div class="sheet-head">
+          <div><div class="sheet-title">횟수</div>${sub?`<div class="sheet-title-sub">${esc(sub)}</div>`:''}</div>
+          <button class="sheet-x" data-act="close-sheet" aria-label="닫기">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
         <div class="picker-big">
           <div class="picker-big-num">${esc(display)}</div>
           <div class="picker-big-unit">회</div>
@@ -829,7 +886,6 @@
 
   /* ── Exercise Info Sheet ──────────────────── */
   function renderExerciseInfoSheet(exId) {
-    /* exId may be a library id, custom id, or exercise name */
     const libEx = findExercise(exId) || state.customExercises.find(e => e.id === exId || e.name === exId);
     if (!libEx) return '';
 
@@ -842,23 +898,23 @@
     const secondaryPills = secondary.map(m => `<span class="muscle-pill secondary"><span class="muscle-pill-dot"></span>${esc(MUSCLE_GROUPS[m]||m)}</span>`).join('');
 
     const tips = (libEx.tips||[]).map((tip,i)=>`
-      <li>
-        <div class="tip-num">${i+1}</div>
-        <span>${esc(tip)}</span>
-      </li>`).join('');
+      <li><div class="tip-num">${i+1}</div><span>${esc(tip)}</span></li>`).join('');
 
-    return `<div class="sheet-backdrop" data-act="close-info">
+    return `<div class="sheet-backdrop">
       <div class="sheet-panel">
         <div class="sheet-grab"></div>
-        <div class="info-hero">
-          <div class="info-hero-text">
+        <div class="sheet-head">
+          <div class="info-hero">
             <div class="info-name">${esc(libEx.name)}</div>
             ${libEx.nameEn ? `<div class="info-name-en">${esc(libEx.nameEn)}</div>` : ''}
-            <div class="info-meta">
-              <span class="info-badge eq">${esc(eq)}</span>
-              <span class="info-badge"><span class="diff-stars">${diffStars}</span></span>
-            </div>
           </div>
+          <button class="sheet-x" data-act="close-sheet" aria-label="닫기">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="info-meta" style="margin-top:0;margin-bottom:16px">
+          <span class="info-badge eq">${esc(eq)}</span>
+          <span class="info-badge"><span class="diff-stars">${diffStars}</span></span>
         </div>
         ${bodyMapSVG(primary, secondary)}
         <div class="muscle-legend">
@@ -873,41 +929,47 @@
     </div>`;
   }
 
-  /* ── Exercise Picker Sheet ────────────────── */
-  function renderExercisePickerSheet(partId) {
-    const part = PARTS.find(p => p.id === partId);
+  /* ── Exercise pick items (shared by sheet + live search) ── */
+  function buildPickItems(partId) {
     const added = new Set((state.session?.exercises||[]).filter(e=>e.part===partId).map(e=>e.name));
     const q = state.exerciseSearch.toLowerCase();
     const library = libraryFor(partId).filter(e => !q || e.name.toLowerCase().includes(q) || (e.nameEn||'').toLowerCase().includes(q));
-
-    const items = library.map(item => {
+    if (!library.length) return '<div class="help-text">검색 결과가 없습니다.</div>';
+    return library.map(item => {
       const on = added.has(item.name);
       const eq = EQUIPMENT_LABEL[item.equipment] || '';
       return `<div class="pick-item${on?' on':''}">
         <button class="pick-item-name" data-act="pick-ex" data-part="${partId}" data-name="${esc(item.name)}" data-exid="${esc(item.id||'')}">
-          ${esc(item.name)}
+          <span>${esc(item.name)}</span>
+          ${item.nameEn ? `<span class="pick-item-en">${esc(item.nameEn)}</span>` : ''}
         </button>
         ${eq ? `<span class="pick-item-eq">${esc(eq)}</span>` : ''}
         ${on ? `<button class="custom-del" data-act="quick-del-ex" data-name="${esc(item.name)}" data-part="${partId}">빼기</button>` : ''}
         ${item.custom ? `<button class="custom-del" data-act="del-custom" data-id="${esc(item.id)}">삭제</button>` : ''}
-        <div class="pick-check">${on ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>' : ''}</div>
+        <div class="pick-check">${on ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : ''}</div>
       </div>`;
     }).join('');
+  }
 
-    return `<div class="sheet-backdrop" data-act="close-picker">
+  /* ── Exercise Picker Sheet ────────────────── */
+  function renderExercisePickerSheet(partId) {
+    const part = PARTS.find(p => p.id === partId);
+    return `<div class="sheet-backdrop">
       <div class="sheet-panel">
         <div class="sheet-grab"></div>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-          <div class="sheet-title" style="margin:0">${part?part.label:''} 운동</div>
-          <button class="btn-ghost" style="height:36px;padding:0 14px;font-size:14px" data-act="close-picker">완료</button>
+        <div class="sheet-head">
+          <div class="sheet-title">${part?part.label:''} 운동</div>
+          <button class="sheet-x" data-act="close-sheet" aria-label="닫기">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
         </div>
         <div class="search-bar">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <input id="picker-search" placeholder="운동 검색" value="${esc(state.exerciseSearch)}" data-act="search-ex">
         </div>
-        <div class="pick-list">${items || '<div class="help-text">검색 결과가 없습니다.</div>'}</div>
+        <div class="pick-list">${buildPickItems(partId)}</div>
         <div class="custom-add-row">
-          <input id="custom-name" placeholder="없는 운동 직접 추가">
+          <input id="custom-name" placeholder="나만의 운동 직접 추가">
           <button class="btn-add-sm" data-act="add-custom" data-part="${partId}">추가</button>
         </div>
       </div>
@@ -918,7 +980,7 @@
   function renderHistory() {
     if (!state.sessions.length) return `
       <header class="topbar"><div class="topbar-title">히스토리</div></header>
-      <main class="screen"><div class="empty-state"><div class="empty-icon">📋</div>아직 기록이 없습니다.<br>첫 운동을 기록해 보세요!</div></main>`;
+      <main class="screen"><div class="empty-state"><div class="empty-icon">📊</div>아직 기록이 없습니다.<br>첫 운동을 기록해 보세요!</div></main>`;
 
     const groups = new Map();
     for (const s of state.sessions) {
@@ -930,14 +992,25 @@
     for (const [key, rows] of groups) {
       body += `<div class="month-label">${fmtMonth(key)}</div><div class="recent-list">`;
       for (const s of rows) {
+        const [, m, d] = s.date.split('-').map(Number);
         const summary = sessionSummary(s) || '기록';
+        const dots = (s.parts||[]).map(id=>{
+          const p = PARTS.find(x=>x.id===id);
+          return p ? `<span class="pdot" style="background:${p.color}"></span>` : '';
+        }).join('');
         const vol = (s.exercises||[]).reduce((a,ex)=>a+exVolume(ex),0);
         const volStr = vol > 0 ? (vol>=1000?(vol/1000).toFixed(1)+'t':fmtNum(vol)+'kg') : '';
         body += `<button class="recent-row" data-act="open-day" data-date="${s.date}">
-          <div class="recent-date">${shortDate(s.date)}</div>
-          <div class="recent-parts">${esc(summary)}</div>
+          <div class="recent-daybox">
+            <div class="recent-day-d">${d}</div>
+            <div class="recent-day-m">${m}월</div>
+          </div>
+          <div class="recent-mid">
+            <div class="recent-parts">${esc(summary)}</div>
+            <div class="recent-meta"><span class="dotline">${dots}</span></div>
+          </div>
           ${volStr ? `<div class="recent-vol">${volStr}</div>` : ''}
-          <svg class="recent-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+          <svg class="recent-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
         </button>`;
       }
       body += '</div>';
@@ -959,8 +1032,8 @@
         </div>
       </div>
       <button class="settings-item" data-act="logout">
-        <div class="settings-item-icon" style="background:color-mix(in srgb, var(--red) 14%, var(--bg));color:var(--red)">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        <div class="settings-item-icon" style="background:var(--red-soft);color:var(--red)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         </div>
         <div class="settings-item-text">
           <div class="settings-item-title">로그아웃</div>
@@ -969,14 +1042,14 @@
       </button>` : `
       <div class="settings-label">계정</div>
       <button class="settings-item" data-act="show-login">
-        <div class="settings-item-icon" style="background:var(--accent-bg);color:var(--accent)">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <div class="settings-item-icon" style="background:var(--accent-soft);color:var(--accent)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         </div>
         <div class="settings-item-text">
           <div class="settings-item-title">로그인</div>
           <div class="settings-item-sub">지금 기록은 이 기기에만 저장됩니다</div>
         </div>
-        <svg class="settings-item-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+        <svg class="settings-item-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
       </button>`;
 
     return `
@@ -984,45 +1057,45 @@
         <div class="topbar-brand">FIT<span>LOG</span></div>
       </header>
       <main class="screen">
-        <div style="height:12px"></div>
+        <div style="height:8px"></div>
         ${account}
-        <div class="settings-label" style="margin-top:20px">데이터</div>
+        <div class="settings-label">데이터</div>
         <button class="settings-item" data-act="export">
-          <div class="settings-item-icon" style="background:var(--accent-bg);color:var(--accent)">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <div class="settings-item-icon" style="background:var(--accent-soft);color:var(--accent)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           </div>
           <div class="settings-item-text">
             <div class="settings-item-title">백업 내보내기</div>
             <div class="settings-item-sub">JSON 파일로 저장</div>
           </div>
-          <svg class="settings-item-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+          <svg class="settings-item-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
         </button>
         <button class="settings-item" data-act="import">
-          <div class="settings-item-icon" style="background:color-mix(in srgb, var(--blue) 14%, var(--bg));color:var(--blue)">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <div class="settings-item-icon" style="background:color-mix(in srgb, var(--blue) 15%, var(--surface));color:var(--blue)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           </div>
           <div class="settings-item-text">
             <div class="settings-item-title">백업 가져오기</div>
             <div class="settings-item-sub">JSON 파일에서 복원</div>
           </div>
-          <svg class="settings-item-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+          <svg class="settings-item-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
         </button>
 
-        <div class="settings-label" style="margin-top:20px">앱 추가</div>
+        <div class="settings-label">앱 추가</div>
         <div class="settings-item" style="cursor:default">
-          <div class="settings-item-icon" style="background:color-mix(in srgb, var(--purple) 14%, var(--bg));color:var(--purple)">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          <div class="settings-item-icon" style="background:color-mix(in srgb, var(--purple) 15%, var(--surface));color:var(--purple)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
           </div>
           <div class="settings-item-text">
             <div class="settings-item-title">홈 화면에 추가</div>
-            <div class="settings-item-sub">크롬 메뉴 → 홈 화면에 추가</div>
+            <div class="settings-item-sub">브라우저 메뉴 → 홈 화면에 추가</div>
           </div>
         </div>
 
-        <div class="settings-label" style="margin-top:20px">FITLOG</div>
+        <div class="settings-label">FITLOG</div>
         <div class="settings-item" style="cursor:default">
           <div class="settings-item-text">
-            <div class="settings-item-title">버전 1.1</div>
+            <div class="settings-item-title">버전 2.0</div>
             <div class="settings-item-sub">${state.user ? '기록은 계정 클라우드와 이 기기에 저장됩니다' : '기록은 이 기기 브라우저에만 저장됩니다'}</div>
           </div>
         </div>
@@ -1030,21 +1103,13 @@
       </main>`;
   }
 
-  /* ── Event Binding ───────────────────────── */
+  /* ── Event Binding ────────────────────────── */
   function bindEvents() {
     appEl.onclick  = onClick;
     appEl.oninput  = onInput;
     appEl.onchange = onChangeEvt;
-
-    /* Sheet panels: stop click/input from bubbling to the backdrop,
-       but still run the handler so inner actions work. */
-    appEl.querySelectorAll('.sheet-panel').forEach(panel => {
-      panel.addEventListener('click', e => { e.stopPropagation(); onClick(e); });
-      panel.addEventListener('input', e => { e.stopPropagation(); onInput(e); });
-    });
   }
 
-  /* ── Click handler ───────────────────────── */
   async function onClick(e) {
     /* del-custom needs to stop before pick-item fires */
     const delCustom = e.target.closest('[data-act="del-custom"]');
@@ -1086,8 +1151,7 @@
     }
 
     /* Sheet closers */
-    if (act === 'close-picker') { state.pickerPart = null; state.exerciseSearch = ''; render(); return; }
-    if (act === 'close-info')   { state.exerciseInfoId = null; render(); return; }
+    if (act === 'close-picker' || act === 'close-info' || act === 'close-sheet') { closeAllSheets(); render(); return; }
 
     /* Weight picker controls */
     if (act === 'set-weight-preset') {
@@ -1241,28 +1305,8 @@
     }
     if (t.dataset.act === 'search-ex') {
       state.exerciseSearch = t.value;
-      /* Live-update picker list only */
       const list = document.querySelector('.pick-list');
-      if (list) {
-        const partId = state.pickerPart;
-        const added = new Set((state.session?.exercises||[]).filter(e=>e.part===partId).map(e=>e.name));
-        const q = state.exerciseSearch.toLowerCase();
-        const library = libraryFor(partId).filter(e => !q || e.name.toLowerCase().includes(q) || (e.nameEn||'').toLowerCase().includes(q));
-        list.innerHTML = library.map(item => {
-          const on = added.has(item.name);
-          const eq = EQUIPMENT_LABEL[item.equipment] || '';
-          return `<div class="pick-item${on?' on':''}">
-            <button class="pick-item-name" data-act="pick-ex" data-part="${partId}" data-name="${esc(item.name)}" data-exid="${esc(item.id||'')}">
-              ${esc(item.name)}
-            </button>
-            ${eq ? `<span class="pick-item-eq">${esc(eq)}</span>` : ''}
-            ${on ? `<button class="custom-del" data-act="quick-del-ex" data-name="${esc(item.name)}" data-part="${partId}">빼기</button>` : ''}
-            ${item.custom ? `<button class="custom-del" data-act="del-custom" data-id="${esc(item.id)}">삭제</button>` : ''}
-            <div class="pick-check">${on ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>' : ''}</div>
-          </div>`;
-        }).join('') || '<div class="help-text">검색 결과가 없습니다.</div>';
-        bindEvents();
-      }
+      if (list && state.pickerPart) list.innerHTML = buildPickItems(state.pickerPart);
     }
   }
 
