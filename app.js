@@ -293,31 +293,34 @@
 
   function renderLogin() {
     const configured = typeof Cloud !== 'undefined' && Cloud.configured();
-    const busy = state.authBusy ? ' disabled' : '';
-    const emailMode = state.authMode === 'signup';
+    const isSignup = state.authMode === 'signup';
+    const busy = state.authBusy;
     return `<main class="login-screen">
       <div class="topbar-brand" style="font-size:32px">FIT<span>LOG</span></div>
       <h1 class="login-title">내 운동 기록,<br>계정에 저장하세요</h1>
-      <p class="login-sub">구글 또는 이메일로 로그인하면<br>폰과 PC에서 같은 기록이 이어집니다.</p>
+      <p class="login-sub">폰과 PC에서 같은 기록이 이어집니다.</p>
       ${configured ? `
-        <button class="btn-google${busy}" data-act="login-google"${state.authBusy?' disabled':''}>
+        ${busy ? `<p class="login-sub" style="color:var(--accent);margin-bottom:16px">처리 중…</p>` : ''}
+        ${state.authError ? `<p class="login-error">${esc(state.authError)}</p>` : ''}
+        <button class="btn-google" data-act="login-google" ${busy ? 'disabled' : ''}>
           <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 8 3.1l5.7-5.7C34.2 6.1 29.4 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.3-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 12 24 12c3.1 0 5.8 1.2 8 3.1l5.7-5.7C34.2 6.1 29.4 4 24 4 16.3 4 9.6 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 10-2 13.6-5.2l-6.3-5.3C29.2 35.1 26.7 36 24 36c-5.3 0-9.7-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-1.1 3.2-3.5 5.8-6.7 7.5l6.3 5.3C37.3 38.2 44 33 44 24c0-1.2-.1-2.3-.4-3.5z"/></svg>
           Google로 계속하기
         </button>
-        <div class="login-or">또는 이메일</div>
-        <input class="login-input" data-auth="email" type="email" inputmode="email" autocomplete="email" placeholder="이메일" value="${esc(state.authEmail)}">
-        <input class="login-input" data-auth="password" type="password" autocomplete="${emailMode?'new-password':'current-password'}" placeholder="비밀번호 (6자 이상)" value="${esc(state.authPassword)}">
-        ${state.authError ? `<p class="login-error">${esc(state.authError)}</p>` : ''}
-        <button class="btn-hero" style="margin-top:8px" data-act="login-email"${state.authBusy?' disabled':''}>
-          ${state.authBusy ? '처리 중…' : (emailMode ? '이메일로 회원가입' : '이메일로 로그인')}
-        </button>
-        <button class="login-switch" data-act="toggle-auth-mode">
-          ${emailMode ? '이미 계정이 있나요? 로그인' : '처음이신가요? 회원가입'}
+        <div class="login-or">또는 이메일로 계속하기</div>
+        <div class="login-tabs">
+          <button class="login-tab${!isSignup?' active':''}" data-act="toggle-auth-mode" data-mode="signin">로그인</button>
+          <button class="login-tab${isSignup?' active':''}" data-act="toggle-auth-mode" data-mode="signup">회원가입</button>
+        </div>
+        <input class="login-input" id="auth-email" type="email" inputmode="email" autocomplete="email" placeholder="이메일" value="${esc(state.authEmail)}">
+        <input class="login-input" id="auth-password" type="password" autocomplete="${isSignup?'new-password':'current-password'}" placeholder="비밀번호 (6자 이상)" value="${esc(state.authPassword)}">
+        ${isSignup ? `<input class="login-input" id="auth-password2" type="password" autocomplete="new-password" placeholder="비밀번호 확인" value="">` : ''}
+        <button class="btn-hero" style="margin-top:8px" data-act="login-email" ${busy ? 'disabled' : ''}>
+          ${isSignup ? '이메일로 회원가입' : '이메일로 로그인'}
         </button>
       ` : `
         <div class="login-setup">Firebase 연결 전에는 이 기기에서만 사용할 수 있습니다.</div>
       `}
-      <button class="login-guest" data-act="login-guest">로그인 없이 이 기기에서만 쓰기</button>
+      <button class="login-guest" data-act="login-guest" ${busy ? 'disabled' : ''}>로그인 없이 이 기기에서만 쓰기</button>
     </main>`;
   }
 
@@ -944,7 +947,12 @@
     if (act === 'login-email') { await handleEmailLogin(); return; }
     if (act === 'login-guest') { await enterApp(null, { guest: true }); return; }
     if (act === 'toggle-auth-mode') {
-      state.authMode = state.authMode === 'signup' ? 'signin' : 'signup';
+      /* save current input values before re-rendering */
+      const emailEl = document.getElementById('auth-email');
+      const passEl  = document.getElementById('auth-password');
+      if (emailEl) state.authEmail    = emailEl.value;
+      if (passEl)  state.authPassword = passEl.value;
+      state.authMode  = btn.dataset.mode || (state.authMode === 'signup' ? 'signin' : 'signup');
       state.authError = '';
       render(); return;
     }
@@ -1237,13 +1245,9 @@
     state.authError = '';
     render();
     try {
-      const user = await Cloud.signInGoogle();
-      if (user) await enterApp(user);
-      else {
-        /* redirect in progress */
-        state.authError = '';
-        render();
-      }
+      /* signInGoogle always uses redirect — page navigates away */
+      await Cloud.signInGoogle();
+      /* if we somehow get here (non-redirect env), handle the returned user */
     } catch (err) {
       state.authBusy = false;
       state.authError = Cloud.authMessage(err);
@@ -1254,14 +1258,27 @@
   async function handleEmailLogin() {
     if (state.authBusy) return;
     if (!Cloud.configured()) { state.authError = 'Firebase가 아직 연결되지 않았습니다.'; render(); return; }
-    const email = state.authEmail.trim();
-    const password = state.authPassword;
+
+    /* Read directly from DOM so we don't rely on oninput timing */
+    const emailEl = document.getElementById('auth-email');
+    const passEl  = document.getElementById('auth-password');
+    const pass2El = document.getElementById('auth-password2');
+    const email    = (emailEl ? emailEl.value : state.authEmail).trim();
+    const password = passEl ? passEl.value : state.authPassword;
+
     if (!email || !password) {
       state.authError = '이메일과 비밀번호를 입력해 주세요.';
       render(); return;
     }
-    state.authBusy = true;
-    state.authError = '';
+    if (state.authMode === 'signup' && pass2El && pass2El.value !== password) {
+      state.authError = '비밀번호가 일치하지 않습니다.';
+      render(); return;
+    }
+
+    state.authEmail    = email;
+    state.authPassword = password;
+    state.authBusy     = true;
+    state.authError    = '';
     render();
     try {
       const user = state.authMode === 'signup'

@@ -77,8 +77,10 @@ const Cloud = (() => {
       "auth/cancelled-popup-request": "로그인이 취소되었습니다.",
       "auth/network-request-failed": "네트워크 오류입니다. 연결을 확인해 주세요.",
       "auth/too-many-requests": "시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.",
-      "auth/operation-not-allowed": "이 로그인 방법이 Firebase에서 아직 켜져 있지 않습니다.",
-      "auth/unauthorized-domain": "이 도메인이 Firebase 승인 목록에 없습니다.",
+      "auth/operation-not-allowed": "Firebase에서 이 로그인 방법이 꺼져 있습니다. Authentication → 로그인 방법에서 켜 주세요.",
+      "auth/unauthorized-domain": "이 도메인이 Firebase 승인 목록에 없습니다. Authentication → 설정 → 승인된 도메인에 추가해 주세요.",
+      "auth/popup-blocked": "팝업이 차단됐습니다. 브라우저 설정에서 팝업을 허용해 주세요.",
+      "auth/popup-closed-by-user": "로그인 창이 닫혔습니다.",
     };
     return map[code] || (err && err.message) || "로그인에 실패했습니다.";
   }
@@ -89,19 +91,11 @@ const Cloud = (() => {
     return provider;
   }
 
-  function preferRedirect() {
-    const standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone;
-    return standalone || /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-  }
-
   async function signInGoogle() {
     if (!auth) throw new Error("Firebase가 설정되지 않았습니다.");
-    if (preferRedirect()) {
-      await auth.signInWithRedirect(googleProvider());
-      return null;
-    }
-    const cred = await auth.signInWithPopup(googleProvider());
-    return profile(cred.user);
+    /* Always use redirect — popup is frequently blocked on mobile and PWA. */
+    await auth.signInWithRedirect(googleProvider());
+    return null;
   }
 
   async function completeRedirect() {

@@ -1087,15 +1087,35 @@ img,svg { display:block; }
   font-weight: 700;
   margin: 4px 0 0;
 }
-.login-switch,
+.login-tabs {
+  display: flex;
+  background: var(--card);
+  border-radius: 10px;
+  padding: 4px;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.login-tab {
+  flex: 1;
+  padding: 9px 0;
+  border-radius: 7px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--sub);
+  background: transparent;
+  transition: background .15s, color .15s;
+}
+.login-tab.active {
+  background: var(--accent);
+  color: #fff;
+}
 .login-guest {
   margin-top: 14px;
   min-height: 44px;
-  color: var(--sub);
+  color: var(--muted);
   font-size: 14px;
   font-weight: 700;
 }
-.login-guest { color: var(--muted); }
 .login-setup {
   background: var(--card);
   border-radius: var(--r);
