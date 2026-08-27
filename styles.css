@@ -547,7 +547,11 @@ img,svg { display:block; }
 }
 .val-chip:active,
 .val-chip.focus { border-color: var(--accent); background: var(--accent-bg); }
-.val-chip.done { border-color: transparent; background: transparent; opacity: .45; }
+/* Completed sets read as confirmed (green), not disabled (faded) */
+.val-chip.done {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--green) 9%, transparent);
+}
 .val-chip-num {
   font-size: 20px;
   font-weight: 900;
@@ -578,9 +582,8 @@ img,svg { display:block; }
   background: color-mix(in srgb, var(--green) 16%, var(--bg));
   color: var(--green);
 }
-.set-row.done .val-chip {
-  opacity: .5;
-}
+.set-row.done .val-chip-num { color: var(--green); }
+.set-row.done .val-chip-unit { color: color-mix(in srgb, var(--green) 62%, var(--muted)); }
 
 /* Add set row */
 .add-set-row {
