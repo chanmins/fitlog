@@ -1252,13 +1252,19 @@
       const customExercises = mergeCustom(localCustom, cloudData.customExercises);
       await WorkoutDB.replaceAll(sessions, customExercises);
       await withTimeout(Cloud.pushAll(sessions, customExercises), 15000, '저장');
-      await loadWorkspace();
+
+      /* Refresh data in place — loadWorkspace() would reset the tab and close
+         sheets, yanking the user out of whatever they were editing. */
+      state.sessions = await WorkoutDB.getAllSessions();
+      state.customExercises = await WorkoutDB.getCustomExercises();
+      const saved = await WorkoutDB.getSession(state.date);
+      if (saved) state.session = normalizeSession(saved);
+
       state.syncing = false;
       render();
     } catch (err) {
       console.warn('cloud sync failed', err);
       state.syncing = false;
-      state.cloudError = true;
       render();
       toast('클라우드 동기화 실패 — 기록은 이 기기에 저장됩니다');
     }
