@@ -137,6 +137,94 @@
   function fmtNum(n) {
     return Math.round(n).toLocaleString('ko-KR');
   }
+
+  /* ── Chart helpers ───────────────────────── */
+  function renderWeeklyVolumeChart() {
+    const today = new Date();
+    const dow = today.getDay(); // 0=Sun
+    const toMon = dow === 0 ? 6 : dow - 1;
+    const weeks = [];
+    for (let w = 7; w >= 0; w--) {
+      const mon = new Date(today);
+      mon.setDate(today.getDate() - toMon - w * 7);
+      const sun = new Date(mon);
+      sun.setDate(mon.getDate() + 6);
+      const s0 = mon.toISOString().slice(0,10);
+      const s1 = sun.toISOString().slice(0,10);
+      const vol = state.sessions
+        .filter(s => s.date >= s0 && s.date <= s1)
+        .reduce((acc, s) => acc + (s.exercises||[]).reduce((a,ex)=>a+exVolume(ex),0), 0);
+      weeks.push({ label: `${mon.getMonth()+1}/${mon.getDate()}`, vol });
+    }
+    const maxVol = Math.max(...weeks.map(w=>w.vol), 1);
+    const thisVol = weeks[weeks.length-1].vol;
+    const W = 100 / weeks.length;
+    const bars = weeks.map((w, i) => {
+      const h = Math.round((w.vol / maxVol) * 50);
+      const x = (i * W + W * 0.15).toFixed(1);
+      const bw = (W * 0.7).toFixed(1);
+      return `<rect x="${x}%" y="${52-h}" width="${bw}%" height="${h}" rx="2" fill="${w.vol>0?'var(--accent)':'var(--line)'}"/>
+        <text x="${(i*W+W*0.5).toFixed(1)}%" y="68" text-anchor="middle" font-size="6.5" fill="var(--muted)">${w.label}</text>`;
+    }).join('');
+    const infoStr = thisVol > 0
+      ? `이번 주 ${thisVol>=1000?(thisVol/1000).toFixed(1)+'t':fmtNum(thisVol)+'kg'}`
+      : `최고 ${maxVol>=1000?(maxVol/1000).toFixed(1)+'t':fmtNum(maxVol)+'kg'}`;
+    return `<div class="vol-chart-card">
+      <div class="vol-chart-header">
+        <span class="vol-chart-title">주간 볼륨</span>
+        <span class="vol-chart-info">${infoStr}</span>
+      </div>
+      <svg viewBox="0 0 100 72" class="vol-chart-svg" preserveAspectRatio="none">${bars}</svg>
+    </div>`;
+  }
+
+  function renderExerciseTrend(exName) {
+    const history = [];
+    const sorted = [...state.sessions].sort((a,b) => a.date < b.date ? -1 : 1);
+    for (const s of sorted) {
+      const ex = (s.exercises||[]).find(e => e.name === exName);
+      if (!ex) continue;
+      const maxKg = Math.max(...(ex.sets||[]).map(st=>Number(st.kg)||0));
+      if (maxKg > 0) history.push({ date: shortDate(s.date), kg: maxKg });
+      if (history.length >= 10) break;
+    }
+    if (history.length < 2) return '';
+    const pr = Math.max(...history.map(p=>p.kg));
+    const minKg = Math.min(...history.map(p=>p.kg));
+    const range = pr - minKg || 1;
+    const n = history.length;
+    const coords = history.map((p, i) => ({
+      x: (i/(n-1))*86+7, y: 36-((p.kg-minKg)/range)*28,
+      kg: p.kg, date: p.date,
+    }));
+    const line = coords.map(c=>`${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
+    const area = `M${coords[0].x.toFixed(1)},${coords[0].y.toFixed(1)} `
+      + coords.slice(1).map(c=>`L${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ')
+      + ` L${coords[n-1].x.toFixed(1)},42 L${coords[0].x.toFixed(1)},42 Z`;
+    const dots = coords.map((c,i) => {
+      const last = i===n-1;
+      return `<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="${last?4:2.5}"
+        fill="${last?'var(--accent)':'var(--bg)'}" stroke="var(--accent)" stroke-width="1.5"/>
+        ${last?`<text x="${c.x.toFixed(1)}" y="${(c.y-7).toFixed(1)}" text-anchor="middle" font-size="7.5" font-weight="800" fill="var(--accent)">${c.kg}kg</text>`:''}`;
+    }).join('');
+    return `<div class="trend-card">
+      <div class="trend-header">
+        <span class="trend-title">최고 무게 추이</span>
+        <span class="trend-pr">PR <strong>${pr}kg</strong></span>
+      </div>
+      <svg viewBox="0 0 100 46" class="trend-svg" overflow="visible">
+        <defs><linearGradient id="tgrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="var(--accent)" stop-opacity=".22"/>
+          <stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/>
+        </linearGradient></defs>
+        <path d="${area}" fill="url(#tgrad)"/>
+        <polyline points="${line}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+        ${dots}
+      </svg>
+      <div class="trend-dates"><span>${history[0].date}</span><span>${history[n-1].date}</span></div>
+    </div>`;
+  }
+
   function shiftDate(iso, delta) {
     const d = isoToDate(iso);
     d.setDate(d.getDate() + delta);
@@ -250,7 +338,6 @@
       return 'mi';
     }
 
-    /* Reusable body outline paths (front & back share the same silhouette) */
     const outline = `
       <ellipse class="bb" cx="40" cy="11" rx="9" ry="10"/>
       <path class="bb" d="M31,20 Q40,17 49,20 L58,27 Q68,33 67,46 L67,91 Q67,96 61,97 L55,97 L55,91 L25,91 L25,97 L19,97 Q13,96 13,91 L13,46 Q12,33 22,27 Z"/>
@@ -289,21 +376,24 @@
       <ellipse class="${mc('hamstrings')}" cx="52" cy="118" rx="9" ry="15"/>`;
 
     return `
-      <div class="body-map">
-        <figure class="body-view">
+      <div class="body-map-wrap">
+        <input type="radio" name="bv" id="bv-f" class="bv-radio" checked>
+        <input type="radio" name="bv" id="bv-b" class="bv-radio">
+        <div class="bm-tabs">
+          <label for="bv-f" class="bm-tab">앞면</label>
+          <label for="bv-b" class="bm-tab">뒷면</label>
+        </div>
+        <div class="bm-panel bm-front">
           <svg viewBox="0 0 80 160" xmlns="http://www.w3.org/2000/svg">
             ${outline}${frontMuscles}
           </svg>
-          <figcaption>앞</figcaption>
-        </figure>
-        <figure class="body-view">
+        </div>
+        <div class="bm-panel bm-back">
           <svg viewBox="0 0 80 160" xmlns="http://www.w3.org/2000/svg">
             ${outline}${backMuscles}
           </svg>
-          <figcaption>뒤</figcaption>
-        </figure>
+        </div>
       </div>`;
-  }
 
   /* ── Render Root ─────────────────────────── */
   function render() {
@@ -665,29 +755,36 @@
 
   /* ── Weight Picker Sheet ─────────────────── */
   function renderWeightPickerSheet() {
-    const { value } = state.weightPicker;
-    const display = (value === '' || value == null) ? '0' : String(value);
-    const WEIGHT_PRESETS = [20,30,40,50,60,70,80,90,100,110,120,140,160];
+    const { value, str = '' } = state.weightPicker;
+    const display = str || (value == null || value === '' ? '0' : String(value));
+    const effectiveVal = str ? parseFloat(str) || 0 : (Number(value) || 0);
+    const WEIGHT_PRESETS = [20,30,40,50,60,70,80,90,100,110,120,140];
     const presets = WEIGHT_PRESETS.map(w =>
-      `<button class="preset-chip${Number(value)===w?' on':''}" data-act="set-weight-preset" data-val="${w}">${w}</button>`
+      `<button class="preset-chip${Number(value)===w&&!str?' on':''}" data-act="set-weight-preset" data-val="${w}">${w}</button>`
     ).join('');
-    const steps = [
-      {label:'-10',  delta:-10,  cls:'minus'}, {label:'-5',  delta:-5,  cls:'minus'}, {label:'-2.5', delta:-2.5, cls:'minus'},
-      {label:'+2.5', delta:2.5,  cls:'plus'},  {label:'+5',  delta:5,   cls:'plus'},  {label:'+10',  delta:10,   cls:'plus'},
-    ];
-    const stepBtns = steps.map(s =>
-      `<button class="stepper-btn ${s.cls}" data-act="step-weight" data-delta="${s.delta}">${s.label}</button>`
+    const numpadRows = [['7','8','9'],['4','5','6'],['1','2','3'],['.','0','⌫']];
+    const numpad = numpadRows.map(row =>
+      `<div class="numpad-row">${row.map(k => {
+        const act = k==='⌫' ? 'numpad-w-back' : k==='.' ? 'numpad-w-dot' : 'numpad-w-digit';
+        const cls = k==='⌫' ? 'numpad-key back' : 'numpad-key';
+        return `<button class="${cls}" data-act="${act}" data-d="${k}">${k}</button>`;
+      }).join('')}</div>`
     ).join('');
     return `<div class="sheet-backdrop" data-act="close-picker">
       <div class="sheet-panel" id="sheet-weight">
         <div class="sheet-grab"></div>
-        <div class="sheet-title">무게 선택</div>
         <div class="picker-big">
           <div class="picker-big-num">${esc(display)}</div>
           <div class="picker-big-unit">kg</div>
         </div>
+        <div class="numpad">${numpad}</div>
+        <div class="picker-adj-row">
+          <button class="adj-btn minus" data-act="step-weight" data-delta="-5">−5</button>
+          <button class="adj-btn minus" data-act="step-weight" data-delta="-2.5">−2.5</button>
+          <button class="adj-btn plus" data-act="step-weight" data-delta="2.5">+2.5</button>
+          <button class="adj-btn plus" data-act="step-weight" data-delta="5">+5</button>
+        </div>
         <div class="presets-scroll">${presets}</div>
-        <div class="stepper-grid">${stepBtns}</div>
         <button class="picker-confirm" data-act="confirm-weight">확인</button>
       </div>
     </div>`;
@@ -695,31 +792,35 @@
 
   /* ── Reps Picker Sheet ────────────────────── */
   function renderRepsPickerSheet() {
-    const { value } = state.repsPicker;
-    const display = (value === '' || value == null) ? '0' : String(value);
+    const { value, str = '' } = state.repsPicker;
+    const display = str || (value == null || value === '' ? '0' : String(value));
     const REPS_PRESETS = [1,3,5,6,8,10,12,15,20,25,30];
     const presets = REPS_PRESETS.map(r =>
-      `<button class="preset-chip${Number(value)===r?' on':''}" data-act="set-reps-preset" data-val="${r}">${r}</button>`
+      `<button class="preset-chip${Number(value)===r&&!str?' on':''}" data-act="set-reps-preset" data-val="${r}">${r}</button>`
     ).join('');
-    const steps = [
-      {label:'-2', delta:-2, cls:'minus'}, {label:'-1', delta:-1, cls:'minus'}, {label:'0', delta:0, cls:''},
-      {label:'+1', delta:1, cls:'plus'},   {label:'+2', delta:2, cls:'plus'},   {label:'+5', delta:5, cls:'plus'},
-    ];
-    const stepBtns = steps.map(s =>
-      s.delta === 0
-        ? `<button class="stepper-btn" style="color:var(--muted)" data-act="set-reps-preset" data-val="0">초기화</button>`
-        : `<button class="stepper-btn ${s.cls}" data-act="step-reps" data-delta="${s.delta}">${s.label>0?'+':''}${s.label}</button>`
+    const numpadRows = [['7','8','9'],['4','5','6'],['1','2','3'],['C','0','⌫']];
+    const numpad = numpadRows.map(row =>
+      `<div class="numpad-row">${row.map(k => {
+        const act = k==='⌫' ? 'numpad-r-back' : k==='C' ? 'numpad-r-clear' : 'numpad-r-digit';
+        const cls = k==='⌫' ? 'numpad-key back' : k==='C' ? 'numpad-key clear' : 'numpad-key';
+        return `<button class="${cls}" data-act="${act}" data-d="${k}">${k}</button>`;
+      }).join('')}</div>`
     ).join('');
     return `<div class="sheet-backdrop" data-act="close-picker">
       <div class="sheet-panel" id="sheet-reps">
         <div class="sheet-grab"></div>
-        <div class="sheet-title">횟수 선택</div>
         <div class="picker-big">
           <div class="picker-big-num">${esc(display)}</div>
           <div class="picker-big-unit">회</div>
         </div>
+        <div class="numpad">${numpad}</div>
+        <div class="picker-adj-row">
+          <button class="adj-btn minus" data-act="step-reps" data-delta="-2">−2</button>
+          <button class="adj-btn minus" data-act="step-reps" data-delta="-1">−1</button>
+          <button class="adj-btn plus" data-act="step-reps" data-delta="1">+1</button>
+          <button class="adj-btn plus" data-act="step-reps" data-delta="2">+2</button>
+        </div>
         <div class="presets-scroll">${presets}</div>
-        <div class="stepper-grid">${stepBtns}</div>
         <button class="picker-confirm" data-act="confirm-reps">확인</button>
       </div>
     </div>`;
@@ -764,6 +865,7 @@
           <div class="muscle-legend-row">${primaryPills}</div>
           ${secondary.length ? `<div class="muscle-legend-title" style="margin-top:8px">협력근</div><div class="muscle-legend-row">${secondaryPills}</div>` : ''}
         </div>
+        ${renderExerciseTrend(libEx.name)}
         ${libEx.description ? `<p class="info-desc">${esc(libEx.description)}</p>` : ''}
         ${tips ? `<div class="sec-title" style="margin-bottom:10px">수행 팁</div><ul class="tips-list">${tips}</ul>` : ''}
       </div>
@@ -823,14 +925,17 @@
       if (!groups.has(k)) groups.set(k, []);
       groups.get(k).push(s);
     }
-    let body = '';
+    let body = renderWeeklyVolumeChart();
     for (const [key, rows] of groups) {
       body += `<div class="month-label">${fmtMonth(key)}</div><div class="recent-list">`;
       for (const s of rows) {
         const summary = sessionSummary(s) || '기록';
+        const vol = (s.exercises||[]).reduce((a,ex)=>a+exVolume(ex),0);
+        const volStr = vol > 0 ? (vol>=1000?(vol/1000).toFixed(1)+'t':fmtNum(vol)+'kg') : '';
         body += `<button class="recent-row" data-act="open-day" data-date="${s.date}">
           <div class="recent-date">${shortDate(s.date)}</div>
           <div class="recent-parts">${esc(summary)}</div>
+          ${volStr ? `<div class="recent-vol">${volStr}</div>` : ''}
           <svg class="recent-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
         </button>`;
       }
@@ -987,21 +1092,43 @@
     if (act === 'set-weight-preset') {
       if (!state.weightPicker) return;
       state.weightPicker.value = Number(btn.dataset.val);
+      state.weightPicker.str = '';
       render(); return;
     }
     if (act === 'step-weight') {
       if (!state.weightPicker) return;
-      const cur = Number(state.weightPicker.value) || 0;
+      const p = state.weightPicker;
+      const cur = p.str ? (parseFloat(p.str)||0) : (Number(p.value)||0);
       const next = Math.max(0, Math.round((cur + Number(btn.dataset.delta)) * 4) / 4);
-      state.weightPicker.value = next;
+      p.value = next; p.str = '';
+      render(); return;
+    }
+    if (act === 'numpad-w-digit') {
+      if (!state.weightPicker) return;
+      const p = state.weightPicker;
+      if ((p.str||'').length < 5) p.str = (p.str||'') + btn.dataset.d;
+      render(); return;
+    }
+    if (act === 'numpad-w-dot') {
+      if (!state.weightPicker) return;
+      const p = state.weightPicker;
+      if (!(p.str||'').includes('.') && (p.str||'').length < 5)
+        p.str = (p.str||'0') + '.';
+      render(); return;
+    }
+    if (act === 'numpad-w-back') {
+      if (!state.weightPicker) return;
+      state.weightPicker.str = (state.weightPicker.str||'').slice(0,-1);
       render(); return;
     }
     if (act === 'confirm-weight') {
       if (!state.weightPicker) return;
-      const { exId, setId, value } = state.weightPicker;
+      const { exId, setId, str } = state.weightPicker;
+      let value = state.weightPicker.value;
+      if (str) value = parseFloat(str) || 0;
       const ex = state.session.exercises.find(x=>x.id===exId);
       const set = ex?.sets.find(s=>s.id===setId);
-      if (set) { set.kg = parseNum(value); await persist(); }
+      if (set) { set.kg = value; await persist(); }
       state.weightPicker = null;
       render(); return;
     }
@@ -1010,21 +1137,42 @@
     if (act === 'set-reps-preset') {
       if (!state.repsPicker) return;
       state.repsPicker.value = Number(btn.dataset.val);
+      state.repsPicker.str = '';
       render(); return;
     }
     if (act === 'step-reps') {
       if (!state.repsPicker) return;
-      const cur = Number(state.repsPicker.value) || 0;
+      const p = state.repsPicker;
+      const cur = p.str ? (parseInt(p.str)||0) : (Number(p.value)||0);
       const next = Math.max(0, Math.round(cur + Number(btn.dataset.delta)));
-      state.repsPicker.value = next;
+      p.value = next; p.str = '';
+      render(); return;
+    }
+    if (act === 'numpad-r-digit') {
+      if (!state.repsPicker) return;
+      const p = state.repsPicker;
+      if ((p.str||'').length < 3) p.str = (p.str||'') + btn.dataset.d;
+      render(); return;
+    }
+    if (act === 'numpad-r-back') {
+      if (!state.repsPicker) return;
+      state.repsPicker.str = (state.repsPicker.str||'').slice(0,-1);
+      render(); return;
+    }
+    if (act === 'numpad-r-clear') {
+      if (!state.repsPicker) return;
+      state.repsPicker.str = '';
+      state.repsPicker.value = 0;
       render(); return;
     }
     if (act === 'confirm-reps') {
       if (!state.repsPicker) return;
-      const { exId, setId, value } = state.repsPicker;
+      const { exId, setId, str } = state.repsPicker;
+      let value = state.repsPicker.value;
+      if (str) value = parseInt(str) || 0;
       const ex = state.session.exercises.find(x=>x.id===exId);
       const set = ex?.sets.find(s=>s.id===setId);
-      if (set) { set.reps = parseNum(value); await persist(); }
+      if (set) { set.reps = value; await persist(); }
       state.repsPicker = null;
       render(); return;
     }

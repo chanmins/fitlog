@@ -776,6 +776,48 @@ img,svg { display:block; }
 }
 .picker-confirm:active { transform: scale(.97); }
 
+/* Numpad */
+.numpad { margin-bottom: 8px; }
+.numpad-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 7px;
+  margin-bottom: 7px;
+}
+.numpad-key {
+  height: 54px;
+  border-radius: 12px;
+  background: var(--card2);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--label);
+  border: 1.5px solid var(--line);
+  transition: background .1s, transform .08s;
+}
+.numpad-key:active { transform: scale(.92); background: var(--line); }
+.numpad-key.back  { font-size: 18px; color: var(--muted); }
+.numpad-key.clear { font-size: 13px; letter-spacing: -0.02em; color: var(--muted); }
+
+/* Quick ± adjust row */
+.picker-adj-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 7px;
+  margin-bottom: 12px;
+}
+.adj-btn {
+  height: 40px;
+  border-radius: 10px;
+  background: var(--card2);
+  font-size: 13px;
+  font-weight: 800;
+  border: 1.5px solid var(--line);
+  transition: all .12s;
+}
+.adj-btn.minus { color: var(--red); }
+.adj-btn.plus  { color: var(--accent); }
+.adj-btn:active { transform: scale(.94); }
+
 /* ─ Exercise Picker Sheet ─────────────────── */
 .search-bar {
   position: relative;
@@ -907,35 +949,55 @@ img,svg { display:block; }
 .info-badge.eq { background: var(--card2); }
 .diff-stars { color: var(--orange); font-size: 14px; letter-spacing: 1px; }
 
-/* Body map */
-.body-map {
+/* Body map — tabbed (CSS radio toggle) */
+.body-map-wrap { margin: 12px 0 16px; }
+.bv-radio { display: none; }
+.bm-tabs {
   display: flex;
-  gap: 12px;
-  justify-content: center;
-  margin: 16px 0 20px;
-}
-.body-view {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
   gap: 6px;
+  justify-content: center;
+  margin-bottom: 14px;
 }
-.body-view svg {
-  width: 96px;
-  height: 160px;
-}
-.body-view figcaption {
-  font-size: 11px;
+.bm-tab {
+  padding: 7px 22px;
+  border-radius: 999px;
+  font-size: 13px;
   font-weight: 700;
+  background: var(--card2);
   color: var(--muted);
-  letter-spacing: .04em;
-  text-transform: uppercase;
+  cursor: pointer;
+  border: 1.5px solid transparent;
+  transition: all .15s;
+  user-select: none;
+  -webkit-user-select: none;
 }
+#bv-f:checked ~ .bm-tabs label[for="bv-f"],
+#bv-b:checked ~ .bm-tabs label[for="bv-b"] {
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.bm-panel { display: flex; justify-content: center; }
+#bv-f:checked ~ .bm-back { display: none; }
+#bv-b:checked ~ .bm-front { display: none; }
+.bm-panel svg { width: 140px; height: 224px; }
+
 /* SVG muscle states */
-.bb  { fill: #26263a; }
-.mi  { fill: #2e2e42; }
-.ms  { fill: #3a4a18; }
-.mp  { fill: var(--accent); opacity: .85; }
+.bb { fill: #22253a; }
+.mi { fill: #2b2e48; }
+.ms { fill: color-mix(in srgb, var(--orange) 35%, #2b2e48); }
+.mp { fill: var(--accent); }
+
+@keyframes muscle-pulse {
+  0%, 100% { opacity: .82; filter: drop-shadow(0 0 3px var(--accent)); }
+  50%       { opacity: 1;   filter: drop-shadow(0 0 8px var(--accent)); }
+}
+@keyframes muscle-glow-s {
+  0%, 100% { opacity: .6; }
+  50%       { opacity: .85; }
+}
+.mp { animation: muscle-pulse 2s ease-in-out infinite; }
+.ms { animation: muscle-glow-s 2.5s ease-in-out infinite; }
 
 /* Muscle legend */
 .muscle-legend {
@@ -1359,3 +1421,86 @@ img,svg { display:block; }
   font-size: 18px;
 }
 
+/* ─ Weekly Volume Chart ───────────────────── */
+.vol-chart-card {
+  background: var(--card);
+  border-radius: var(--r-md);
+  padding: 14px 16px 10px;
+  margin-bottom: 16px;
+  border: 1px solid var(--line);
+}
+.vol-chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.vol-chart-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.vol-chart-info {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--accent);
+}
+.vol-chart-svg {
+  width: 100%;
+  height: 72px;
+  display: block;
+}
+
+/* ─ Exercise Trend Chart ──────────────────── */
+.trend-card {
+  background: var(--card);
+  border-radius: var(--r-md);
+  padding: 14px 16px 12px;
+  margin-bottom: 16px;
+  border: 1px solid var(--line);
+}
+.trend-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.trend-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.trend-pr {
+  font-size: 13px;
+  color: var(--sub);
+}
+.trend-pr strong {
+  color: var(--accent);
+  font-weight: 800;
+}
+.trend-svg {
+  width: 100%;
+  height: 60px;
+  display: block;
+  overflow: visible;
+}
+.trend-dates {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+/* ─ History session volume tag ────────────── */
+.recent-vol {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-left: auto;
+  margin-right: 4px;
+}
