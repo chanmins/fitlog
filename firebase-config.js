@@ -1,13 +1,10 @@
-/* FITLOG Firebase config
-   Fill this in from Firebase Console → Project settings → Your apps → SDK setup.
-   The web apiKey is expected to be public; access is limited by Auth domain + Firestore rules. */
 const FIREBASE_CONFIG = {
-  apiKey: "",
-  authDomain: "",
-  projectId: "",
-  storageBucket: "",
-  messagingSenderId: "",
-  appId: "",
+  apiKey: "AIzaSyBvDzUOnsZmTqST-pUJ0ZuXq6Eba_oVrWQ",
+  authDomain: "fitlog-4fe54.firebaseapp.com",
+  projectId: "fitlog-4fe54",
+  storageBucket: "fitlog-4fe54.firebasestorage.app",
+  messagingSenderId: "257610683834",
+  appId: "1:257610683834:web:30d51394eb5123b592f983",
 };
 
 function isFirebaseConfigured() {
