@@ -25,6 +25,18 @@
     return Number.isFinite(n) ? n : '';
   }
 
+  /* Reject instead of hanging forever. The Firestore SDK never settles when the
+     database is missing/unreachable, so every cloud call needs a hard deadline. */
+  function withTimeout(promise, ms, label) {
+    let timer;
+    return Promise.race([
+      Promise.resolve(promise).finally(() => clearTimeout(timer)),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label || '작업'} 시간 초과`)), ms);
+      }),
+    ]);
+  }
+
   /* ── State ──────────────────────────────── */
   const state = {
     tab: 'home',
@@ -119,11 +131,13 @@
     _pq = _pq.then(doSave, doSave);
     return _pq;
   }
+  /* Fire-and-forget. The local IndexedDB write has already succeeded by the time
+     this runs, so a slow or unreachable Firestore must never block the UI. */
   function cloudSync(task) {
     if (!state.user) return Promise.resolve();
-    return Promise.resolve()
-      .then(task)
+    withTimeout(Promise.resolve().then(task), 10000, '동기화')
       .catch((err) => console.warn('cloud sync failed', err));
+    return Promise.resolve();
   }
 
   async function doSave() {
@@ -1214,28 +1228,40 @@
       }
     }
 
-    if (user) {
-      state.syncing = true;
-      try {
-        await Cloud.touchProfile();
-        let cloudData = await Cloud.pullAll();
-        cloudData = await adoptLocalDataIfNeeded(cloudData);
-        const localSessions = await WorkoutDB.getAllSessions();
-        const localCustom = await WorkoutDB.getCustomExercises();
-        const sessions = mergeByDate(localSessions, cloudData.sessions);
-        const customExercises = mergeCustom(localCustom, cloudData.customExercises);
-        await WorkoutDB.replaceAll(sessions, customExercises);
-        await Cloud.pushAll(sessions, customExercises);
-      } catch (err) {
-        console.warn('cloud pull failed', err);
-      }
-      state.syncing = false;
-    }
-
+    /* Show the app immediately. Cloud sync runs in the background and must never
+       block entry — the Firestore SDK retries silently forever when the database
+       is missing or unreachable, which would otherwise freeze the splash screen. */
     await loadWorkspace();
     state.authReady = true;
     render();
     if (user && arrivedFromLogin) toast('로그인했습니다');
+
+    if (user) syncInBackground();
+  }
+
+  async function syncInBackground() {
+    if (state.syncing) return;
+    state.syncing = true;
+    try {
+      await withTimeout(Cloud.touchProfile(), 8000, '프로필');
+      let cloudData = await withTimeout(Cloud.pullAll(), 12000, '불러오기');
+      cloudData = await adoptLocalDataIfNeeded(cloudData);
+      const localSessions = await WorkoutDB.getAllSessions();
+      const localCustom = await WorkoutDB.getCustomExercises();
+      const sessions = mergeByDate(localSessions, cloudData.sessions);
+      const customExercises = mergeCustom(localCustom, cloudData.customExercises);
+      await WorkoutDB.replaceAll(sessions, customExercises);
+      await withTimeout(Cloud.pushAll(sessions, customExercises), 15000, '저장');
+      await loadWorkspace();
+      state.syncing = false;
+      render();
+    } catch (err) {
+      console.warn('cloud sync failed', err);
+      state.syncing = false;
+      state.cloudError = true;
+      render();
+      toast('클라우드 동기화 실패 — 기록은 이 기기에 저장됩니다');
+    }
   }
 
   async function handleGoogleLogin() {
@@ -1320,10 +1346,18 @@
        Firebase fires onAuthStateChanged(null) synchronously before getRedirectResult
        settles, so waitAuth() would otherwise resolve with null and show the login
        screen even though the redirect succeeded. */
+    /* Watchdog: never leave the user staring at the splash screen. */
+    const watchdog = setTimeout(() => {
+      if (!state.authReady) {
+        console.warn('init watchdog fired — forcing app to render');
+        state.authReady = true;
+        render();
+      }
+    }, 10000);
+
     let redirectUser = null;
-    try { redirectUser = await Cloud.completeRedirect(); } catch (err) {
-      state.authError = Cloud.authMessage(err);
-    }
+    try { redirectUser = await withTimeout(Cloud.completeRedirect(), 8000, '로그인 확인'); }
+    catch (err) { console.warn('redirect result failed', err); }
 
     Cloud.onAuth(async (user) => {
       if (!state.authReady) return;
@@ -1342,11 +1376,17 @@
     });
 
     if (redirectUser) {
+      clearTimeout(watchdog);
       await enterApp(redirectUser);
       return;
     }
 
-    const existing = await Cloud.waitAuth();
+    let existing = null;
+    try { existing = await withTimeout(Cloud.waitAuth(), 8000, '인증 확인'); }
+    catch (err) { console.warn('waitAuth failed', err); }
+
+    clearTimeout(watchdog);
+
     if (existing) {
       await enterApp(existing);
       return;
@@ -1364,7 +1404,21 @@
   }
 
   init().catch(err => {
-    appEl.innerHTML = `<main style="padding:40px 24px;color:#f87171;font-family:system-ui">
-      저장소 오류: ${String(err)}</main>`;
+    console.error('init failed', err);
+    /* Fall back to local-only mode rather than showing a dead screen. */
+    (async () => {
+      try {
+        WorkoutDB.setScope('guest');
+        await WorkoutDB.open();
+        await loadWorkspace();
+        state.guest = true;
+        state.authReady = true;
+        render();
+        toast('오프라인 모드로 시작했습니다');
+      } catch (e) {
+        appEl.innerHTML = `<main style="padding:40px 24px;color:#f87171;font-family:system-ui">
+          저장소 오류: ${String(e)}</main>`;
+      }
+    })();
   });
 })();
