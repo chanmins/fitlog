@@ -3202,6 +3202,11 @@
   async function enterApp(user, opts = {}) {
     if (user && state.user && state.user.uid === user.uid && state.authReady && !opts.force) return;
     const arrivedFromLogin = !state.authReady || (!state.user && !state.guest);
+    /* Whether an account needs the gate is a fact about that account, decided
+       below by reading its profile. Carrying the previous answer into a new
+       entry is how a stale true survived a sign-out and gated an account that
+       had already finished. */
+    state.onboarding = false;
     state.user = user || null;
     state.guest = !user && !!opts.guest;
     state.authBusy = false;
@@ -3292,7 +3297,24 @@
     /* null here means the read succeeded and the document simply isn't there —
        a brand-new account, which is precisely who the gate is for. Only a
        thrown error (handled above) counts as "don't know". */
-    if (prof && prof.username) { markSetUp(user.uid); return; }
+    /* Confirmed set up — and the gate must be taken back down, not merely left
+       un-raised.
+
+       state.onboarding used to be cleared in exactly one place: finishing the
+       form. So once it went up it stayed up for the life of the page, and any
+       later render with a signed-in user put the gate back — even after the
+       account was confirmed complete. Signing out and in again inside the same
+       tab was enough to bring it back, and a second tab left open on the gate
+       resurrected it every time it was touched, no matter what the server said. */
+    if (prof && prof.username) {
+      markSetUp(user.uid);
+      rememberUsername(user.uid, prof.username);
+      if (state.onboarding) {
+        state.onboarding = false;
+        if (state.authReady) render();
+      }
+      return;
+    }
 
     /* Repair before asking.
 
@@ -3617,10 +3639,33 @@
     } catch (_) {}
   }
 
+  /* A tab left open on the gate has no idea the account was finished somewhere
+     else — another tab, another device, or a retry that finally landed. Auth
+     state broadcasts between tabs, but "does this account have an 아이디" is a
+     Firestore read that only happens on entry, so a backgrounded tab can sit on
+     a screen that stopped being true minutes ago. Re-checking when the tab comes
+     back costs one read and can only ever take the gate down. */
+  function watchForGateGoingStale() {
+    const recheck = () => {
+      if (document.hidden) return;
+      if (!state.onboarding || !state.user || state.authBusy) return;
+      loadProfileThenMaybeOnboard(state.user, 8000);
+    };
+    /* Three events rather than one, because iOS is the case that matters and
+       is the least predictable: switching tabs fires visibilitychange, but
+       returning to a tab the OS froze comes back through pageshow (restored
+       from the back-forward cache), and sometimes only focus is raised. They
+       are cheap and idempotent — the guard above drops all but the first. */
+    document.addEventListener('visibilitychange', recheck);
+    window.addEventListener('pageshow', recheck);
+    window.addEventListener('focus', recheck);
+  }
+
   async function init() {
     markDisplayMode();
     render();
     startRestTicker();
+    watchForGateGoingStale();
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js').catch(()=>{});
       navigator.serviceWorker.addEventListener('message', event => {
