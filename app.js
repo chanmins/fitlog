@@ -1186,7 +1186,7 @@
     return `<main class="login-screen signup-screen">
       <div class="signup-head"><div class="topbar-brand">FIT<span>LOG</span></div></div>
       <h1 class="signup-title">거의 다 됐어요</h1>
-      <p class="signup-sub">아이디를 정하고 기본 정보만 채우면 시작합니다.</p>
+      <p class="signup-sub">모든 항목을 채우면 시작합니다. 한 번만 물어봅니다.</p>
 
       ${state.authError ? `<p class="login-error">${esc(state.authError)}</p>` : ''}
 
@@ -2783,7 +2783,7 @@
       });
       /* The gate keys off this flag, so record the answer now: the next login
          skips the profile read entirely instead of waiting on it. */
-      if (user && user.uid) markSetUp(user.uid);
+      if (user && user.uid) { markSetUp(user.uid); rememberUsername(user.uid, id); }
       try { await Cloud.signOut(); } catch (_) {}
 
       resetSignup();
@@ -2831,12 +2831,45 @@
     }
   }
 
+  /* Which required field is still empty, as a message — or '' when the form is
+     complete. Ranges are the same ones sanitizeProfile enforces before writing,
+     so nothing can be accepted here and then silently dropped on save. */
+  function onboardingMissing() {
+    const s = state.signup;
+    if (!String(s.name || '').trim()) return '이름을 입력해 주세요.';
+    if (!s.gender) return '성별을 선택해 주세요.';
+
+    const year = Number(s.birthYear);
+    const thisYear = new Date().getFullYear();
+    if (!s.birthYear) return '출생연도를 선택해 주세요.';
+    if (!Number.isFinite(year) || year < 1900 || year > thisYear) return '출생연도가 올바르지 않습니다.';
+
+    const cm = Number(s.heightCm);
+    if (!String(s.heightCm || '').trim()) return '키를 입력해 주세요.';
+    if (!Number.isFinite(cm) || cm < 100 || cm > 250) return '키는 100~250cm 사이로 입력해 주세요.';
+
+    const kg = Number(s.weightKg);
+    if (!String(s.weightKg || '').trim()) return '몸무게를 입력해 주세요.';
+    /* Strictly above 20, matching sanitizeProfile — a value it would drop must
+       not be accepted here, or the field would look saved and come back empty. */
+    if (!Number.isFinite(kg) || kg <= 20 || kg > 300) return '몸무게는 21~300kg 사이로 입력해 주세요.';
+
+    return '';
+  }
+
   async function handleOnboardingSave() {
     if (state.authBusy) return;
     const s = state.signup;
     const id = Cloud.normalizeUsername(s.username);
     const bad = Cloud.usernameError(id);
     if (bad) { state.authError = bad; render(); return; }
+
+    /* Every field is required here. The gate is shown once per account, so it
+       is the one moment where asking for all of it is reasonable — and the
+       balance and analysis screens are built on these numbers. */
+    const missing = onboardingMissing();
+    if (missing) { state.authError = missing; render(); return; }
+
     state.authBusy = true;
     state.authError = '';
     render();
@@ -2860,7 +2893,7 @@
       }
 
       state.profile = saved;
-      if (state.user) markSetUp(state.user.uid);
+      if (state.user) { markSetUp(state.user.uid); rememberUsername(state.user.uid, id); }
       state.onboarding = false;
       state.authBusy = false;
       resetSignup();
@@ -3226,6 +3259,20 @@
     try { localStorage.setItem('fitlog-setup:' + uid, '1'); } catch (_) {}
   }
 
+  /* The 아이디 this device successfully claimed for this account.
+
+     Kept because the app has no other way to find it: the usernames directory
+     allows reading a name you can already spell, but not listing names by
+     owner, so once users/{uid}.username goes missing there is nothing left to
+     look it up with — and the only thing the app can do is ask the user again,
+     which is exactly the loop being closed here. */
+  function rememberUsername(uid, id) {
+    try { localStorage.setItem('fitlog-id:' + uid, id); } catch (_) {}
+  }
+  function rememberedUsername(uid) {
+    try { return localStorage.getItem('fitlog-id:' + uid) || ''; } catch (_) { return ''; }
+  }
+
   /* Fetches the profile after entry rather than before it, for the same reason
      sync runs in the background: a slow or unreachable Firestore must not hold
      the app hostage on a splash screen. The onboarding gate therefore appears a
@@ -3247,8 +3294,38 @@
        thrown error (handled above) counts as "don't know". */
     if (prof && prof.username) { markSetUp(user.uid); return; }
 
+    /* Repair before asking.
+
+       Reaching here means the server has no 아이디 for this account. If this
+       device has already claimed one, that is not a new account — it is the
+       same account with a value missing, and the honest response is to put the
+       value back rather than make the user invent a name they already chose.
+
+       claimUsername treats a name you already own as yours, so this is safe to
+       repeat and cannot take a name from anybody else. The gate is still shown
+       if the repair does not stick, because at that point the app genuinely
+       does not know what the account is called. */
+    const remembered = rememberedUsername(user.uid);
+    if (remembered) {
+      try {
+        await Cloud.claimUsername(remembered);
+        const again = await withTimeout(Cloud.loadProfile(user.uid), 8000, '프로필');
+        if (again && again.username) {
+          if (!state.user || state.user.uid !== user.uid) return;
+          state.profile = again;
+          markSetUp(user.uid);
+          if (state.authReady) render();
+          return;
+        }
+      } catch (err) {
+        console.warn('username repair failed', err);
+      }
+      if (!state.user || state.user.uid !== user.uid) return;
+    }
+
     /* Prefill from whatever Google already told us so the gate is one tap for
        most people. */
+    state.signup.username = state.signup.username || remembered || '';
     state.signup.name = state.signup.name || user.displayName || '';
     state.onboarding = true;
     if (state.authReady) render();
@@ -3439,6 +3516,12 @@
     if (!confirm('로그아웃할까요? 이 기기 기록은 남아 있고, 계정 기록은 클라우드에 유지됩니다.')) return;
     state.user = null;
     state.guest = false;
+    /* Clear the gate's own state too. Leaving it set meant a later render —
+       one triggered by anything that arrives after logout — could put the
+       setup screen back on top of a signed-out app. */
+    state.onboarding = false;
+    state.profile = null;
+    resetSignup();
     localStorage.removeItem('fitlog-guest');
     WorkoutDB.setScope('guest');
     await WorkoutDB.open();
