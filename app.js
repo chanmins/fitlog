@@ -976,7 +976,6 @@
       ` : `
         <div class="login-setup">Firebase 연결 전에는 이 기기에서만 사용할 수 있습니다.</div>
       `}
-      <button class="login-guest" data-act="login-guest" ${busy ? 'disabled' : ''}>로그인 없이 이 기기에서만 쓰기</button>
     </main>`;
   }
 
@@ -2780,7 +2779,6 @@
       state.pendingImport = null;
       render(); return;
     }
-    if (act === 'login-guest') { await enterApp(null, { guest: true }); return; }
     /* FITLOG wordmark, shown on every pre-login screen. On the login screen
        itself this is a no-op re-render; from anywhere inside signup or the
        password-reset flow it discards whatever was typed and jumps straight
@@ -4086,6 +4084,16 @@
     await WorkoutDB.open();
     const legacy = await WorkoutDB.readLegacy();
     const hasLegacy = (legacy.sessions || []).length || (legacy.customExercises || []).length;
+    /* Guest mode can no longer be CHOSEN — the button that started it is gone,
+       so signing in is the only way into the app from here.
+
+       This resume path stays, deliberately. It only fires for a device that
+       already has local records: someone who used the app before the button was
+       removed, or whose records predate accounts entirely. Deleting it would not
+       tighten anything — the records are already on the device — it would just
+       strand them behind a login the owner may never have created. Their 설정
+       screen still offers 로그인, which is how those records get carried into an
+       account. */
     if (localStorage.getItem('fitlog-guest') === '1' || hasLegacy) {
       await enterApp(null, { guest: true });
       return;

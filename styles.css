@@ -1081,7 +1081,6 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 }
 .login-input::placeholder { color: var(--muted); }
 .login-error { color: var(--red); font-size: 13px; font-weight: 700; margin-bottom: 12px; background: var(--red-soft); padding: 11px 14px; border-radius: var(--r-sm); }
-.login-guest { width: 100%; text-align: center; color: var(--muted); font-size: 14px; font-weight: 700; padding: 18px 0 0; }
 
 /* ── Signup wizard / onboarding ────────────────────────────────────────────
    Top-aligned rather than vertically centred like the login screen: these
