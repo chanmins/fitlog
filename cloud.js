@@ -150,6 +150,7 @@ const Cloud = (() => {
       "fitlog/auth-not-ready": "로그인 확인이 아직 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.",
       "fitlog/not-ready": "연결 준비 중입니다. 잠시 후 다시 시도해 주세요.",
       "fitlog/claim-unverified": "저장은 되었지만 서버에서 확인되지 않았습니다. 네트워크를 확인하고 다시 시도해 주세요.",
+      "fitlog/username-locked": "이 계정에는 이미 아이디가 있습니다. 아이디는 바꿀 수 없습니다.",
       "auth/invalid-email": "이메일 형식이 올바르지 않습니다.",
       "auth/user-not-found": "가입되지 않은 이메일입니다.",
       /* The single most confusing failure in this app: the account exists but
@@ -416,6 +417,38 @@ const Cloud = (() => {
     const owner = await usernameOwner(id);
     if (owner && owner !== u.uid) {
       const e = new Error("taken"); e.code = "fitlog/username-taken"; throw e;
+    }
+
+    /* An 아이디 is claimed once and never changed.
+
+       The screen says so, and sign-in depends on it: usernames/{id} points at
+       a uid, and nothing ever removes that pointer, so letting an account take
+       a second name does not rename it — it leaves the first name stranded,
+       still resolving to this account, while the profile answers to the new
+       one. That is how signing in on a second browser and being asked to set up
+       again turned one account into two identities.
+
+       Refusing on a failed read is deliberate. Claiming is irreversible, so
+       "I could not check" has to mean stop, not proceed. */
+    let held = null;
+    try {
+      const existing = await loadProfile(u.uid);
+      held = existing && existing.username ? existing.username : null;
+    } catch (err) {
+      const e = new Error("could not verify current username");
+      e.code = "fitlog/claim-unverified";
+      throw e;
+    }
+    if (held && held !== id) {
+      /* A name this account already reserved is still fair game — that is how
+         an earlier name is restored, and how a half-written claim is repaired.
+         Anything else would be minting a second identity. */
+      if (owner !== u.uid) {
+        const e = new Error("username already set");
+        e.code = "fitlog/username-locked";
+        e.held = held;
+        throw e;
+      }
     }
 
     /* Reserve the name only if it is not already reserved by us. Re-writing our

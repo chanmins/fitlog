@@ -2901,6 +2901,24 @@
       toast('설정을 저장했습니다');
     } catch (err) {
       state.authBusy = false;
+
+      /* The account turned out to already have an 아이디 — this screen should
+         never have been shown. Refusing the new name is right, but stopping
+         here would strand the user on a setup screen they cannot complete and
+         cannot leave. Use the name the account actually holds and let them in;
+         nothing was missing except the app's knowledge of it. */
+      if (err && err.code === 'fitlog/username-locked' && err.held) {
+        rememberUsername(state.user ? state.user.uid : '', err.held);
+        if (state.user) markSetUp(state.user.uid);
+        try { state.profile = await Cloud.loadProfile(state.user ? state.user.uid : null); } catch (_) {}
+        state.onboarding = false;
+        state.authError = '';
+        resetSignup();
+        render();
+        toast(`이미 등록된 아이디로 로그인했습니다 · @${err.held}`);
+        return;
+      }
+
       if (err && err.code === 'fitlog/username-taken') {
         state.idCheck = { id, status: 'taken', message: '이미 사용 중인 아이디입니다' };
       }
@@ -3313,6 +3331,35 @@
         state.onboarding = false;
         if (state.authReady) render();
       }
+      return;
+    }
+
+    /* Ask twice before believing it.
+
+       Everything past this point pushes the user into claiming an 아이디, and
+       that is permanent — so one read that came back empty is far too thin a
+       reason to go there. A real account whose read happened to miss will
+       answer properly a moment later; a genuinely new account answers "not
+       there" every time. This is what sent a fully set-up account through setup
+       again on a second browser, where nothing was cached to contradict it. */
+    try {
+      await new Promise(r => setTimeout(r, 600));
+      const second = await withTimeout(Cloud.loadProfile(user.uid), 8000, '프로필');
+      if (!state.user || state.user.uid !== user.uid) return;
+      if (second && second.username) {
+        state.profile = second;
+        markSetUp(user.uid);
+        rememberUsername(user.uid, second.username);
+        if (state.onboarding) {
+          state.onboarding = false;
+          if (state.authReady) render();
+        }
+        return;
+      }
+    } catch (err) {
+      /* Could not confirm — stay quiet rather than risk sending a real account
+         through setup a second time. */
+      console.warn('profile recheck failed', err);
       return;
     }
 
