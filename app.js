@@ -88,6 +88,10 @@
     profile: null,
     onboarding: false,
     profileEditing: false,
+    /* Year the 출생연도 wheel is showing, or null when it is closed. Held
+       separately from state.signup.birthYear so scrolling around inside the
+       wheel doesn't commit anything until 확인 is pressed. */
+    yearPicker: null,
 
     /* Pre-login records found on this device, offered on the home screen.
        null when there is nothing to offer or the user has dismissed it. */
@@ -574,6 +578,7 @@
     state.exerciseInfoId = null;
     state.weightPicker = null;
     state.repsPicker = null;
+    state.yearPicker = null;
     state.profileEditing = false;
     state.exerciseSearch = '';
   }
@@ -674,14 +679,16 @@
   function render() {
     if (!state.authReady) { appEl.innerHTML = renderSplash(); return; }
     if (!state.user && !state.guest) {
-      appEl.innerHTML = state.authMode === 'signup' ? renderSignup()
+      appEl.innerHTML = (state.authMode === 'signup' ? renderSignup()
                       : state.authMode === 'reset'  ? renderReset()
-                      : renderLogin();
-      bindEvents(); return;
+                      : renderLogin())
+                      + (state.yearPicker ? renderYearPickerSheet() : '');
+      bindEvents(); positionYearWheel(); return;
     }
     /* Signed in but no 아이디 yet — finish setting the account up first. */
     if (state.user && state.onboarding) {
-      appEl.innerHTML = renderOnboarding(); bindEvents(); return;
+      appEl.innerHTML = renderOnboarding() + (state.yearPicker ? renderYearPickerSheet() : '');
+      bindEvents(); positionYearWheel(); return;
     }
 
     let html = '';
@@ -691,6 +698,7 @@
     else if (state.tab === 'settings') html = renderSettings();
 
     if (state.profileEditing) html += renderProfileSheet();
+    if (state.yearPicker)     html += renderYearPickerSheet();
     if (state.weightPicker)   html += renderWeightPickerSheet();
     if (state.repsPicker)     html += renderRepsPickerSheet();
     if (state.exerciseInfoId) html += renderExerciseInfoSheet(state.exerciseInfoId);
@@ -702,6 +710,7 @@
     if (state.summaryDate) html += renderDaySummary(state.summaryDate);
     appEl.innerHTML = html;
     bindEvents();
+    positionYearWheel();
     flushPendingFlash();
   }
 
@@ -938,9 +947,8 @@
 
       <div class="field-grid">
         <div>
-          <label class="field-label" for="su-birth">출생연도</label>
-          <input class="login-input" id="su-birth" data-su="birthYear" type="text"
-                 inputmode="numeric" maxlength="4" placeholder="1995" value="${esc(s.birthYear)}">
+          <label class="field-label">출생연도</label>
+          ${yearField(s.birthYear)}
         </div>
         <div>
           <label class="field-label" for="su-height">키 (cm)</label>
@@ -1001,41 +1009,162 @@
       <div class="sheet-panel" id="sheet-profile">
         <div class="sheet-grab"></div>
         <div class="sheet-head">
-          <div><div class="sheet-title">프로필</div><div class="sheet-title-sub">기록 분석에 쓰입니다</div></div>
+          <div><div class="sheet-title">프로필</div></div>
           <button class="sheet-x" data-act="close-profile" aria-label="닫기">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
         <div class="sheet-scroll">
-          ${uname ? `<label class="field-label">아이디</label>
-          <div class="field-static">@${esc(uname)}<span>변경 불가</span></div>` : ''}
+          ${uname ? `
+          <div class="form-group">
+            <div class="form-row static">
+              <span class="form-row-label">아이디</span>
+              <span class="form-row-value">@${esc(uname)}</span>
+            </div>
+          </div>` : ''}
 
-          <label class="field-label" for="pf-name">이름</label>
-          <input class="login-input" id="pf-name" data-su="name" type="text" maxlength="40" placeholder="앱에서 부를 이름" value="${esc(s.name)}">
-
-          <label class="field-label">성별</label>
-          <div class="seg-row">
-            ${genders.map(([v,l]) => `<button class="seg-btn${s.gender===v?' on':''}" data-act="su-gender" data-val="${v}">${l}</button>`).join('')}
+          <div class="form-label">기본 정보</div>
+          <div class="form-group">
+            <div class="form-row">
+              <label class="form-row-label" for="pf-name">이름</label>
+              <input class="form-row-input" id="pf-name" data-su="name" type="text"
+                     maxlength="40" placeholder="앱에서 부를 이름" value="${esc(s.name)}">
+            </div>
+            <div class="form-row">
+              <span class="form-row-label">성별</span>
+              <div class="form-row-seg">
+                ${genders.map(([v,l]) => `<button class="seg-btn${s.gender===v?' on':''}" data-act="su-gender" data-val="${v}">${l}</button>`).join('')}
+              </div>
+            </div>
           </div>
 
-          <div class="field-grid">
-            <div>
-              <label class="field-label" for="pf-birth">출생연도</label>
-              <input class="login-input" id="pf-birth" data-su="birthYear" type="text" inputmode="numeric" maxlength="4" placeholder="1995" value="${esc(s.birthYear)}">
+          <!-- Grouped rows with the value on the right, rather than the old
+               three-across grid of bare inputs. That grid squeezed "출생연도",
+               "키 (cm)" and "몸무게 (kg)" into a third of the width each, so the
+               labels wrapped and the units had nowhere to sit. -->
+          <div class="form-label">신체 정보</div>
+          <div class="form-group">
+            <button class="form-row tappable" data-act="open-year">
+              <span class="form-row-label">출생연도</span>
+              <span class="form-row-value${s.birthYear ? '' : ' empty'}">${s.birthYear ? esc(s.birthYear) : '선택'}</span>
+              <svg class="form-row-chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+            <div class="form-row">
+              <label class="form-row-label" for="pf-height">키</label>
+              <input class="form-row-input num" id="pf-height" data-su="heightCm" type="text"
+                     inputmode="decimal" maxlength="5" placeholder="175" value="${esc(s.heightCm)}">
+              <span class="form-row-unit">cm</span>
             </div>
-            <div>
-              <label class="field-label" for="pf-height">키 (cm)</label>
-              <input class="login-input" id="pf-height" data-su="heightCm" type="text" inputmode="decimal" maxlength="5" placeholder="175" value="${esc(s.heightCm)}">
-            </div>
-            <div>
-              <label class="field-label" for="pf-weight">몸무게 (kg)</label>
-              <input class="login-input" id="pf-weight" data-su="weightKg" type="text" inputmode="decimal" maxlength="5" placeholder="70" value="${esc(s.weightKg)}">
+            <div class="form-row">
+              <label class="form-row-label" for="pf-weight">몸무게</label>
+              <input class="form-row-input num" id="pf-weight" data-su="weightKg" type="text"
+                     inputmode="decimal" maxlength="5" placeholder="70" value="${esc(s.weightKg)}">
+              <span class="form-row-unit">kg</span>
             </div>
           </div>
         </div>
         <button class="picker-confirm" data-act="save-profile" ${state.authBusy?'disabled':''}>${state.authBusy?'저장 중…':'저장'}</button>
       </div>
     </div>`;
+  }
+
+  /* ── 출생연도 wheel ───────────────────────────────────────────────────────
+     A birth year is picked, not typed. The old text field asked for four
+     digits on a numeric keyboard, accepted 19 and 3000 alike, and put a
+     keyboard over half the screen to collect a number from a range the app
+     already knows. A wheel can only produce a year that exists.
+
+     Built on CSS scroll-snap rather than a drag library: the browser supplies
+     the momentum, the snapping and the accessibility, and a tap on any row is
+     an ordinary button. The selected row is whatever sits in the centre band,
+     which is read back on scroll. */
+  const YEAR_MIN = 1920;
+  function yearList() {
+    const now = new Date().getFullYear();
+    const out = [];
+    for (let y = now; y >= YEAR_MIN; y--) out.push(y);
+    return out;
+  }
+
+  function renderYearPickerSheet() {
+    const sel = Number(state.yearPicker) || 0;
+    const years = yearList();
+    const age = sel ? (new Date().getFullYear() - sel) : null;
+    return `<div class="sheet-backdrop">
+      <div class="sheet-panel" id="sheet-year">
+        <div class="sheet-grab"></div>
+        <div class="sheet-head">
+          <div>
+            <div class="sheet-title">출생연도</div>
+            <div class="sheet-title-sub">${age !== null ? `만 ${age}세` : '위아래로 넘겨 선택하세요'}</div>
+          </div>
+          <button class="sheet-x" data-act="close-year" aria-label="닫기">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="wheel" id="year-wheel">
+          <div class="wheel-band" aria-hidden="true"></div>
+          <div class="wheel-scroll" id="year-scroll" role="listbox" aria-label="출생연도">
+            <div class="wheel-pad"></div>
+            ${years.map(y => `<button class="wheel-item${y === sel ? ' on' : ''}" role="option"
+              aria-selected="${y === sel}" data-act="pick-year" data-year="${y}">${y}</button>`).join('')}
+            <div class="wheel-pad"></div>
+          </div>
+        </div>
+        <button class="picker-confirm" data-act="confirm-year">확인</button>
+      </div>
+    </div>`;
+  }
+
+  /* The wheel is a scroll container, so the current value has to be scrolled
+     to after every paint — there is no declarative way to say "start here". */
+  function positionYearWheel() {
+    const scroll = document.getElementById('year-scroll');
+    if (!scroll) return;
+    const active = scroll.querySelector('.wheel-item.on') || scroll.querySelector('.wheel-item');
+    if (!active) return;
+    scroll.scrollTop = active.offsetTop - (scroll.clientHeight - active.offsetHeight) / 2;
+    bindYearWheel(scroll);
+  }
+
+  /* Reads the centre row back out as the user scrolls, so the header ("만 30세")
+     and the highlight track the wheel instead of waiting for 확인. */
+  function bindYearWheel(scroll) {
+    if (scroll.dataset.bound) return;
+    scroll.dataset.bound = '1';
+    let raf = 0;
+    scroll.addEventListener('scroll', () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        const mid = scroll.scrollTop + scroll.clientHeight / 2;
+        let best = null, bestGap = Infinity;
+        scroll.querySelectorAll('.wheel-item').forEach(el => {
+          const gap = Math.abs((el.offsetTop + el.offsetHeight / 2) - mid);
+          if (gap < bestGap) { bestGap = gap; best = el; }
+        });
+        if (!best) return;
+        const y = Number(best.dataset.year);
+        if (y === state.yearPicker) return;
+        state.yearPicker = y;
+        scroll.querySelectorAll('.wheel-item.on').forEach(el => {
+          el.classList.remove('on'); el.setAttribute('aria-selected', 'false');
+        });
+        best.classList.add('on'); best.setAttribute('aria-selected', 'true');
+        const sub = document.querySelector('#sheet-year .sheet-title-sub');
+        if (sub) sub.textContent = `만 ${new Date().getFullYear() - y}세`;
+      });
+    }, { passive: true });
+  }
+
+  /* Shown in place of the old text input. A button, so it is obvious that
+     tapping it opens something rather than raising a keyboard. */
+  function yearField(value) {
+    const v = Number(value) || 0;
+    return `<button class="field-picker${v ? '' : ' is-empty'}" data-act="open-year">
+      <span>${v ? v : '선택'}</span>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+    </button>`;
   }
 
   /* ── Onboarding gate ──────────────────────────────────────────────────────
@@ -1079,8 +1208,8 @@
 
         <div class="field-grid">
           <div>
-            <label class="field-label" for="ob-birth">출생연도</label>
-            <input class="login-input" id="ob-birth" data-su="birthYear" type="text" inputmode="numeric" maxlength="4" placeholder="1995" value="${esc(s.birthYear)}">
+            <label class="field-label">출생연도</label>
+            ${yearField(s.birthYear)}
           </div>
           <div>
             <label class="field-label" for="ob-height">키 (cm)</label>
@@ -1095,7 +1224,6 @@
 
       <div class="signup-actions">
         <button class="btn-hero" data-act="onboarding-save" ${busy ? 'disabled' : ''}>${busy ? '저장 중…' : '시작하기'}</button>
-        <button class="login-link" data-act="logout">다른 계정으로 로그인</button>
       </div>
     </main>`;
   }
@@ -2028,63 +2156,67 @@
     if (p.heightCm) bits.push(`${p.heightCm}cm`);
     if (p.weightKg) bits.push(`${p.weightKg}kg`);
 
+    /* One identity row instead of an avatar card followed by a 프로필 row that
+       repeated the same person underneath it. The avatar, the name, the handle
+       and the body stats are all facts about one account, so they belong to one
+       tappable row that opens the editor. */
     const account = u ? `
       <div class="settings-label">계정</div>
-      <div class="account-card">
-        ${u.photoURL ? `<img class="account-avatar" src="${esc(u.photoURL)}" alt="">` : `<div class="account-avatar fallback">${esc((p.name || u.displayName || '?').slice(0,1))}</div>`}
-        <div class="settings-item-text">
-          <div class="settings-item-title">${esc(p.name || u.displayName || '사용자')}</div>
-          <div class="settings-item-sub">${p.username ? '@' + esc(p.username) : esc(u.email || '클라우드에 동기화 중')}</div>
-        </div>
+      <div class="settings-group">
+        <button class="settings-item profile-row" data-act="edit-profile">
+          ${u.photoURL
+            ? `<img class="account-avatar" src="${esc(u.photoURL)}" alt="">`
+            : `<div class="account-avatar fallback">${esc((p.name || u.displayName || '?').slice(0,1))}</div>`}
+          <div class="settings-item-text">
+            <div class="settings-item-title">${esc(p.name || u.displayName || '사용자')}</div>
+            <div class="settings-item-sub">${p.username ? '@' + esc(p.username) : esc(u.email || '동기화 중')}</div>
+            ${bits.length
+              ? `<div class="profile-bits">${esc(bits.join(' · '))}</div>`
+              : `<div class="profile-bits empty">프로필을 입력해 보세요</div>`}
+          </div>
+          <svg class="settings-item-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <button class="settings-item" data-act="logout">
+          <div class="settings-item-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          </div>
+          <div class="settings-item-text">
+            <div class="settings-item-title">로그아웃</div>
+          </div>
+        </button>
       </div>
-      <button class="settings-item" data-act="edit-profile">
-        <div class="settings-item-icon" style="background:var(--accent-soft);color:var(--accent)">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-        </div>
-        <div class="settings-item-text">
-          <div class="settings-item-title">프로필</div>
-          <div class="settings-item-sub">${bits.length ? esc(bits.join(' · ')) : '이름·성별·나이·키·몸무게 입력하기'}</div>
-        </div>
-        <svg class="settings-item-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-      </button>
-      <button class="settings-item" data-act="logout">
-        <div class="settings-item-icon" style="background:var(--red-soft);color:var(--red)">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-        </div>
-        <div class="settings-item-text">
-          <div class="settings-item-title">로그아웃</div>
-          <div class="settings-item-sub">이 기기에서 계정 연결 해제</div>
-        </div>
-      </button>
       ` : `
       <div class="settings-label">계정</div>
-      <button class="settings-item" data-act="show-login">
-        <div class="settings-item-icon" style="background:var(--accent-soft);color:var(--accent)">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-        </div>
-        <div class="settings-item-text">
-          <div class="settings-item-title">로그인</div>
-          <div class="settings-item-sub">지금 기록은 이 기기에만 저장됩니다</div>
-        </div>
-        <svg class="settings-item-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-      </button>`;
+      <div class="settings-group">
+        <button class="settings-item" data-act="show-login">
+          <div class="settings-item-icon accent">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </div>
+          <div class="settings-item-text">
+            <div class="settings-item-title">로그인</div>
+            <div class="settings-item-sub">지금 기록은 이 기기에만 저장됩니다</div>
+          </div>
+          <svg class="settings-item-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>`;
 
     return `
       <header class="topbar">
         <div class="topbar-brand">FIT<span>LOG</span></div>
       </header>
-      <main class="screen">
-        <div style="height:8px"></div>
+      <main class="screen settings-screen">
         ${account}
 
         <div class="settings-label">운동</div>
-        <div class="settings-item" style="cursor:default;flex-direction:column;align-items:stretch;gap:10px">
-          <div class="settings-item-text">
-            <div class="settings-item-title">세트 완료 시 기본 휴식 시간</div>
-            <div class="settings-item-sub">횟수를 입력하거나 완료(✓)를 누르면 자동으로 시작됩니다. 웜업 세트는 더 짧게 잡습니다.</div>
-          </div>
-          <div class="presets-scroll" style="margin:0">
-            ${REST_PRESETS.map(sec => `<button class="preset-chip${restDuration()===sec?' on':''}" data-act="set-rest-dur" data-val="${sec}">${sec}초</button>`).join('')}
+        <div class="settings-group">
+          <div class="settings-item settings-block">
+            <div class="settings-item-text">
+              <div class="settings-item-title">세트 완료 시 기본 휴식 시간</div>
+              <div class="settings-item-sub">횟수를 입력하거나 완료(✓)를 누르면 자동으로 시작됩니다. 웜업 세트는 더 짧게 잡습니다.</div>
+            </div>
+            <div class="presets-scroll">
+              ${REST_PRESETS.map(sec => `<button class="preset-chip${restDuration()===sec?' on':''}" data-act="set-rest-dur" data-val="${sec}">${sec}초</button>`).join('')}
+            </div>
           </div>
         </div>
 
@@ -2103,26 +2235,28 @@
             <svg class="settings-adv-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
           </summary>
           <div class="settings-adv-body">
-            <button class="settings-item" data-act="export">
-              <div class="settings-item-icon" style="background:var(--accent-soft);color:var(--accent)">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              </div>
-              <div class="settings-item-text">
-                <div class="settings-item-title">백업 내보내기</div>
-                <div class="settings-item-sub">전체 기록을 파일 하나로 저장</div>
-              </div>
-              <svg class="settings-item-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-            </button>
-            <button class="settings-item" data-act="import">
-              <div class="settings-item-icon" style="background:color-mix(in srgb, var(--blue) 15%, var(--surface));color:var(--blue)">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-              </div>
-              <div class="settings-item-text">
-                <div class="settings-item-title">백업 가져오기</div>
-                <div class="settings-item-sub">내보낸 파일에서 기록 복원</div>
-              </div>
-              <svg class="settings-item-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-            </button>
+            <div class="settings-group">
+              <button class="settings-item" data-act="export">
+                <div class="settings-item-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                </div>
+                <div class="settings-item-text">
+                  <div class="settings-item-title">백업 내보내기</div>
+                  <div class="settings-item-sub">전체 기록을 파일 하나로 저장</div>
+                </div>
+                <svg class="settings-item-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+              <button class="settings-item" data-act="import">
+                <div class="settings-item-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                </div>
+                <div class="settings-item-text">
+                  <div class="settings-item-title">백업 가져오기</div>
+                  <div class="settings-item-sub">내보낸 파일에서 기록 복원</div>
+                </div>
+                <svg class="settings-item-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+            </div>
           </div>
         </details>
 
@@ -2131,9 +2265,9 @@
              and both used to live inline next to routine items — the reset was
              directly under import, which is precisely where a mis-tap lands. -->
         <div class="settings-label danger-label">위험 구역</div>
-        <div class="danger-zone">
+        <div class="settings-group danger-zone">
           <button class="settings-item danger-item" data-act="clear-local-data">
-            <div class="settings-item-icon" style="background:var(--red-soft);color:var(--red)">
+            <div class="settings-item-icon danger">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
             </div>
             <div class="settings-item-text">
@@ -2143,16 +2277,15 @@
           </button>
           ${u ? `
           <button class="settings-item danger-item" data-act="delete-account" ${state.accountBusy?'disabled':''}>
-            <div class="settings-item-icon" style="background:var(--red-soft);color:var(--red)">
+            <div class="settings-item-icon danger">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/><line x1="17" y1="8" x2="22" y2="13"/><line x1="22" y1="8" x2="17" y2="13"/></svg>
             </div>
             <div class="settings-item-text">
-              <div class="settings-item-title" style="color:var(--red)">${state.accountBusy?'삭제 중…':'계정 및 데이터 삭제'}</div>
+              <div class="settings-item-title">${state.accountBusy?'삭제 중…':'계정 및 데이터 삭제'}</div>
               <div class="settings-item-sub">클라우드 기록까지 완전히 삭제 · 되돌릴 수 없음</div>
             </div>
           </button>` : ''}
         </div>
-        <div style="height:24px"></div>
       </main>`;
   }
 
@@ -2210,6 +2343,28 @@
       state.repsPicker = newPicker(btn.dataset.ex, btn.dataset.set, set.reps);
       render(); return;
     }
+
+    /* 출생연도 wheel. Opening seeds it with the current value, or with a
+       sensible middle-aged default so the wheel never starts at 1920 and make
+       the user flick through a century to reach a plausible year. */
+    if (act === 'open-year') {
+      const cur = Number(state.signup.birthYear);
+      state.yearPicker = (cur >= YEAR_MIN && cur <= new Date().getFullYear())
+        ? cur : new Date().getFullYear() - 30;
+      render(); return;
+    }
+    if (act === 'pick-year') {
+      state.yearPicker = Number(btn.dataset.year);
+      render(); return;
+    }
+    if (act === 'confirm-year') {
+      state.signup.birthYear = String(state.yearPicker || '');
+      state.yearPicker = null;
+      render(); return;
+    }
+    /* Closes only the wheel. The generic closer below also dismisses the
+       profile sheet, which is usually the thing the wheel was opened from. */
+    if (act === 'close-year') { state.yearPicker = null; render(); return; }
 
     /* Sheet closers */
     if (act === 'close-picker' || act === 'close-info' || act === 'close-sheet') { closeAllSheets(); render(); return; }
@@ -3060,7 +3215,9 @@
      name for an account that already has one. */
   async function loadProfileThenMaybeOnboard(user, timeoutMs) {
     let prof = null;
-    try { prof = await withTimeout(Cloud.loadProfile(), timeoutMs || 8000, '프로필'); }
+    /* Read this exact account, not "whoever Cloud thinks is signed in" — the
+       two can differ for a moment right after a sign-in resolves. */
+    try { prof = await withTimeout(Cloud.loadProfile(user.uid), timeoutMs || 8000, '프로필'); }
     catch (err) { console.warn('profile load failed', err); return; }
     if (!state.user || state.user.uid !== user.uid) return;
     state.profile = prof;

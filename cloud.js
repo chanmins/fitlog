@@ -62,6 +62,26 @@ const Cloud = (() => {
     });
   }
 
+  /* Takes ownership of a user the moment a sign-in call hands one back.
+
+     onAuthStateChanged is the only thing that used to set currentUser, and it
+     does NOT fire before signInWithPopup / getRedirectResult / createUser
+     resolve — it lands a moment later. Everything below that reaches Firestore
+     (loadProfile, saveProfile, claimUsername, userCol) reads currentUser, so in
+     that gap they all behaved as though nobody was signed in: reads returned
+     null, writes silently went nowhere. That gap is what made Google sign-in ask
+     for an 아이디 on every single login — the profile read came back empty, so
+     the app concluded the account was brand new, and the 아이디 the user then
+     typed was written for a user Firestore did not think existed.
+
+     Adopting the credential here closes the gap. The real listener still fires
+     afterwards and calls notify() as usual; this only means currentUser is
+     never behind the call that just succeeded. */
+  function adopt(u) {
+    if (u) currentUser = u;
+    return u;
+  }
+
   /* No-op until firebase-config.js has a real RECAPTCHA_V3_SITE_KEY — see the
      comment there. Wrapped defensively: App Check is an anti-abuse layer, not
      something that should ever be able to take the app down if it's missing,
@@ -185,7 +205,7 @@ const Cloud = (() => {
 
     try {
       const cred = await auth.signInWithPopup(provider);
-      return cred && cred.user ? profile(cred.user) : null;
+      return cred && cred.user ? profile(adopt(cred.user)) : null;
     } catch (err) {
       const code = err && err.code ? err.code : "";
       /* Desktop popup failures that are environmental rather than a real
@@ -210,7 +230,7 @@ const Cloud = (() => {
   async function completeRedirect() {
     if (!auth) return null;
     const cred = await auth.getRedirectResult();
-    return cred && cred.user ? profile(cred.user) : null;
+    return cred && cred.user ? profile(adopt(cred.user)) : null;
   }
 
   async function signInEmail(email, password) {
@@ -219,7 +239,7 @@ const Cloud = (() => {
     const addr = String(email || "").trim();
     try {
       const cred = await auth.signInWithEmailAndPassword(addr, password);
-      return profile(cred.user);
+      return profile(adopt(cred.user));
     } catch (err) {
       const code = err && err.code ? err.code : "";
       /* "비밀번호가 맞지 않습니다" is a lie when the account has no password at
@@ -329,7 +349,7 @@ const Cloud = (() => {
     }
 
     const cred = await auth.createUserWithEmailAndPassword(String(email || "").trim(), password);
-    const u = cred.user;
+    const u = adopt(cred.user);
     try {
       await store.collection("usernames").doc(id).set({
         uid: u.uid,
@@ -438,10 +458,24 @@ const Cloud = (() => {
     return clean;
   }
 
-  async function loadProfile() {
-    const u = currentUser;
-    if (!store || !u) return null;
-    const snap = await store.collection("users").doc(u.uid).get();
+  /* Returns null ONLY when the document genuinely does not exist. "I could not
+     tell" is a thrown error, never null — the caller shows the 아이디 gate on
+     null, so the two must not be able to look the same. Takes the uid to read
+     rather than assuming currentUser, so a caller that already holds a user
+     cannot be answered about a different one. */
+  async function loadProfile(forUid) {
+    if (!store) {
+      const e = new Error("Firestore가 아직 준비되지 않았습니다.");
+      e.code = "fitlog/not-ready";
+      throw e;
+    }
+    const id = forUid || uid();
+    if (!id) {
+      const e = new Error("인증이 아직 준비되지 않았습니다.");
+      e.code = "fitlog/auth-not-ready";
+      throw e;
+    }
+    const snap = await store.collection("users").doc(id).get();
     if (!snap.exists) return null;
     const data = snap.data() || {};
     return { ...sanitizeProfile(data.profile), username: data.username || "" };

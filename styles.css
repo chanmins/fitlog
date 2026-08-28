@@ -893,17 +893,47 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 }
 .account-avatar { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
 .account-avatar.fallback { display: grid; place-items: center; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--accent-ink); font-weight: 900; font-size: 19px; }
+.settings-screen { padding-top: 8px; }
+
+/* Related rows share one card and are separated by hairlines, the way every
+   native settings screen does it. Each row used to be its own bordered,
+   shadowed, 8px-detached card, which gave a six-item list six competing
+   containers and no sense of what grouped with what. */
+.settings-group {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); box-shadow: var(--sh-card); overflow: hidden;
+}
 .settings-item {
   display: flex; align-items: center; gap: 13px; width: 100%; text-align: left;
-  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md);
-  padding: 14px; margin-bottom: 8px; transition: transform .1s, background .15s; box-shadow: var(--sh-card);
+  background: transparent; padding: 14px; transition: background .15s;
 }
-.settings-item:active { transform: scale(.99); background: var(--surface-2); }
-.settings-item-icon { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; flex-shrink: 0; }
+.settings-item + .settings-item { border-top: 1px solid var(--line); }
+.settings-item:active { background: var(--surface-2); }
+.settings-item:disabled { opacity: .55; }
+
+/* Icons are one neutral chip unless the row means something particular.
+   Per-row colours (a blue import, a red logout, a green export) read as
+   decoration and spend the accent colour on rows that have not earned it. */
+.settings-item-icon {
+  width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center;
+  flex-shrink: 0; background: var(--surface-3); color: var(--sub);
+}
+.settings-item-icon.accent { background: var(--accent-soft); color: var(--accent); }
+.settings-item-icon.danger { background: var(--red-soft); color: var(--red); }
 .settings-item-text { flex: 1; min-width: 0; }
 .settings-item-title { font-size: 15px; font-weight: 800; }
 .settings-item-sub { font-size: 12.5px; color: var(--muted); font-weight: 600; margin-top: 2px; }
 .settings-item-arrow { color: var(--muted); flex-shrink: 0; }
+
+/* A row that holds a control rather than being one. */
+.settings-block { flex-direction: column; align-items: stretch; gap: 11px; cursor: default; }
+.settings-block:active { background: transparent; }
+.settings-block .presets-scroll { margin: 0; }
+
+/* Identity row: avatar, name, handle, and the body stats on one line under it. */
+.profile-row { padding: 16px 14px; }
+.profile-bits { font-size: 12.5px; font-weight: 700; color: var(--sub); margin-top: 6px; }
+.profile-bits.empty { color: var(--muted); font-weight: 600; }
 .settings-note {
   font-size: 12.5px; color: var(--muted); font-weight: 600; line-height: 1.6;
   margin: 20px 4px 0; text-align: center;
@@ -927,12 +957,12 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 
 /* Danger zone — visually fenced so destructive taps need intent, not luck */
 .settings-label.danger-label { color: var(--red); margin-top: 30px; }
-.danger-zone {
-  border: 1px solid color-mix(in srgb, var(--red) 32%, transparent);
-  border-radius: var(--r-lg); padding: 10px 10px 2px;
-  background: color-mix(in srgb, var(--red) 5%, transparent);
+/* Same grouped card as everything else, tinted rather than boxed inside a
+   second border — the red title and icon already say what these rows are. */
+.danger-zone { border-color: color-mix(in srgb, var(--red) 28%, var(--line)); margin-bottom: 24px; }
+.danger-zone .settings-item + .settings-item {
+  border-top-color: color-mix(in srgb, var(--red) 20%, var(--line));
 }
-.danger-zone .settings-item { background: var(--surface); }
 .danger-item .settings-item-title { color: var(--red); }
 
 /* ============================================================
@@ -1033,6 +1063,87 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 }
 .field-static span { font-size: 11.5px; font-weight: 700; color: var(--muted); }
 
+/* ── Grouped form rows ─────────────────────────────────────────────────────
+   Label on the left, value on the right, hairlines between — the same shape as
+   the settings list, so a form and a list of settings stop looking like two
+   different apps. Replaces stacked label-above-input pairs, which cost twice
+   the vertical space and left every field visually detached from its name. */
+.form-label {
+  font-size: 12px; font-weight: 800; color: var(--muted); text-transform: uppercase;
+  letter-spacing: .06em; margin: 20px 2px 9px;
+}
+.form-label:first-child { margin-top: 4px; }
+.form-group {
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: var(--r-lg); overflow: hidden; margin-bottom: 4px;
+}
+.form-row {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  min-height: 54px; padding: 0 15px; text-align: left; background: transparent;
+}
+.form-row + .form-row { border-top: 1px solid var(--line); }
+.form-row.tappable:active { background: var(--surface-3); }
+.form-row-label { font-size: 14.5px; font-weight: 700; color: var(--sub); flex-shrink: 0; }
+.form-row-value { flex: 1; text-align: right; font-size: 15px; font-weight: 800; color: var(--text); }
+.form-row-value.empty { color: var(--muted); font-weight: 600; }
+.form-row-chev { color: var(--muted); flex-shrink: 0; margin-right: -3px; }
+.form-row.static { color: var(--muted); }
+.form-row-input {
+  flex: 1; min-width: 0; height: 52px; background: transparent; border: none;
+  font-size: 15px; font-weight: 700; text-align: right; padding: 0;
+}
+.form-row-input::placeholder { color: var(--muted); font-weight: 600; }
+.form-row-input.num { text-align: right; }
+.form-row-unit { font-size: 13px; font-weight: 700; color: var(--muted); flex-shrink: 0; width: 24px; }
+/* The segmented control sits in the row instead of below it. */
+.form-row-seg { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 8px 0; }
+.form-row-seg .seg-btn { height: 38px; font-size: 13.5px; }
+.form-note {
+  font-size: 12.5px; color: var(--muted); font-weight: 600; line-height: 1.6;
+  margin: 14px 4px 0;
+}
+
+/* A field that opens a picker instead of a keyboard. Sized to match
+   .login-input exactly so it sits in the same grid row without shimming. */
+.field-picker {
+  width: 100%; height: 52px; padding: 0 12px; margin-bottom: 10px;
+  display: flex; align-items: center; justify-content: space-between; gap: 4px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: var(--r-md); font-size: 15px; font-weight: 700; color: var(--text);
+  transition: border-color .15s, background .15s;
+}
+.field-picker svg { color: var(--muted); flex-shrink: 0; }
+.field-picker.is-empty { color: var(--muted); font-weight: 600; }
+.field-picker:active { background: var(--surface-3); }
+
+/* ── Scroll wheel ──────────────────────────────────────────────────────────
+   scroll-snap does the work: the browser owns the momentum and the settling,
+   so this stays a plain scrollable list that a tap, a flick, a keyboard and a
+   screen reader all reach the same way. The band is the selection indicator
+   and is painted under the list, never over it. */
+.wheel { position: relative; height: 220px; margin: 4px 0 18px; }
+.wheel-band {
+  position: absolute; left: 8px; right: 8px; top: 50%; height: 46px;
+  transform: translateY(-50%); border-radius: var(--r-md);
+  background: var(--accent-soft); border: 1px solid var(--accent-line);
+  pointer-events: none;
+}
+.wheel-scroll {
+  position: relative; height: 100%; overflow-y: auto; overscroll-behavior: contain;
+  scroll-snap-type: y mandatory; -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.wheel-scroll::-webkit-scrollbar { display: none; }
+/* Half the track's height, so the first and last years can reach the centre. */
+.wheel-pad { height: 87px; flex-shrink: 0; }
+.wheel-item {
+  display: block; width: 100%; height: 46px; scroll-snap-align: center;
+  font-size: 17px; font-weight: 700; color: var(--muted);
+  transition: color .12s, font-size .12s, opacity .12s;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.wheel-item.on { color: var(--accent); font-size: 21px; font-weight: 900; }
+
 .seg-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 4px; }
 .seg-btn {
   height: 46px; border-radius: var(--r-md); background: var(--surface-2);
@@ -1044,7 +1155,9 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 
 /* Profile sheet needs its own scroll: it is taller than a picker and must not
    push its save button off the bottom of the panel. */
-.sheet-scroll { max-height: min(52dvh, 460px); overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+/* Roomier than the old 4px: the profile sheet now ends in a note rather than
+   an input, and the confirm button was sitting on top of its last line. */
+.sheet-scroll { max-height: min(52dvh, 460px); overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 14px; }
 .login-setup { color: var(--orange); font-size: 14px; font-weight: 600; background: color-mix(in srgb, var(--orange) 12%, var(--surface)); padding: 14px; border-radius: var(--r-sm); margin-bottom: 12px; }
 .splash-wrap { min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; }
 .splash-brand { font-size: 40px; font-weight: 900; letter-spacing: -0.05em; }
