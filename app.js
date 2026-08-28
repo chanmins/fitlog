@@ -2763,6 +2763,9 @@
       render(); return;
     }
     if (act === 'reset-back') {
+      /* Same rule as leaving 회원가입: coming back to the start clears what was
+         being typed, here and on the login screen underneath. */
+      resetSignup();
       state.authMode = 'signin';
       state.resetTarget = ''; state.resetSent = ''; state.authError = '';
       render(); return;
@@ -2972,6 +2975,17 @@
     }
   }
 
+  /* Clears the signup wizard AND the sign-in fields behind it.
+
+     Both are "what was being typed before we came back to the start", and they
+     were being treated differently: leaving 회원가입 wiped the wizard but left a
+     half-typed 아이디 and password sitting on the login screen underneath. On a
+     shared or borrowed phone that is somebody's credentials left on screen, and
+     even alone it is confusing — the screen looks like a fresh start while
+     holding old input.
+
+     Callers that want a value prefilled afterwards set it after calling this;
+     finishing 회원가입 does exactly that with the new 아이디. */
   function resetSignup() {
     state.signup = {
       username: '', password: '', password2: '', email: '',
@@ -2980,6 +2994,8 @@
     state.idCheck = { id: '', status: '', message: '' };
     state.signupStep = 1;
     state.authError = '';
+    state.authId = '';
+    state.authPassword = '';
   }
 
   function collectProfile() {
