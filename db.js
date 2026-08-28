@@ -11,27 +11,59 @@ const WorkoutDB = (() => {
   function setScope(uid) {
     const next = uid || "guest";
     if (next === scope && dbPromise) return;
+    /* Close the connection we are walking away from. Dropping the promise on
+       its own leaves the old database open, which blocks any later version
+       change on it and keeps a live handle that in-flight callers can still
+       transact against after the scope has moved on. */
+    const stale = dbPromise;
+    if (stale) stale.then((db) => { try { db.close(); } catch (_) {} }, () => {});
     scope = next;
     dbPromise = null;
   }
 
-  function open() {
-    if (dbPromise) return dbPromise;
-    dbPromise = new Promise((resolve, reject) => {
-      const req = indexedDB.open(dbName(), DB_VERSION);
-      req.onupgradeneeded = () => {
-        const db = req.result;
-        if (!db.objectStoreNames.contains("sessions")) {
-          db.createObjectStore("sessions", { keyPath: "date" });
-        }
-        if (!db.objectStoreNames.contains("customExercises")) {
-          db.createObjectStore("customExercises", { keyPath: "id" });
-        }
-      };
+  function createStores(db) {
+    if (!db.objectStoreNames.contains("sessions")) {
+      db.createObjectStore("sessions", { keyPath: "date" });
+    }
+    if (!db.objectStoreNames.contains("customExercises")) {
+      db.createObjectStore("customExercises", { keyPath: "id" });
+    }
+  }
+
+  function openAt(name, version) {
+    return new Promise((resolve, reject) => {
+      const req = version ? indexedDB.open(name, version) : indexedDB.open(name);
+      req.onupgradeneeded = () => createStores(req.result);
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
+      req.onblocked = () => reject(new Error("indexedDB blocked"));
     });
-    return dbPromise;
+  }
+
+  function open() {
+    if (dbPromise) return dbPromise;
+    const p = (async () => {
+      let db = await openAt(dbName(), DB_VERSION);
+      /* A database can sit at the right version and still be missing its
+         stores — an upgrade interrupted by a closed tab, an evicted private
+         session, or a scope switch mid-open leaves exactly that. Every
+         transaction then throws "object stores was not found", which is what
+         made 로그아웃 fail halfway: the screen stayed on the app while the
+         sign-out below it never ran. Reopening one version higher re-runs
+         onupgradeneeded and repairs the database in place. */
+      if (!db.objectStoreNames.contains("sessions") ||
+          !db.objectStoreNames.contains("customExercises")) {
+        const bumped = db.version + 1;
+        try { db.close(); } catch (_) {}
+        db = await openAt(dbName(), bumped);
+      }
+      return db;
+    })();
+    /* A failed open must not stay cached, or every later call replays the same
+       rejection and the app cannot recover without a reload. */
+    p.catch(() => { if (dbPromise === p) dbPromise = null; });
+    dbPromise = p;
+    return p;
   }
 
   function requestToPromise(req) {

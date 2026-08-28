@@ -3870,12 +3870,33 @@
     state.profile = null;
     resetSignup();
     localStorage.removeItem('fitlog-guest');
-    WorkoutDB.setScope('guest');
-    await WorkoutDB.open();
-    await loadWorkspace();
+
+    /* Nothing about the local workspace may be allowed to stop the sign-out.
+
+       These three lines used to run unguarded, and one IndexedDB failure threw
+       straight out of the function — past render(), past signOut(). That left
+       the app showing the signed-in screen while still holding a live Firebase
+       session, so the next thing that caused a render flipped the user
+       somewhere they had not asked to go. A broken local database should cost
+       an empty list, not a half-finished logout. */
+    try {
+      WorkoutDB.setScope('guest');
+      await WorkoutDB.open();
+      await loadWorkspace();
+    } catch (err) {
+      console.warn('local workspace unavailable during logout', err);
+      state.sessions = [];
+      state.customExercises = [];
+      state.session = null;
+    }
+
+    /* Signed out first, screen second — so there is never a moment where the
+       login screen is up but the session underneath is still alive. */
+    try { await Cloud.signOut(); }
+    catch (err) { console.warn('sign out failed', err); }
+
     state.authReady = true;
     render();
-    await Cloud.signOut();
     toast('로그아웃했습니다');
   }
 
