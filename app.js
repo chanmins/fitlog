@@ -97,6 +97,12 @@
        null when there is nothing to offer or the user has dismissed it. */
     pendingImport: null,
 
+    /* Editing a day that is not today: changes are held until 저장.
+       pastBaseline is the record as it was on disk, so 취소 can restore it. */
+    editingPast: false,
+    pastDirty: false,
+    pastBaseline: null,
+
     /* Password reset screen */
     resetTarget: '',      /* address resolved from 아이디, awaiting confirmation */
     resetSent: '',        /* masked address once the mail has gone out */
@@ -126,6 +132,18 @@
   }
   function setRestDuration(sec) {
     localStorage.setItem('fitlog-rest-dur', String(sec));
+  }
+  /* Off unless asked for. The timer takes over the bottom of the screen the
+     moment a set is ticked, which is in the way for anyone who is not actually
+     resting to a clock — and most people are not. */
+  function restTimerOn() {
+    try { return localStorage.getItem('fitlog-rest-on') === '1'; } catch (_) { return false; }
+  }
+  function setRestTimerOn(on) {
+    try {
+      if (on) localStorage.setItem('fitlog-rest-on', '1');
+      else localStorage.removeItem('fitlog-rest-on');
+    } catch (_) {}
   }
   /* Warm-ups need far less recovery than a working set. */
   function restDurationFor(set) {
@@ -162,6 +180,21 @@
   function hasRunData(run) {
     return run && ((run.km!==''&&run.km!=null)||(run.minutes!==''&&run.minutes!=null));
   }
+  /* Is there anything on this day worth offering 운동 마치기 for? */
+  function sessionHasAnything(s) {
+    if (!s) return false;
+    const sets = (s.exercises || []).reduce((a, ex) => a + (ex.sets || []).length, 0);
+    return sets > 0 || (s.exercises || []).length > 0 || hasRunData(s.run);
+  }
+
+  /* Shows or hides the finish bar in place. Used by the 러닝 inputs, which
+     cannot re-render without dropping the keyboard mid-entry. */
+  function paintFinishBar() {
+    const bar = document.querySelector('.finish-bar');
+    if (!bar || bar.classList.contains('done')) return;
+    bar.classList.toggle('is-empty', !sessionHasAnything(state.session));
+  }
+
   function worthSaving(s) {
     return s && ((s.parts||[]).length||(s.exercises||[]).length||hasRunData(s.run)||(s.notes||'').trim());
   }
@@ -328,6 +361,14 @@
   async function doSave() {
     const s = state.session;
     if (!s) return;
+    /* Editing a past day is held until 저장 is pressed.
+
+       Today's workout still saves on every keystroke — losing a set mid-session
+       because the phone rang is far worse than any amount of ambiguity about
+       when it saved. But a past record is being deliberately corrected, often
+       tentatively, and there the expected behaviour is the opposite: nothing
+       changes until you say so, and 취소 puts it back. */
+    if (state.editingPast) { state.pastDirty = true; paintPastBar(); return; }
     if (!worthSaving(s)) {
       await WorkoutDB.deleteSession(s.date);
       state.sessions = state.sessions.filter(x => x.date !== s.date);
@@ -417,6 +458,26 @@
     return p.str === '' ? '0' : p.str;
   }
 
+  /* Nudges the current value without retyping it. Most set-to-set changes are
+     one plate or a couple of reps, which is a whole number's worth of typing
+     for a value the pad already knows. */
+  function pickerAdjust(p, delta, min, max) {
+    const next = Math.round((pickerValue(p) + delta) * 100) / 100;
+    const clamped = Math.min(max, Math.max(min, next));
+    p.fresh = false;
+    p.str = clamped ? String(clamped) : '';
+  }
+
+  const WEIGHT_STEPS = [-5, -2.5, 2.5, 5];
+  const REPS_STEPS = [-5, -1, 1, 5];
+  function adjRow(act, steps) {
+    return `<div class="picker-adj-row">${steps.map(v => {
+      const cls = v < 0 ? 'adj-btn minus' : 'adj-btn plus';
+      const label = (v > 0 ? '+' : '−') + String(Math.abs(v));
+      return `<button class="${cls}" data-act="${act}" data-delta="${v}">${label}</button>`;
+    }).join('')}</div>`;
+  }
+
   /* Repaint ONLY the big number inside an open picker sheet.
      Going through render() would swap appEl.innerHTML, destroying and
      rebuilding the sheet — which replays its slide-up animation and makes the
@@ -480,6 +541,9 @@
   }
 
   function startRestTimer(seconds, label) {
+    /* Checked here rather than at each call site so nothing can start the timer
+       behind the setting's back. */
+    if (!restTimerOn()) return;
     state.restTimer = { endsAt: Date.now() + seconds * 1000, duration: seconds, label: label || '', chimed: false };
     renderRestTimerBar();
     /* Ask once, lazily, only when the feature is actually used — so a background
@@ -565,7 +629,14 @@
 
   /* ── Navigation ─────────────────────────── */
   async function goTab(tab) {
+    /* Leaving the screen is the one moment a held past-day edit would be lost
+       silently, so it is the one place that has to ask. */
+    if (!confirmLeavePast()) return;
     state.tab = tab;
+    /* The tab bar is visible over the day-summary overlay now, so tapping a tab
+       has to dismiss it — otherwise the tab switches behind a screen that is
+       still covering it. */
+    state.summaryDate = null;
     closeAllSheets();
     if (tab === 'workout' && !state.session) {
       state.session = normalizeSession(await WorkoutDB.getSession(state.date) || emptySession(state.date));
@@ -583,13 +654,74 @@
     state.exerciseSearch = '';
   }
 
-  async function loadDay(date) {
+  async function loadDay(date, opts = {}) {
     state.date = date;
     const saved = await WorkoutDB.getSession(date);
     state.session = normalizeSession(saved || emptySession(date));
     closeAllSheets();
     state.tab = 'workout';
+
+    /* A past day is edited against a snapshot, so 취소 has something to put
+       back. Today is left on autosave. */
+    const past = date !== todayISO();
+    state.editingPast = past;
+    state.pastDirty = false;
+    state.pastBaseline = past ? JSON.stringify(state.session) : null;
+
     render();
+  }
+
+  /* Reveals or hides the 저장/취소 bar without a re-render, so it can be called
+     from input handlers that must not disturb the keyboard. */
+  function paintPastBar() {
+    const bar = document.querySelector('.pastsave-bar');
+    if (bar) bar.classList.toggle('is-clean', !state.pastDirty);
+  }
+
+  /* True when a past-day edit has changes that have not been saved. */
+  function hasUnsavedPast() {
+    return !!(state.editingPast && state.pastDirty);
+  }
+
+  /* Asks before throwing away a past-day edit. Returns false to stay put. */
+  function confirmLeavePast() {
+    if (!hasUnsavedPast()) return true;
+    if (confirm('저장하지 않은 변경이 있습니다.\n저장하지 않고 나갈까요?')) {
+      discardPastEdit();
+      return true;
+    }
+    return false;
+  }
+
+  /* Puts the record back to how it was saved but STAYS in edit mode — the user
+     is still looking at a past day, so whatever they do next has to keep being
+     held rather than quietly starting to autosave again. */
+  function revertPastEdit() {
+    if (state.pastBaseline && state.session) {
+      try { state.session = normalizeSession(JSON.parse(state.pastBaseline)); } catch (_) {}
+    }
+    state.pastDirty = false;
+  }
+
+  /* Reverts and leaves edit mode. Used when navigating away from the day. */
+  function discardPastEdit() {
+    revertPastEdit();
+    state.editingPast = false;
+    state.pastBaseline = null;
+  }
+
+  async function savePastEdit() {
+    if (!state.editingPast || !state.session) return;
+    /* Drop the hold, then run the normal save path so the record goes through
+       exactly the same write and cloud sync as any other. */
+    state.editingPast = false;
+    await persist();
+    state.sessions = await WorkoutDB.getAllSessions();
+    state.pastDirty = false;
+    state.pastBaseline = JSON.stringify(state.session);
+    state.editingPast = true;      // stay in edit mode, now clean
+    render();
+    toast('기록을 저장했습니다');
   }
 
   /* ── Body Map SVG ────────────────────────── */
@@ -711,7 +843,21 @@
     appEl.innerHTML = html;
     bindEvents();
     positionYearWheel();
+    syncOverlayScroll();
     flushPendingFlash();
+  }
+
+  /* An overlay opens at its own top, and the page under it stops scrolling.
+
+     Both were missing: 운동 마치기 pushed the summary in over a page that was
+     still scrolled to wherever the last set was, and the overlay inherited a
+     scroll position from whatever had been shown there before, so it arrived
+     mid-content and jumped as the entry animation finished. */
+  function syncOverlayScroll() {
+    const overlay = document.querySelector('.detail-screen');
+    document.body.classList.toggle('overlay-open', !!overlay);
+    if (!overlay) return;
+    overlay.scrollTop = 0;
   }
 
   /* Newly added exercises get scrolled to and briefly outlined.
@@ -1648,8 +1794,15 @@
        the line under it states plainly that nothing was waiting to be saved.
        Framing it as 마치기 rather than 저장 keeps that honest: pressing it is
        about closing the workout, not rescuing unsaved work. */
-    const anything = stats.total > 0 || hasRunData(s.run) || s.exercises.length > 0;
-    const finishBar = !anything ? '' : (s.completed ? `
+    /* Rendered even when there is nothing yet, and hidden with a class instead.
+
+       Typing in the 러닝 fields writes to state and saves, but deliberately does
+       NOT re-render — a re-render mid-keystroke drops focus and closes the
+       keyboard. That meant a running-only day never got its 운동 마치기 button:
+       the bar was decided at render time and nothing rendered again. Keeping the
+       bar in the DOM lets paintFinishBar() reveal it without a re-render. */
+    const anything = sessionHasAnything(s);
+    const finishBar = (s.completed ? `
       <div class="finish-bar done">
         <div class="finish-msg">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -1660,7 +1813,7 @@
           <button class="btn-ghost" data-act="reopen-day">다시 열기</button>
         </div>
       </div>` : `
-      <div class="finish-bar">
+      <div class="finish-bar${anything ? '' : ' is-empty'}">
         <button class="btn-hero" data-act="finish-day">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
           운동 마치기
@@ -1699,6 +1852,17 @@
         <div class="part-grid">${partTiles}</div>
         ${blocks}
         ${finishBar}
+        ${state.editingPast ? `
+        <div class="pastsave-bar${state.pastDirty ? '' : ' is-clean'}">
+          <div class="pastsave-msg">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="13"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span>저장하지 않은 변경이 있습니다</span>
+          </div>
+          <div class="pastsave-actions">
+            <button class="btn-ghost" data-act="cancel-past">취소</button>
+            <button class="btn-hero" data-act="save-past">저장</button>
+          </div>
+        </div>` : ''}
       </main>`;
   }
 
@@ -1899,6 +2063,7 @@
           <div class="${numCls}">${esc(display)}</div>
           <div class="picker-big-unit">kg</div>
         </button>
+        ${adjRow('numpad-w-adj', WEIGHT_STEPS)}
         <div class="numpad">${numpad}</div>
         <button class="picker-confirm" data-act="confirm-weight">확인</button>
       </div>
@@ -1933,6 +2098,7 @@
           <div class="${numCls}">${esc(display)}</div>
           <div class="picker-big-unit">회</div>
         </button>
+        ${adjRow('numpad-r-adj', REPS_STEPS)}
         <div class="numpad">${numpad}</div>
         <button class="picker-confirm" data-act="confirm-reps">확인</button>
       </div>
@@ -2209,15 +2375,26 @@
 
         <div class="settings-label">운동</div>
         <div class="settings-group">
+          <button class="settings-item" data-act="toggle-rest-timer" role="switch" aria-checked="${restTimerOn()}">
+            <div class="settings-item-icon${restTimerOn() ? ' accent' : ''}">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 1.5"/><path d="M9 2h6"/></svg>
+            </div>
+            <div class="settings-item-text">
+              <div class="settings-item-title">휴식 타이머</div>
+              <div class="settings-item-sub">세트를 완료하면 화면 아래에 타이머가 뜹니다</div>
+            </div>
+            <span class="switch${restTimerOn() ? ' on' : ''}" aria-hidden="true"><i></i></span>
+          </button>
+          ${restTimerOn() ? `
           <div class="settings-item settings-block">
             <div class="settings-item-text">
-              <div class="settings-item-title">세트 완료 시 기본 휴식 시간</div>
-              <div class="settings-item-sub">횟수를 입력하거나 완료(✓)를 누르면 자동으로 시작됩니다. 웜업 세트는 더 짧게 잡습니다.</div>
+              <div class="settings-item-title">기본 휴식 시간</div>
+              <div class="settings-item-sub">웜업 세트는 더 짧게 잡습니다.</div>
             </div>
             <div class="presets-scroll">
               ${REST_PRESETS.map(sec => `<button class="preset-chip${restDuration()===sec?' on':''}" data-act="set-rest-dur" data-val="${sec}">${sec}초</button>`).join('')}
             </div>
-          </div>
+          </div>` : ''}
         </div>
 
         <p class="settings-note">${state.user
@@ -2307,7 +2484,7 @@
 
     /* Navigation */
     if (act === 'go-tab')     { await goTab(btn.dataset.tab); return; }
-    if (act === 'today')      { await loadDay(todayISO()); return; }
+    if (act === 'today')      { if (!confirmLeavePast()) return; await loadDay(todayISO()); return; }
     /* Tapping a past day shows what was done rather than opening the editor.
        Looking back is the common intent; 편집 is one tap further in, inside the
        summary, where it is an explicit choice rather than the default. */
@@ -2373,6 +2550,16 @@
     if (act === 'numpad-w-digit') {
       if (!state.weightPicker) return;
       pickerDigit(state.weightPicker, btn.dataset.d, 5);
+      paintPickerValue(); return;
+    }
+    if (act === 'numpad-w-adj') {
+      if (!state.weightPicker) return;
+      pickerAdjust(state.weightPicker, Number(btn.dataset.delta), 0, 999);
+      paintPickerValue(); return;
+    }
+    if (act === 'numpad-r-adj') {
+      if (!state.repsPicker) return;
+      pickerAdjust(state.repsPicker, Number(btn.dataset.delta), 0, 999);
       paintPickerValue(); return;
     }
     if (act === 'numpad-w-dot') {
@@ -2473,6 +2660,7 @@
     if (act === 'add-set') { await handleAddSet(btn.dataset.ex); return; }
     if (act === 'del-set') { await handleDeleteSet(btn.dataset.ex, btn.dataset.set); return; }
     if (act === 'shift-day') {
+      if (!confirmLeavePast()) return;
       await persist();
       await loadDay(shiftDate(state.session.date, Number(btn.dataset.delta)));
       return;
@@ -2484,6 +2672,15 @@
     if (act === 'edit-day') {
       state.summaryDate = null;
       await loadDay(btn.dataset.date);
+      return;
+    }
+    if (act === 'save-past') { await savePastEdit(); return; }
+    if (act === 'cancel-past') {
+      if (!state.pastDirty) { state.editingPast = false; state.pastBaseline = null; await goTab('history'); return; }
+      if (!confirm('변경한 내용을 되돌릴까요?')) return;
+      revertPastEdit();
+      render();
+      toast('변경을 되돌렸습니다');
       return;
     }
     if (act === 'finish-day') { await handleFinishDay(); return; }
@@ -2579,6 +2776,14 @@
     if (act === 'delete-account') { await handleDeleteAccount(); return; }
     if (act === 'clear-local-data') { await handleClearLocalData(); return; }
     if (act === 'set-rest-dur') { setRestDuration(Number(btn.dataset.val)); render(); return; }
+    if (act === 'toggle-rest-timer') {
+      const on = !restTimerOn();
+      setRestTimerOn(on);
+      /* Turning it off mid-rest should clear what is already on screen. */
+      if (!on && state.restTimer) { state.restTimer = null; renderRestTimerBar(); }
+      render();
+      return;
+    }
   }
 
   /* ── Input handler ───────────────────────── */
@@ -2604,7 +2809,9 @@
     if (t.dataset.run != null) {
       const val = parseNum(t.value);
       state.session.run[t.dataset.run] = val !== '' ? val : t.value;
-      await persist(); return;
+      await persist();
+      paintFinishBar();
+      return;
     }
     if (t.dataset.act === 'search-ex') {
       state.exerciseSearch = t.value;
@@ -2616,6 +2823,7 @@
   async function onChangeEvt(e) {
     const t = e.target;
     if (t.dataset.act === 'change-date' && t.value) {
+      if (!confirmLeavePast()) { render(); return; }
       await persist();
       await loadDay(t.value);
     }

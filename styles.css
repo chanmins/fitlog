@@ -7,23 +7,28 @@
   /* Surfaces */
   --bg:        #090A0E;
   --bg-grad:   radial-gradient(120% 80% at 50% -10%, #14161f 0%, #090a0e 60%);
-  --surface:   #14161D;
-  --surface-2: #1B1E27;
-  --surface-3: #232733;
-  --line:      rgba(255,255,255,0.06);
-  --line-2:    rgba(255,255,255,0.11);
+  --surface:   #15171F;
+  --surface-2: #1C1F29;
+  --surface-3: #252935;
+  --line:      rgba(255,255,255,0.07);
+  --line-2:    rgba(255,255,255,0.12);
 
   /* Text */
   --text: #F4F5F7;
   --sub:  #B3B7C2;
   --muted:#71757F;
 
-  /* Brand / accent */
-  --accent:      #C9F642;
-  --accent-2:    #A6E635;
+  /* Brand / accent
+     Pulled back from the original #C9F642: the same lime, a little deeper and
+     less saturated, so a screen full of completed sets reads as confident
+     rather than as a highlighter. The glow it casts is a hint now, not a halo —
+     every primary button carrying a 26px bright shadow was most of what made
+     the app look unfinished. */
+  --accent:      #B8E23C;
+  --accent-2:    #9BD130;
   --accent-ink:  #0B0E05;
-  --accent-soft: rgba(201,246,66,0.13);
-  --accent-line: rgba(201,246,66,0.30);
+  --accent-soft: rgba(184,226,60,0.12);
+  --accent-line: rgba(184,226,60,0.26);
 
   /* Semantic */
   --red:    #FF5B6E;
@@ -35,17 +40,18 @@
   --pink:   #FF6B9A;
 
   /* Radius */
-  --r-2xl: 26px;
-  --r-xl:  22px;
-  --r-lg:  18px;
-  --r-md:  15px;
-  --r-sm:  12px;
-  --r-xs:  10px;
+  --r-2xl: 24px;
+  --r-xl:  20px;
+  --r-lg:  16px;
+  --r-md:  13px;
+  --r-sm:  11px;
+  --r-xs:  9px;
 
   /* Shadow */
-  --sh-card: 0 1px 2px rgba(0,0,0,.35), 0 2px 10px rgba(0,0,0,.18);
+  --sh-card: 0 1px 1px rgba(0,0,0,.28), 0 2px 8px rgba(0,0,0,.14);
   --sh-pop:  0 -8px 40px rgba(0,0,0,.55);
-  --sh-glow: 0 8px 26px rgba(201,246,66,.24);
+  --sh-glow: 0 3px 12px rgba(184,226,60,.14);
+  --orange-line: rgba(255,176,32,0.30);
 
   /* Safe areas */
   --safe-top: env(safe-area-inset-top, 0px);
@@ -174,7 +180,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   box-shadow: var(--sh-glow); transition: transform .12s, box-shadow .2s;
   letter-spacing: -0.02em;
 }
-.btn-hero:active { transform: scale(.975); box-shadow: 0 4px 14px rgba(201,246,66,.22); }
+.btn-hero:active { transform: scale(.975); box-shadow: 0 2px 8px rgba(184,226,60,.12); }
 
 .btn-ghost {
   height: 44px; padding: 0 16px; border-radius: var(--r-sm);
@@ -247,7 +253,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .week-day.done .ring {
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
   border-color: transparent; color: var(--accent-ink);
-  box-shadow: 0 3px 10px rgba(201,246,66,.28);
+  box-shadow: none;
 }
 .week-day.today .ring { border-color: var(--accent); color: var(--accent); }
 .week-day.today.done .ring { color: var(--accent-ink); }
@@ -521,7 +527,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .done-toggle.done {
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
   border-color: transparent; color: var(--accent-ink);
-  box-shadow: 0 3px 10px rgba(201,246,66,.28);
+  box-shadow: none;
 }
 .set-del {
   width: 30px; height: 46px; display: grid; place-items: center;
@@ -581,9 +587,13 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 /* ============================================================
    SHEETS
    ============================================================ */
+/* Dark enough that the screen behind reads as "not this" rather than as
+   competing content. At .62 with a 3px blur the home screen stayed legible
+   through it, so a numpad looked like it was floating over a live page. */
 .sheet-backdrop {
-  position: fixed; inset: 0; z-index: 60;
-  background: rgba(0,0,0,.62); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  position: fixed; inset: 0; z-index: 70;
+  background: rgba(0,0,0,.82); backdrop-filter: blur(14px) saturate(70%);
+  -webkit-backdrop-filter: blur(14px) saturate(70%);
   display: flex; align-items: flex-end; justify-content: center;
   animation: fadeIn .2s ease;
 }
@@ -615,24 +625,28 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 /* ============================================================
    PICKER (numpad)
    ============================================================ */
+/* A framed readout rather than a number floating in space — it now reads as
+   the field being edited, and the unit sits with the value instead of below it. */
 .picker-big {
-  display: block; width: 100%; text-align: center; margin: 4px 0 14px;
-  background: none; border: 0; padding: 6px 0; border-radius: var(--r-md);
+  display: flex; align-items: baseline; justify-content: center; gap: 8px;
+  width: 100%; margin: 2px 0 12px; padding: 18px 0 16px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: var(--r-lg);
 }
-.picker-big:active { background: var(--surface-2); }
-.picker-big-num { font-size: 58px; font-weight: 900; letter-spacing: -0.06em; line-height: 1; }
+.picker-big:active { background: var(--surface-3); }
+.picker-big-num { font-size: 52px; font-weight: 900; letter-spacing: -0.055em; line-height: 1; }
 /* Placeholder zero on an empty pad — dimmed so it never reads as a typed 0. */
 .picker-big-num.is-empty { color: var(--muted); opacity: .45; }
 /* The existing value, shown until the first digit replaces it. Tinted to say
    "this is the old number, start typing to overwrite". */
 .picker-big-num.is-fresh { color: var(--accent); }
-.picker-big-unit { font-size: 17px; font-weight: 800; color: var(--muted); margin-top: 4px; }
+.picker-big-unit { font-size: 18px; font-weight: 800; color: var(--muted); }
 
-.numpad { margin-bottom: 10px; }
-.numpad-row { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-bottom: 8px; }
+.numpad { margin-bottom: 12px; }
+.numpad-row { display: grid; grid-template-columns: repeat(3,1fr); gap: 9px; margin-bottom: 9px; }
 .numpad-key {
-  height: 56px; border-radius: 14px; background: var(--surface-2);
-  font-size: 23px; font-weight: 700; color: var(--text);
+  height: 58px; border-radius: var(--r-md); background: var(--surface-2);
+  font-size: 24px; font-weight: 700; color: var(--text);
   border: 1px solid var(--line); transition: background .1s, transform .07s;
 }
 .numpad-key:active { transform: scale(.93); background: var(--surface-3); }
@@ -650,13 +664,16 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   -webkit-tap-highlight-color: transparent;
 }
 
-.picker-adj-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 7px; margin-bottom: 14px; }
+/* Nudge the value instead of retyping it — most changes between sets are one
+   plate or a rep or two. */
+.picker-adj-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-bottom: 14px; }
 .adj-btn {
-  height: 42px; border-radius: 11px; background: var(--surface-2);
-  font-size: 13px; font-weight: 800; border: 1px solid var(--line); transition: transform .1s;
+  height: 40px; border-radius: var(--r-sm); background: var(--surface-2);
+  font-size: 14px; font-weight: 800; color: var(--sub);
+  border: 1px solid var(--line); transition: transform .1s, background .12s;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
 }
-.adj-btn.minus { color: var(--red); }
-.adj-btn.plus { color: var(--accent); }
+.adj-btn:active { transform: scale(.94); background: var(--surface-3); }
 .adj-btn:active { transform: scale(.94); }
 
 .presets-scroll {
@@ -924,6 +941,20 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .settings-item-title { font-size: 15px; font-weight: 800; }
 .settings-item-sub { font-size: 12.5px; color: var(--muted); font-weight: 600; margin-top: 2px; }
 .settings-item-arrow { color: var(--muted); flex-shrink: 0; }
+
+/* On/off switch for a settings row. */
+.switch {
+  width: 46px; height: 28px; border-radius: 999px; flex-shrink: 0;
+  background: var(--surface-3); border: 1px solid var(--line);
+  position: relative; transition: background .18s, border-color .18s;
+}
+.switch i {
+  position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+  border-radius: 50%; background: var(--muted);
+  transition: transform .18s cubic-bezier(.3,.9,.4,1), background .18s;
+}
+.switch.on { background: var(--accent-soft); border-color: var(--accent-line); }
+.switch.on i { transform: translateX(18px); background: var(--accent); }
 
 /* A row that holds a control rather than being one. */
 .settings-block { flex-direction: column; align-items: stretch; gap: 11px; cursor: default; }
@@ -1219,6 +1250,28 @@ body.has-rest-timer .screen { padding-bottom: calc(var(--nav-h) + var(--safe-bot
    ============================================================ */
 .finish-bar { margin: 26px 0 8px; }
 .finish-bar .btn-hero { width: 100%; }
+/* Present in the DOM from the first render so the 러닝 fields can reveal it
+   without a re-render — see paintFinishBar(). */
+.finish-bar.is-empty { display: none; }
+
+/* Sticky save bar for a past day being edited. Sticky rather than fixed so it
+   sits inside the scroll column and never covers the tab bar. */
+.pastsave-bar {
+  position: sticky; bottom: calc(var(--nav-h) + var(--safe-bot) + 10px);
+  margin: 22px 0 6px; padding: 13px 14px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--orange-line, var(--line)); border-radius: var(--r-lg);
+  box-shadow: var(--sh-card);
+}
+.pastsave-bar.is-clean { display: none; }
+.pastsave-msg {
+  display: flex; align-items: center; gap: 7px; margin-bottom: 11px;
+  font-size: 13px; font-weight: 700; color: var(--orange, var(--sub));
+}
+.pastsave-actions { display: grid; grid-template-columns: 1fr 1.6fr; gap: 9px; }
+.pastsave-actions .btn-ghost,
+.pastsave-actions .btn-hero { width: 100%; height: 46px; justify-content: center; }
 .finish-note {
   margin-top: 10px; text-align: center;
   font-size: 12px; font-weight: 600; color: var(--muted);
@@ -1237,14 +1290,24 @@ body.has-rest-timer .screen { padding-bottom: calc(var(--nav-h) + var(--safe-bot
 /* Full-screen overlay above the tab content. Fixed rather than inserted into
    the flow so opening it from any tab looks the same and the page underneath
    keeps its scroll position for when it closes. */
+/* Stops short of the bottom so the tab bar stays visible and reachable.
+   It used to be inset:0, which covered the nav — opening a past workout from
+   히스토리 left no way to switch tabs without backing out first. */
 .detail-screen {
-  position: fixed; inset: 0; z-index: 60;
+  position: fixed; top: 0; left: 0; right: 0;
+  bottom: calc(var(--nav-h) + var(--safe-bot));
+  z-index: 45;
   max-width: 480px; margin: 0 auto;
   background: var(--bg); overflow-y: auto;
   animation: detail-in .22s cubic-bezier(.2,.8,.3,1);
 }
 @keyframes detail-in { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
-.detail-screen .screen { padding-bottom: calc(30px + var(--safe-bot)); }
+.detail-screen .screen { padding-bottom: 24px; }
+
+/* While a full-screen overlay is up, the page underneath must not scroll —
+   two scrollable layers under one finger is what made closing the summary
+   land at a random position. */
+body.overlay-open { overflow: hidden; }
 
 .dsum-hero {
   background: var(--surface); border: 1px solid var(--line);
