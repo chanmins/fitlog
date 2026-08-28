@@ -122,6 +122,10 @@ em { font-style: normal; }
 .topbar-brand { font-size: 21px; font-weight: 900; letter-spacing: -0.04em; }
 .topbar-brand span { color: var(--accent); }
 .topbar-spacer { flex: 1; }
+/* The wordmark doubles as a tap target on pre-login screens (login/signup/
+   reset) but stays a plain, non-interactive label on Home/Settings — only
+   the <button> variant needs the UA chrome stripped back to plain text. */
+button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 
 /* ============================================================
    Bottom nav

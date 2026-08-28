@@ -68,6 +68,12 @@
     /* Signup wizard. Kept in state rather than read off the DOM at submit time
        so moving between steps doesn't lose what was typed. */
     signupStep: 1,
+    /* True from the moment createUser fires until signup has finished cleaning
+       up. Firebase signs the new account in the instant it is created — long
+       before the users/{uid} document exists — so without this the auth
+       listener would walk a half-built account into the app and the onboarding
+       gate would read a profile that has not been written yet. */
+    signingUp: false,
     signup: {
       username: '', password: '', password2: '', email: '',
       name: '', gender: '', birthYear: '', heightCm: '', weightKg: '',
@@ -734,7 +740,7 @@
     const busy = state.authBusy;
     return `<main class="login-screen">
       <div class="login-top">
-        <div class="topbar-brand">FIT<span>LOG</span></div>
+        <button class="topbar-brand" data-act="auth-home">FIT<span>LOG</span></button>
         <h1 class="login-title">오늘의 운동을<br>가장 멋지게 기록하세요</h1>
       </div>
       ${configured ? `
@@ -795,6 +801,7 @@
           <button class="signup-back" data-act="reset-back" aria-label="뒤로">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
           </button>
+          <button class="topbar-brand" data-act="auth-home">FIT<span>LOG</span></button>
         </div>
         <div class="reset-sent-icon">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5"/><polyline points="3 6.5 12 13 21 6.5"/></svg>
@@ -820,6 +827,7 @@
         <button class="signup-back" data-act="reset-back" aria-label="뒤로">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
+        <button class="topbar-brand" data-act="auth-home">FIT<span>LOG</span></button>
       </div>
       <h1 class="signup-title">비밀번호 재설정</h1>
       <p class="signup-sub">가입할 때 등록한 이메일로 재설정 링크를 보냅니다.</p>
@@ -854,14 +862,18 @@
      also switched the form's meaning — so "회원가입" looked identical to
      "로그인" and every field was equally mandatory-looking.
 
-     Splitting it means each step asks one thing, the 아이디 can be checked for
-     availability while you are still on that step rather than failing at
-     submit, and the profile is visibly optional because it is the only thing on
-     its own screen with a 건너뛰기 next to it. */
+     Splitting it means each step asks one thing, and the 아이디 can be checked
+     for availability while you are still on that step rather than failing at
+     submit.
+
+     Step 3 has no validation, so every profile field is still optional — the
+     explicit 건너뛰기 button was removed because it read as a second, competing
+     way to finish. Leaving the fields blank and pressing 가입 완료 does exactly
+     what it used to do. */
   const SIGNUP_STEPS = [
     { n: 1, title: '아이디와 비밀번호', sub: '로그인할 때 쓸 아이디를 정해 주세요.' },
     { n: 2, title: '복구용 이메일',     sub: '비밀번호를 잊었을 때 재설정 링크를 받을 주소입니다.' },
-    { n: 3, title: '프로필',            sub: '나중에 설정에서 바꿀 수 있어요. 건너뛰어도 됩니다.' },
+    { n: 3, title: '프로필',            sub: '나중에 설정에서 바꿀 수 있어요.' },
   ];
 
   function renderSignupStep1() {
@@ -956,6 +968,7 @@
         <button class="signup-back" data-act="signup-back" aria-label="뒤로">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
+        <button class="topbar-brand" data-act="auth-home">FIT<span>LOG</span></button>
         <div class="signup-steps">
           ${SIGNUP_STEPS.map(x => `<span class="signup-dot${x.n === state.signupStep ? ' on' : ''}${x.n < state.signupStep ? ' done' : ''}"></span>`).join('')}
         </div>
@@ -973,7 +986,6 @@
         <button class="btn-hero" data-act="signup-next" ${busy ? 'disabled' : ''}>
           ${busy ? '처리 중…' : last ? '가입 완료' : '다음'}
         </button>
-        ${last ? `<button class="login-link" data-act="signup-skip" ${busy ? 'disabled' : ''}>프로필 없이 가입하기</button>` : ''}
       </div>
     </main>`;
   }
@@ -2357,6 +2369,16 @@
       render(); return;
     }
     if (act === 'login-guest') { await enterApp(null, { guest: true }); return; }
+    /* FITLOG wordmark, shown on every pre-login screen. On the login screen
+       itself this is a no-op re-render; from anywhere inside signup or the
+       password-reset flow it discards whatever was typed and jumps straight
+       back to login, in one tap, instead of stepping back screen by screen. */
+    if (act === 'auth-home') {
+      resetSignup();
+      state.resetTarget = ''; state.resetSent = ''; state.authError = '';
+      state.authMode = 'signin';
+      render(); return;
+    }
     if (act === 'go-signup') {
       resetSignup();
       state.authMode = 'signup';
@@ -2370,7 +2392,6 @@
       render(); return;
     }
     if (act === 'signup-next') { await handleSignupNext(); return; }
-    if (act === 'signup-skip') { await submitSignup({}); return; }
     if (act === 'su-gender') {
       state.signup.gender = state.signup.gender === btn.dataset.val ? '' : btn.dataset.val;
       /* Repaint just the segmented control — a full render would blur whatever
@@ -2579,31 +2600,53 @@
     await submitSignup(collectProfile());
   }
 
+  /* Signing up ends at the login screen, not inside the app.
+     The wizard already asked for the 아이디, the password and the profile, so
+     dropping the finished account straight into the onboarding gate ("거의 다
+     됐어요") was asking for all of it a second time — the gate exists for
+     Google accounts, which arrive with no 아이디 at all, and this path is the
+     one case that has definitively already answered it.
+
+     Firebase signs the new account in as a side effect of creating it, so
+     finishing here means explicitly signing back out. The cost is one extra
+     password entry; in exchange the account is never half-entered, and the
+     아이디 is carried over to the login field so only the password is left. */
   async function submitSignup(prof) {
     const s = state.signup;
+    const id = Cloud.normalizeUsername(s.username);
     state.authBusy = true;
     state.authError = '';
+    state.signingUp = true;
     render();
     try {
       const user = await Cloud.signUpUsername({
-        username: s.username, password: s.password, email: s.email, profile: prof,
+        username: id, password: s.password, email: s.email, profile: prof,
       });
-      /* Signup already wrote both the name and the profile, so seed them here
-         rather than making enterApp read back what we just sent — that read is
-         what the onboarding gate keys off, and a slow one would briefly gate a
-         user who has demonstrably finished setting up. */
-      state.profile = { ...prof, username: Cloud.normalizeUsername(s.username) };
+      /* The gate keys off this flag, so record the answer now: the next login
+         skips the profile read entirely instead of waiting on it. */
       if (user && user.uid) markSetUp(user.uid);
+      try { await Cloud.signOut(); } catch (_) {}
+
       resetSignup();
       state.authMode = 'signin';
-      await enterApp(user, { arrivedFromLogin: true });
+      state.authBusy = false;
+      state.signingUp = false;
+      state.authId = id;
+      state.authPassword = '';
+      render();
+      toast('가입이 완료되었습니다. 로그인해 주세요');
     } catch (err) {
       state.authBusy = false;
+      state.signingUp = false;
+      /* createUser may have succeeded before a later step threw, which would
+         leave the browser signed in as a half-built account sitting behind the
+         login screen. Drop it so the next attempt starts clean. */
+      try { if (Cloud.uid()) await Cloud.signOut(); } catch (_) {}
       /* A taken name is a step-1 problem — send them back to the field that
          needs fixing instead of leaving them stranded on the profile step. */
       if (err && err.code === 'fitlog/username-taken') {
         state.signupStep = 1;
-        state.idCheck = { id: Cloud.normalizeUsername(s.username), status: 'taken', message: '이미 사용 중인 아이디입니다' };
+        state.idCheck = { id, status: 'taken', message: '이미 사용 중인 아이디입니다' };
       }
       state.authError = Cloud.authMessage(err);
       render();
@@ -3347,6 +3390,11 @@
 
     Cloud.onAuth(async (user) => {
       if (!state.authReady) return;
+      /* Signup drives its own ending (confirm, then back to the login screen).
+         Letting this listener react to the account it just created would race
+         that: it fires between createUser and the profile write, so the app
+         would enter on a user whose 아이디 is not on the server yet. */
+      if (state.signingUp) return;
       if (user && (!state.user || state.user.uid !== user.uid)) {
         await enterApp(user);
       }
