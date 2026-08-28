@@ -384,6 +384,60 @@
     await cloudSync(() => Cloud.saveSession(copy));
   }
 
+  /* ── Confirm dialog ───────────────────────────────────────────────────────
+     Replaces window.confirm everywhere.
+
+     The browser's own dialog announces the domain, styles itself in the OS's
+     colours, and on iOS Chrome adds a third "대화상자 숨기기" button that has
+     nothing to do with the question being asked — so the most serious moments
+     in the app (로그아웃, 기록 삭제, 계정 삭제) were the ones that looked least
+     like the app. This one is ordinary DOM: it can mark which action is
+     destructive, and it reads as part of the same product.
+
+     Appended to <body> rather than into the render tree so it survives a
+     re-render mid-question, exactly like the toast and the rest timer. */
+  function ask(opts) {
+    const o = opts || {};
+    return new Promise(resolve => {
+      const wrap = document.createElement('div');
+      wrap.className = 'dialog-backdrop';
+      wrap.innerHTML = `
+        <div class="dialog" role="alertdialog" aria-modal="true">
+          <div class="dialog-title">${esc(o.title || '확인')}</div>
+          ${o.body ? `<div class="dialog-body">${esc(o.body)}</div>` : ''}
+          <div class="dialog-actions">
+            <button class="dialog-btn cancel" data-v="0">${esc(o.cancelText || '취소')}</button>
+            <button class="dialog-btn ${o.danger ? 'danger' : 'go'}" data-v="1">${esc(o.confirmText || '확인')}</button>
+          </div>
+        </div>`;
+
+      let settled = false;
+      const close = (val) => {
+        if (settled) return;
+        settled = true;
+        wrap.classList.add('is-closing');
+        setTimeout(() => wrap.remove(), 140);
+        document.removeEventListener('keydown', onKey);
+        resolve(val);
+      };
+      const onKey = (e) => { if (e.key === 'Escape') close(false); };
+
+      wrap.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-v]');
+        if (btn) { close(btn.dataset.v === '1'); return; }
+        /* Tapping the dimmed area cancels — never confirms. */
+        if (e.target === wrap) close(false);
+      });
+      document.addEventListener('keydown', onKey);
+
+      document.body.appendChild(wrap);
+      requestAnimationFrame(() => {
+        const first = wrap.querySelector('.dialog-btn.cancel');
+        if (first) first.focus();
+      });
+    });
+  }
+
   /* ── Toast ──────────────────────────────── */
   function toast(msg) {
     state.toast = msg;
@@ -631,7 +685,7 @@
   async function goTab(tab) {
     /* Leaving the screen is the one moment a held past-day edit would be lost
        silently, so it is the one place that has to ask. */
-    if (!confirmLeavePast()) return;
+    if (!await confirmLeavePast()) return;
     state.tab = tab;
     /* The tab bar is visible over the day-summary overlay now, so tapping a tab
        has to dismiss it — otherwise the tab switches behind a screen that is
@@ -683,10 +737,12 @@
     return !!(state.editingPast && state.pastDirty);
   }
 
-  /* Asks before throwing away a past-day edit. Returns false to stay put. */
-  function confirmLeavePast() {
+  /* Asks before throwing away a past-day edit. Resolves false to stay put. */
+  async function confirmLeavePast() {
     if (!hasUnsavedPast()) return true;
-    if (confirm('저장하지 않은 변경이 있습니다.\n저장하지 않고 나갈까요?')) {
+    if (await ask({ title: '저장하지 않고 나갈까요?',
+                    body: '이 날 기록에 저장하지 않은 변경이 있습니다. 나가면 변경한 내용은 사라집니다.',
+                    confirmText: '나가기', cancelText: '계속 편집', danger: true })) {
       discardPastEdit();
       return true;
     }
@@ -2484,7 +2540,7 @@
 
     /* Navigation */
     if (act === 'go-tab')     { await goTab(btn.dataset.tab); return; }
-    if (act === 'today')      { if (!confirmLeavePast()) return; await loadDay(todayISO()); return; }
+    if (act === 'today')      { if (!await confirmLeavePast()) return; await loadDay(todayISO()); return; }
     /* Tapping a past day shows what was done rather than opening the editor.
        Looking back is the common intent; 편집 is one tap further in, inside the
        summary, where it is an explicit choice rather than the default. */
@@ -2660,7 +2716,7 @@
     if (act === 'add-set') { await handleAddSet(btn.dataset.ex); return; }
     if (act === 'del-set') { await handleDeleteSet(btn.dataset.ex, btn.dataset.set); return; }
     if (act === 'shift-day') {
-      if (!confirmLeavePast()) return;
+      if (!await confirmLeavePast()) return;
       await persist();
       await loadDay(shiftDate(state.session.date, Number(btn.dataset.delta)));
       return;
@@ -2677,7 +2733,9 @@
     if (act === 'save-past') { await savePastEdit(); return; }
     if (act === 'cancel-past') {
       if (!state.pastDirty) { state.editingPast = false; state.pastBaseline = null; await goTab('history'); return; }
-      if (!confirm('변경한 내용을 되돌릴까요?')) return;
+      if (!await ask({ title: '변경을 되돌릴까요?',
+                       body: '마지막으로 저장한 상태로 돌아갑니다.',
+                       confirmText: '되돌리기', danger: true })) return;
       revertPastEdit();
       render();
       toast('변경을 되돌렸습니다');
@@ -2715,7 +2773,9 @@
     if (act === 'reset-resend') { await handleResetSend({ resend: true }); return; }
     if (act === 'import-local') { await handleImportLocal(); return; }
     if (act === 'dismiss-import') {
-      if (!confirm('가져오지 않으면 이 기록은 계정에 올라가지 않습니다.\n다음부터 다시 묻지 않습니다. 계속할까요?')) return;
+      if (!await ask({ title: '가져오지 않을까요?',
+                       body: '이 기록은 계정에 올라가지 않고, 다음부터 다시 묻지 않습니다.',
+                       confirmText: '가져오지 않기', danger: true })) return;
       try { localStorage.setItem(importDismissKey(), '1'); } catch (_) {}
       state.pendingImport = null;
       render(); return;
@@ -2823,7 +2883,7 @@
   async function onChangeEvt(e) {
     const t = e.target;
     if (t.dataset.act === 'change-date' && t.value) {
-      if (!confirmLeavePast()) { render(); return; }
+      if (!await confirmLeavePast()) { render(); return; }
       await persist();
       await loadDay(t.value);
     }
@@ -3177,7 +3237,9 @@
       const hasEx = s.exercises.some(e=>e.part===partId);
       const runBusy = partId === 'run' && hasRunData(s.run);
       if (hasEx || runBusy) {
-        if (!confirm('이 부위 기록을 함께 지울까요?')) return;
+        if (!await ask({ title: '이 부위 기록도 지울까요?',
+                         body: '부위를 해제하면 그 부위에 기록한 운동이 함께 사라집니다.',
+                         confirmText: '지우기', danger: true })) return;
         s.exercises = s.exercises.filter(e=>e.part!==partId);
         if (partId === 'run') s.run = { km:'', minutes:'', notes:'' };
       }
@@ -3262,7 +3324,9 @@
   async function handleDeleteCustom(id) {
     const item = state.customExercises.find(e=>e.id===id);
     if (!item) return;
-    if (!confirm(`'${item.name}'을(를) 목록에서 삭제할까요?`)) return;
+    if (!await ask({ title: '운동을 삭제할까요?',
+                     body: `'${item.name}'을(를) 내 운동 목록에서 지웁니다.`,
+                     confirmText: '삭제', danger: true })) return;
     await WorkoutDB.deleteCustomExercise(id);
     state.customExercises = state.customExercises.filter(e=>e.id!==id);
     await cloudSync(() => Cloud.deleteCustom(id));
@@ -3320,7 +3384,9 @@
   }
 
   async function handleDeleteDay() {
-    if (!confirm('이 날 기록을 삭제할까요?')) return;
+    if (!await ask({ title: '이 날 기록을 삭제할까요?',
+                     body: '이 날 저장된 운동과 러닝 기록이 모두 사라집니다.',
+                     confirmText: '삭제', danger: true })) return;
     await WorkoutDB.deleteSession(state.session.date);
     state.sessions = state.sessions.filter(s=>s.date!==state.session.date);
     await cloudSync(() => Cloud.deleteSession(state.session.date));
@@ -3342,7 +3408,9 @@
   async function importJson(file) {
     let payload;
     try { payload = JSON.parse(await file.text()); } catch { alert('JSON을 읽을 수 없습니다.'); return; }
-    if (!confirm('현재 기록을 백업 파일로 교체할까요?')) return;
+    if (!await ask({ title: '백업 파일로 교체할까요?',
+                     body: '지금 이 기기에 있는 기록이 백업 파일의 내용으로 바뀝니다.',
+                     confirmText: '교체', danger: true })) return;
     await WorkoutDB.importAll(payload);
     state.sessions = await WorkoutDB.getAllSessions();
     state.customExercises = await WorkoutDB.getCustomExercises();
@@ -3790,7 +3858,9 @@
   }
 
   async function handleLogout() {
-    if (!confirm('로그아웃할까요? 이 기기 기록은 남아 있고, 계정 기록은 클라우드에 유지됩니다.')) return;
+    if (!await ask({ title: '로그아웃할까요?',
+                     body: '이 기기의 기록은 그대로 남고, 계정 기록은 클라우드에 유지됩니다.',
+                     confirmText: '로그아웃' })) return;
     state.user = null;
     state.guest = false;
     /* Clear the gate's own state too. Leaving it set meant a later render —
@@ -3818,7 +3888,8 @@
     const msg = cloudBacked
       ? '이 기기에 저장된 기록만 지웁니다. 클라우드 기록은 남아 있고, 다음에 접속하면 다시 내려받습니다. 계속할까요?'
       : '로그인하지 않은 상태라 이 기기 기록이 유일한 사본입니다. 삭제하면 되돌릴 수 없습니다. 계속할까요?';
-    if (!confirm(msg)) return;
+    if (!await ask({ title: '이 기기 기록을 초기화할까요?', body: msg,
+                     confirmText: '초기화', danger: true })) return;
     await WorkoutDB.replaceAll([], []);
     state.sessions = [];
     state.customExercises = [];
@@ -3836,8 +3907,12 @@
      and retry once rather than dead-ending the user. */
   async function handleDeleteAccount() {
     if (state.accountBusy) return;
-    if (!confirm('계정을 삭제하면 클라우드에 저장된 모든 운동 기록이 영구적으로 사라집니다. 이 작업은 되돌릴 수 없습니다. 계속할까요?')) return;
-    if (!confirm('정말로 계정과 모든 데이터를 삭제할까요? 마지막 확인입니다.')) return;
+    if (!await ask({ title: '계정을 삭제할까요?',
+                     body: '클라우드에 저장된 모든 운동 기록이 영구적으로 사라집니다. 되돌릴 수 없습니다.',
+                     confirmText: '계속', danger: true })) return;
+    if (!await ask({ title: '마지막 확인입니다',
+                     body: '계정과 모든 데이터를 정말 삭제할까요?',
+                     confirmText: '삭제', danger: true })) return;
 
     state.accountBusy = true;
     render();

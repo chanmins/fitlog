@@ -157,7 +157,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 }
 .nav-tab {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 4px; color: var(--muted); font-size: 10.5px; font-weight: 700;
+  gap: 4px; color: var(--muted); font-size: 11px; font-weight: 700;
   letter-spacing: -0.01em; transition: color .18s; position: relative;
 }
 .nav-tab svg { width: 23px; height: 23px; transition: transform .18s; }
@@ -223,7 +223,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   margin: 22px 2px 12px;
 }
 .sec-title { font-size: 16px; font-weight: 800; letter-spacing: -0.03em; }
-.sec-sub   { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.sec-sub   { font-size: 12px; color: var(--muted); font-weight: 600; }
 .eyebrow {
   font-size: 11px; font-weight: 800; color: var(--muted);
   text-transform: uppercase; letter-spacing: .08em;
@@ -234,7 +234,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
    ============================================================ */
 .home-hero { margin: 6px 2px 20px; }
 .home-date { font-size: 13px; color: var(--muted); font-weight: 700; margin-bottom: 6px; }
-.home-title { font-size: 27px; font-weight: 900; letter-spacing: -0.045em; line-height: 1.15; }
+.home-title { font-size: 26px; font-weight: 900; letter-spacing: -0.045em; line-height: 1.15; }
 .home-title em { color: var(--accent); }
 
 .week-strip {
@@ -268,7 +268,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 }
 .stat-val { font-size: 21px; font-weight: 900; letter-spacing: -0.04em; }
 .stat-val span { font-size: 12px; font-weight: 700; color: var(--muted); margin-left: 2px; }
-.stat-lbl { font-size: 11.5px; color: var(--muted); font-weight: 700; margin-top: 3px; }
+.stat-lbl { font-size: 12px; color: var(--muted); font-weight: 700; margin-top: 3px; }
 
 /* ── Training balance card ── */
 .balance-card {
@@ -277,14 +277,14 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   box-shadow: var(--sh-card);
 }
 .balance-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
-.balance-window { font-size: 11.5px; font-weight: 700; color: var(--muted); }
+.balance-window { font-size: 12px; font-weight: 700; color: var(--muted); }
 .balance-empty { font-size: 13px; color: var(--muted); font-weight: 600; line-height: 1.6; }
 .balance-bars { display: flex; flex-direction: column; gap: 9px; }
 .balance-row { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 10px; }
-.balance-name { font-size: 12.5px; font-weight: 800; color: var(--sub); }
+.balance-name { font-size: 12px; font-weight: 800; color: var(--sub); }
 .balance-track { height: 7px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
 .balance-fill { display: block; height: 100%; border-radius: 4px; transition: width .3s ease; }
-.balance-meta { font-size: 11.5px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+.balance-meta { font-size: 12px; font-weight: 700; color: var(--muted); white-space: nowrap; }
 /* Groups that have gone a week without work, and ones untouched all window */
 .balance-row.warn .balance-meta { color: var(--sub); }
 .balance-row.stale .balance-name { color: var(--red); }
@@ -294,13 +294,13 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   display: flex; align-items: center; gap: 10px; margin-top: 15px; padding-top: 14px;
   border-top: 1px solid var(--line);
 }
-.balance-tip-text { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 600; color: var(--muted); line-height: 1.5; }
+.balance-tip-text { flex: 1; min-width: 0; font-size: 12px; font-weight: 600; color: var(--muted); line-height: 1.5; }
 .balance-tip-text strong { color: var(--text); font-weight: 800; }
 .balance-go {
   flex-shrink: 0; display: inline-flex; align-items: center; gap: 2px;
   height: 36px; padding: 0 10px 0 13px; border-radius: 999px;
   background: var(--accent); color: var(--accent-ink);
-  font-size: 12.5px; font-weight: 800; letter-spacing: -0.01em;
+  font-size: 12px; font-weight: 800; letter-spacing: -0.01em;
   transition: transform .1s;
 }
 .balance-go:active { transform: scale(.95); }
@@ -319,7 +319,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .badge-done {
   display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 11px;
   border-radius: 999px; background: var(--accent-soft); color: var(--accent);
-  font-size: 12.5px; font-weight: 800; border: 1px solid var(--accent-line);
+  font-size: 12px; font-weight: 800; border: 1px solid var(--accent-line);
 }
 /* In-progress reads as neutral, not as an achievement — the tick badge is
    earned by finishing, so an unfinished day must not borrow its colour. */
@@ -332,7 +332,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .today-card-stats { display: flex; gap: 14px; margin-top: 12px; }
-.today-card-stats span { font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.today-card-stats span { font-size: 12px; font-weight: 600; color: var(--muted); }
 .today-card-stats b { font-size: 14px; font-weight: 900; color: var(--text); margin-right: 3px; }
 .today-edit { width: 100%; justify-content: center; margin-bottom: 20px; }
 
@@ -351,7 +351,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .recent-day-d { font-size: 17px; font-weight: 900; letter-spacing: -0.04em; line-height: 1; }
 .recent-day-m { font-size: 10px; font-weight: 700; color: var(--muted); margin-top: 2px; }
 .recent-mid { flex: 1; min-width: 0; }
-.recent-parts { font-size: 14.5px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-parts { font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recent-meta { font-size: 12px; color: var(--muted); font-weight: 600; margin-top: 2px; }
 .recent-arrow { color: var(--muted); flex-shrink: 0; }
 .dotline { display: inline-flex; gap: 5px; align-items: center; }
@@ -376,8 +376,8 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   background: var(--surface); border: 1px solid var(--line);
   border-radius: var(--r-sm); padding: 7px 0; cursor: pointer;
 }
-.day-nav-date { font-size: 15.5px; font-weight: 800; letter-spacing: -0.02em; }
-.day-nav-rel  { font-size: 11.5px; color: var(--accent); font-weight: 800; margin-top: 1px; }
+.day-nav-date { font-size: 15px; font-weight: 800; letter-spacing: -0.02em; }
+.day-nav-rel  { font-size: 12px; color: var(--accent); font-weight: 800; margin-top: 1px; }
 .day-nav-mid input[type="date"] {
   position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer;
 }
@@ -388,12 +388,18 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   border: 1px solid var(--line-2); border-radius: var(--r-lg);
   padding: 16px; margin-bottom: 8px; box-shadow: var(--sh-card);
 }
-.sum-grid { display: flex; align-items: center; gap: 8px; }
+.sum-grid { display: flex; align-items: stretch; gap: 8px; }
 .sum-item { flex: 1; text-align: center; }
 .sum-item + .sum-item { border-left: 1px solid var(--line); }
-.sum-val { font-size: 22px; font-weight: 900; letter-spacing: -0.04em; }
-.sum-val span { font-size: 12px; color: var(--muted); font-weight: 700; margin-left: 1px; }
-.sum-lbl { font-size: 11px; color: var(--muted); font-weight: 700; margin-top: 3px; }
+/* Value and unit share one baseline instead of the unit floating next to a much
+   larger number. "16/16", "3개" and "2.5km" were each settling at a different
+   height, which is what made the row look off even though the sizes matched. */
+.sum-val {
+  display: flex; align-items: baseline; justify-content: center; gap: 2px;
+  font-size: 21px; font-weight: 900; letter-spacing: -0.03em; line-height: 1.15;
+}
+.sum-val span { font-size: 12px; color: var(--muted); font-weight: 800; letter-spacing: 0; }
+.sum-lbl { font-size: 11px; color: var(--muted); font-weight: 700; margin-top: 5px; letter-spacing: -0.01em; }
 .sum-bar { height: 7px; border-radius: 999px; background: var(--surface-3); margin-top: 14px; overflow: hidden; }
 .sum-bar-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .4s cubic-bezier(.3,.8,.3,1); }
 
@@ -418,11 +424,11 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   transition: background .18s, color .18s;
 }
 .part-tile .pt-icon svg { width: 17px; height: 17px; }
-.part-tile .pt-name { font-size: 12.5px; font-weight: 800; letter-spacing: -0.02em; }
+.part-tile .pt-name { font-size: 12px; font-weight: 800; letter-spacing: -0.02em; }
 /* 개수는 선택된 부위에만 — 안 고른 타일의 "탭하여 추가"는 군더더기라 숨깁니다. */
 .part-tile .pt-count { display: none; }
 .part-tile.on .pt-count {
-  display: block; font-size: 10.5px; font-weight: 700; margin-top: -2px;
+  display: block; font-size: 11px; font-weight: 700; margin-top: -2px;
 }
 .part-tile .pt-check {
   position: absolute; top: 5px; right: 5px; width: 15px; height: 15px; border-radius: 50%;
@@ -478,7 +484,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .set-table { display: flex; flex-direction: column; gap: 7px; }
 .set-table-head {
   display: grid; grid-template-columns: 26px 1fr 1fr 38px 40px 26px; gap: 6px;
-  align-items: center; padding: 0 2px 2px; font-size: 10.5px; font-weight: 800;
+  align-items: center; padding: 0 2px 2px; font-size: 11px; font-weight: 800;
   color: var(--muted); text-transform: uppercase; letter-spacing: .05em;
 }
 .set-table-head span:nth-child(2), .set-table-head span:nth-child(3), .set-table-head span:nth-child(4) { text-align: center; }
@@ -500,7 +506,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   align-items: center; justify-content: center; gap: 1px; transition: border-color .15s, background .15s, transform .1s;
 }
 .rpe-chip:active { transform: scale(.96); }
-.rpe-chip-lbl { font-size: 8.5px; font-weight: 800; color: var(--muted); letter-spacing: .04em; }
+.rpe-chip-lbl { font-size: 9px; font-weight: 800; color: var(--muted); letter-spacing: .04em; }
 .rpe-chip-num { font-size: 14px; font-weight: 800; color: var(--sub); }
 .rpe-chip.set { background: color-mix(in srgb, var(--purple) 14%, var(--surface-2)); border-color: color-mix(in srgb, var(--purple) 35%, transparent); }
 .rpe-chip.set .rpe-chip-num { color: var(--purple); }
@@ -538,7 +544,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   margin-top: 4px; height: 42px; border-radius: var(--r-sm);
   background: transparent; border: 1.5px dashed var(--line-2); color: var(--sub);
   display: flex; align-items: center; justify-content: center; gap: 6px;
-  font-size: 13.5px; font-weight: 800; transition: all .15s;
+  font-size: 13px; font-weight: 800; transition: all .15s;
 }
 .add-set-row:active { background: var(--surface-2); border-color: var(--accent-line); color: var(--accent); }
 
@@ -612,8 +618,8 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   padding: 14px 0 14px; background: var(--surface);
 }
-.sheet-title { font-size: 19px; font-weight: 900; letter-spacing: -0.035em; }
-.sheet-title-sub { font-size: 12.5px; color: var(--muted); font-weight: 700; margin-top: 2px; }
+.sheet-title { font-size: 18px; font-weight: 900; letter-spacing: -0.035em; }
+.sheet-title-sub { font-size: 12px; color: var(--muted); font-weight: 700; margin-top: 2px; }
 .sheet-x {
   width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
   display: grid; place-items: center; color: var(--sub);
@@ -728,7 +734,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   flex: 1; text-align: left; padding: 15px 8px; font-size: 15px; font-weight: 700;
   display: flex; flex-direction: column; gap: 3px; min-width: 0;
 }
-.pick-item-en { font-size: 11.5px; color: var(--muted); font-weight: 600; }
+.pick-item-en { font-size: 12px; color: var(--muted); font-weight: 600; }
 .pick-item-eq {
   font-size: 11px; font-weight: 700; color: var(--sub); padding: 3px 8px;
   border-radius: 999px; background: var(--surface-3); flex-shrink: 0;
@@ -769,7 +775,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .info-meta { display: flex; gap: 7px; margin-top: 12px; }
 .info-badge {
   height: 30px; padding: 0 12px; border-radius: 999px; display: inline-flex; align-items: center;
-  background: var(--surface-2); font-size: 12.5px; font-weight: 700; color: var(--sub);
+  background: var(--surface-2); font-size: 12px; font-weight: 700; color: var(--sub);
 }
 .info-badge.eq { background: var(--accent-soft); color: var(--accent); }
 .diff-stars { color: var(--orange); font-size: 13px; letter-spacing: 1px; }
@@ -811,7 +817,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .muscle-legend-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 .muscle-pill {
   display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 12px;
-  border-radius: 999px; font-size: 12.5px; font-weight: 700; background: var(--surface-2); color: var(--sub);
+  border-radius: 999px; font-size: 12px; font-weight: 700; background: var(--surface-2); color: var(--sub);
 }
 .muscle-pill.primary { background: var(--accent-soft); color: var(--accent); }
 .muscle-pill.secondary { background: color-mix(in srgb, var(--orange) 13%, var(--surface)); color: var(--orange); }
@@ -820,7 +826,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .info-desc { font-size: 14px; line-height: 1.7; color: var(--sub); margin: 16px 0; }
 .tips-list { display: flex; flex-direction: column; gap: 8px; }
 .tips-list li {
-  display: flex; gap: 10px; font-size: 13.5px; line-height: 1.55; color: var(--sub);
+  display: flex; gap: 10px; font-size: 13px; line-height: 1.55; color: var(--sub);
   padding: 12px 13px; background: var(--surface-2); border-radius: var(--r-sm);
 }
 .tip-num {
@@ -842,7 +848,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .trend-pr strong { color: var(--accent); font-weight: 800; }
 .vol-chart-svg { width: 100%; height: 76px; display: block; }
 .trend-svg { width: 100%; height: 62px; display: block; overflow: visible; }
-.trend-dates { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--muted); margin-top: 4px; font-weight: 600; }
+.trend-dates { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 4px; font-weight: 600; }
 
 /* ============================================================
    HISTORY
@@ -896,7 +902,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .cal-foot {
   display: flex; gap: 16px; justify-content: center;
   margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--line);
-  font-size: 12.5px; color: var(--muted); font-weight: 600;
+  font-size: 12px; color: var(--muted); font-weight: 600;
 }
 .cal-foot strong { color: var(--text); font-weight: 800; }
 
@@ -909,7 +915,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   border: 1px solid var(--line); border-radius: var(--r-lg); padding: 16px; margin-bottom: 8px; box-shadow: var(--sh-card);
 }
 .account-avatar { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
-.account-avatar.fallback { display: grid; place-items: center; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--accent-ink); font-weight: 900; font-size: 19px; }
+.account-avatar.fallback { display: grid; place-items: center; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--accent-ink); font-weight: 900; font-size: 18px; }
 .settings-screen { padding-top: 8px; }
 
 /* Related rows share one card and are separated by hairlines, the way every
@@ -939,8 +945,48 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .settings-item-icon.danger { background: var(--red-soft); color: var(--red); }
 .settings-item-text { flex: 1; min-width: 0; }
 .settings-item-title { font-size: 15px; font-weight: 800; }
-.settings-item-sub { font-size: 12.5px; color: var(--muted); font-weight: 600; margin-top: 2px; }
+.settings-item-sub { font-size: 12px; color: var(--muted); font-weight: 600; margin-top: 2px; }
 .settings-item-arrow { color: var(--muted); flex-shrink: 0; }
+
+/* ── Confirm dialog ────────────────────────────────────────────────────────
+   Centred rather than a bottom sheet: this asks a question and waits, which is
+   a different thing from what the pickers do, and the two should not look
+   alike. Replaces window.confirm — see ask() in app.js. */
+.dialog-backdrop {
+  position: fixed; inset: 0; z-index: 90;
+  background: rgba(0,0,0,.72);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 26px; animation: fadeIn .16s ease;
+}
+.dialog-backdrop.is-closing { animation: fadeOut .14s ease forwards; }
+@keyframes fadeOut { to { opacity: 0; } }
+.dialog {
+  width: 100%; max-width: 340px;
+  background: var(--surface); border: 1px solid var(--line-2);
+  border-radius: var(--r-xl); padding: 22px 20px 16px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.6);
+  animation: dialog-in .2s cubic-bezier(.2,.9,.3,1);
+}
+@keyframes dialog-in { from { opacity: 0; transform: translateY(10px) scale(.97); } to { opacity: 1; transform: none; } }
+.dialog-title {
+  font-size: 17px; font-weight: 900; letter-spacing: -0.03em;
+  text-align: center; line-height: 1.35;
+}
+.dialog-body {
+  margin-top: 9px; font-size: 13px; font-weight: 600; line-height: 1.6;
+  color: var(--muted); text-align: center; white-space: pre-line;
+}
+.dialog-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 20px; }
+.dialog-btn {
+  height: 48px; border-radius: var(--r-md);
+  font-size: 15px; font-weight: 800; letter-spacing: -0.02em;
+  transition: transform .1s, background .14s;
+}
+.dialog-btn:active { transform: scale(.97); }
+.dialog-btn.cancel { background: var(--surface-2); color: var(--sub); border: 1px solid var(--line); }
+.dialog-btn.go { background: var(--accent); color: var(--accent-ink); }
+.dialog-btn.danger { background: var(--red); color: #fff; }
 
 /* On/off switch for a settings row. */
 .switch {
@@ -963,10 +1009,10 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 
 /* Identity row: avatar, name, handle, and the body stats on one line under it. */
 .profile-row { padding: 16px 14px; }
-.profile-bits { font-size: 12.5px; font-weight: 700; color: var(--sub); margin-top: 6px; }
+.profile-bits { font-size: 12px; font-weight: 700; color: var(--sub); margin-top: 6px; }
 .profile-bits.empty { color: var(--muted); font-weight: 600; }
 .settings-note {
-  font-size: 12.5px; color: var(--muted); font-weight: 600; line-height: 1.6;
+  font-size: 12px; color: var(--muted); font-weight: 600; line-height: 1.6;
   margin: 20px 4px 0; text-align: center;
 }
 
@@ -976,7 +1022,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   display: flex; align-items: center; justify-content: space-between;
   padding: 13px 14px; border-radius: var(--r-md);
   background: var(--surface); border: 1px solid var(--line);
-  font-size: 13.5px; font-weight: 800; color: var(--sub);
+  font-size: 13px; font-weight: 800; color: var(--sub);
   cursor: pointer; list-style: none; user-select: none;
   touch-action: manipulation;
 }
@@ -1004,7 +1050,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   padding: 40px 26px calc(40px + var(--safe-bot));
 }
 .login-screen .topbar-brand { font-size: 34px; margin-bottom: 26px; }
-.login-title { font-size: 27px; font-weight: 900; letter-spacing: -0.045em; line-height: 1.25; margin-bottom: 10px; }
+.login-title { font-size: 26px; font-weight: 900; letter-spacing: -0.045em; line-height: 1.25; margin-bottom: 10px; }
 .btn-google {
   width: 100%; height: 54px; border-radius: var(--r-lg); background: #fff; color: #1f1f1f;
   font-size: 15px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 10px;
@@ -1017,13 +1063,13 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
    at a fixed 28% that drifted away from short words. */
 .login-or {
   display: flex; align-items: center; gap: 12px;
-  margin: 22px 0 16px; font-size: 12.5px; color: var(--muted); font-weight: 700;
+  margin: 22px 0 16px; font-size: 12px; color: var(--muted); font-weight: 700;
 }
 .login-or::before, .login-or::after { content: ""; flex: 1; height: 1px; background: var(--line-2); }
 
 .login-links { display: flex; align-items: center; justify-content: center; gap: 14px; padding-top: 16px; }
 .login-link {
-  color: var(--sub); font-size: 13.5px; font-weight: 700; padding: 4px 2px;
+  color: var(--sub); font-size: 13px; font-weight: 700; padding: 4px 2px;
   text-decoration: underline; text-underline-offset: 3px;
 }
 .login-link.strong { color: var(--accent); text-decoration-thickness: 1.5px; }
@@ -1058,20 +1104,20 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .signup-count { font-size: 12px; font-weight: 800; color: var(--muted); flex-shrink: 0; }
 .signup-screen .topbar-brand { font-size: 24px; margin: 0; }
 
-.signup-title { font-size: 25px; font-weight: 900; letter-spacing: -0.045em; line-height: 1.25; }
+.signup-title { font-size: 24px; font-weight: 900; letter-spacing: -0.045em; line-height: 1.25; }
 .signup-sub { font-size: 14px; color: var(--muted); font-weight: 600; margin: 8px 0 22px; line-height: 1.5; }
 .signup-body { flex: 1; }
 .signup-actions { padding-top: 22px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .signup-note {
   display: flex; gap: 9px; margin-top: 16px; padding: 13px 14px; border-radius: var(--r-sm);
   background: var(--surface-2); border: 1px solid var(--line);
-  font-size: 12.5px; color: var(--sub); font-weight: 600; line-height: 1.55;
+  font-size: 12px; color: var(--sub); font-weight: 600; line-height: 1.55;
 }
 .signup-note svg { flex-shrink: 0; margin-top: 1px; color: var(--muted); }
 
 /* ── Form fields ── */
 .field-label {
-  display: block; font-size: 12.5px; font-weight: 800; color: var(--sub);
+  display: block; font-size: 12px; font-weight: 800; color: var(--sub);
   margin: 16px 2px 7px; letter-spacing: -0.01em;
 }
 .signup-body > .field-label:first-child, .sheet-scroll > .field-label:first-child { margin-top: 0; }
@@ -1092,7 +1138,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   background: var(--surface-3); border: 1px solid var(--line);
   font-size: 15px; font-weight: 700; color: var(--sub); margin-bottom: 10px;
 }
-.field-static span { font-size: 11.5px; font-weight: 700; color: var(--muted); }
+.field-static span { font-size: 12px; font-weight: 700; color: var(--muted); }
 
 /* ── Grouped form rows ─────────────────────────────────────────────────────
    Label on the left, value on the right, hairlines between — the same shape as
@@ -1114,7 +1160,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 }
 .form-row + .form-row { border-top: 1px solid var(--line); }
 .form-row.tappable:active { background: var(--surface-3); }
-.form-row-label { font-size: 14.5px; font-weight: 700; color: var(--sub); flex-shrink: 0; }
+.form-row-label { font-size: 14px; font-weight: 700; color: var(--sub); flex-shrink: 0; }
 .form-row-value { flex: 1; text-align: right; font-size: 15px; font-weight: 800; color: var(--text); }
 .form-row-value.empty { color: var(--muted); font-weight: 600; }
 .form-row-chev { color: var(--muted); flex-shrink: 0; margin-right: -3px; }
@@ -1128,9 +1174,9 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .form-row-unit { font-size: 13px; font-weight: 700; color: var(--muted); flex-shrink: 0; width: 24px; }
 /* The segmented control sits in the row instead of below it. */
 .form-row-seg { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 8px 0; }
-.form-row-seg .seg-btn { height: 38px; font-size: 13.5px; }
+.form-row-seg .seg-btn { height: 38px; font-size: 13px; }
 .form-note {
-  font-size: 12.5px; color: var(--muted); font-weight: 600; line-height: 1.6;
+  font-size: 12px; color: var(--muted); font-weight: 600; line-height: 1.6;
   margin: 14px 4px 0;
 }
 
@@ -1203,7 +1249,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   position: fixed; left: 50%; bottom: calc(var(--nav-h) + var(--safe-bot) + 20px);
   transform: translateX(-50%); z-index: 100;
   background: var(--surface-3); color: var(--text); border: 1px solid var(--line-2);
-  padding: 12px 20px; border-radius: 999px; font-size: 13.5px; font-weight: 700;
+  padding: 12px 20px; border-radius: 999px; font-size: 13px; font-weight: 700;
   box-shadow: var(--sh-pop); animation: toastIn .3s cubic-bezier(.2,.9,.3,1); max-width: 88%; text-align: center;
 }
 @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
@@ -1229,11 +1275,11 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .rest-timer-mid { flex: 1; min-width: 0; }
 .rest-timer-time { font-size: 18px; font-weight: 900; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
 .rest-timer-time.zero { color: var(--accent); }
-.rest-timer-label { font-size: 11.5px; color: var(--muted); font-weight: 700; margin-top: -1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rest-timer-label { font-size: 12px; color: var(--muted); font-weight: 700; margin-top: -1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rest-timer-adj {
   height: 34px; padding: 0 11px; border-radius: 999px; flex-shrink: 0;
   background: var(--surface-2); border: 1px solid var(--line); color: var(--sub);
-  font-size: 12.5px; font-weight: 800; transition: transform .1s;
+  font-size: 12px; font-weight: 800; transition: transform .1s;
 }
 .rest-timer-adj:active { transform: scale(.92); }
 .rest-timer-close {
@@ -1317,13 +1363,13 @@ body.overlay-open { overflow: hidden; }
 .dsum-badge {
   display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 11px;
   border-radius: 999px; background: var(--surface-2); color: var(--muted);
-  font-size: 12.5px; font-weight: 800; border: 1px solid var(--line); margin-bottom: 12px;
+  font-size: 12px; font-weight: 800; border: 1px solid var(--line); margin-bottom: 12px;
 }
 .dsum-hero.done .dsum-badge { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
 .dsum-parts { display: flex; flex-wrap: wrap; gap: 6px; }
 .dsum-stats { display: flex; gap: 22px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
 .dsum-stats b { display: block; font-size: 21px; font-weight: 900; letter-spacing: -.04em; }
-.dsum-stats span { font-size: 11.5px; font-weight: 700; color: var(--muted); }
+.dsum-stats span { font-size: 12px; font-weight: 700; color: var(--muted); }
 
 .dsum-part { margin-bottom: 22px; }
 .dsum-part-head {
@@ -1331,30 +1377,30 @@ body.overlay-open { overflow: hidden; }
   font-size: 14px; font-weight: 900; margin-bottom: 10px;
 }
 .dsum-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
-.dsum-part-count { margin-left: auto; font-size: 11.5px; font-weight: 700; color: var(--muted); }
+.dsum-part-count { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--muted); }
 .dsum-ex {
   background: var(--surface); border: 1px solid var(--line);
   border-radius: var(--r-md); padding: 13px 14px; margin-bottom: 8px;
 }
 .dsum-ex-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
-.dsum-ex-name { font-size: 14.5px; font-weight: 800; }
-.dsum-ex-meta { font-size: 11.5px; font-weight: 700; color: var(--muted); flex-shrink: 0; }
+.dsum-ex-name { font-size: 14px; font-weight: 800; }
+.dsum-ex-meta { font-size: 12px; font-weight: 700; color: var(--muted); flex-shrink: 0; }
 .dsum-sets { display: flex; flex-wrap: wrap; gap: 6px; }
 /* One chip per set, so a whole exercise is scannable without reading a table */
 .dsum-set {
   display: inline-flex; align-items: baseline; gap: 3px;
   padding: 5px 9px; border-radius: 8px; background: var(--surface-2);
-  border: 1px solid var(--line); font-size: 12.5px; font-weight: 700; color: var(--sub);
+  border: 1px solid var(--line); font-size: 12px; font-weight: 700; color: var(--sub);
 }
 .dsum-set b {
-  font-size: 10.5px; font-weight: 900; color: var(--muted);
+  font-size: 11px; font-weight: 900; color: var(--muted);
   margin-right: 2px; min-width: 9px;
 }
-.dsum-set i { font-style: normal; font-size: 10.5px; color: var(--muted); font-weight: 700; }
+.dsum-set i { font-style: normal; font-size: 11px; color: var(--muted); font-weight: 700; }
 .dsum-set.done { background: var(--accent-soft); border-color: var(--accent-line); color: var(--text); }
 .dsum-set.done b { color: var(--accent); }
 .dsum-set.warm { opacity: .72; }
-.dsum-empty { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.dsum-empty { font-size: 12px; color: var(--muted); font-weight: 600; }
 .dsum-edit { width: 100%; justify-content: center; margin-top: 6px; }
 
 /* Briefly outlines a card that was just created, so the add lands visibly */
@@ -1379,7 +1425,7 @@ body.overlay-open { overflow: hidden; }
   margin-top: 16px; padding: 14px; border-radius: var(--r-md);
   background: var(--accent-soft); border: 1px solid var(--accent-line);
 }
-.reset-confirm-label { font-size: 11.5px; font-weight: 800; color: var(--accent); margin-bottom: 4px; }
+.reset-confirm-label { font-size: 12px; font-weight: 800; color: var(--accent); margin-bottom: 4px; }
 .reset-confirm-addr { font-size: 16px; font-weight: 800; letter-spacing: -.01em; }
 
 /* Offer, not an interruption — sits in the page flow like any other card */
