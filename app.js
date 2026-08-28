@@ -2647,7 +2647,11 @@
     const token = ++idCheckToken;
     idCheckTimer = setTimeout(async () => {
       let free = false;
-      try { free = await Cloud.isUsernameFree(id); }
+      /* Cloud.uid() is null in the signup wizard (no account yet) and set in
+         the onboarding gate. Passing it means a signed-in user re-entering a
+         name they already reserved is told it is available, instead of being
+         refused their own 아이디 with no way forward. */
+      try { free = await Cloud.isUsernameAvailableFor(id, Cloud.uid()); }
       catch (_) {
         if (token !== idCheckToken) return;
         /* Offline or rules blocked the read — say nothing rather than claim the
@@ -2838,7 +2842,24 @@
     render();
     try {
       await Cloud.claimUsername(id);
-      state.profile = { ...(await Cloud.saveProfile(collectProfile())), username: id };
+      await Cloud.saveProfile(collectProfile());
+
+      /* Read it back before believing it.
+
+         This gate is the one screen that must not be shown twice, and the only
+         thing that stops it coming back is users/{uid}.username actually being
+         on the server. Trusting the write and caching "set up" locally is how
+         an account ends up looking finished on this device while every other
+         device — and this one after a cache clear — keeps asking again. So the
+         cache is only written once the server has confirmed the value. */
+      const saved = await Cloud.loadProfile(state.user ? state.user.uid : null);
+      if (!saved || !saved.username) {
+        const e = new Error('username did not persist');
+        e.code = 'fitlog/claim-unverified';
+        throw e;
+      }
+
+      state.profile = saved;
       if (state.user) markSetUp(state.user.uid);
       state.onboarding = false;
       state.authBusy = false;

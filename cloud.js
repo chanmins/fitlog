@@ -147,6 +147,9 @@ const Cloud = (() => {
       "fitlog/no-username": "존재하지 않는 아이디입니다. 다시 확인해 주세요.",
       "fitlog/username-taken": "이미 사용 중인 아이디입니다. 다른 아이디를 골라 주세요.",
       "fitlog/bad-username": "아이디 형식이 올바르지 않습니다.",
+      "fitlog/auth-not-ready": "로그인 확인이 아직 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.",
+      "fitlog/not-ready": "연결 준비 중입니다. 잠시 후 다시 시도해 주세요.",
+      "fitlog/claim-unverified": "저장은 되었지만 서버에서 확인되지 않았습니다. 네트워크를 확인하고 다시 시도해 주세요.",
       "auth/invalid-email": "이메일 형식이 올바르지 않습니다.",
       "auth/user-not-found": "가입되지 않은 이메일입니다.",
       /* The single most confusing failure in this app: the account exists but
@@ -316,6 +319,29 @@ const Cloud = (() => {
     return !(await lookupUsername(rawId));
   }
 
+  /* Who holds this 아이디 — the uid, or null if nobody does. */
+  async function usernameOwner(rawId) {
+    const rec = await lookupUsername(rawId);
+    return rec && rec.uid ? rec.uid : null;
+  }
+
+  /* "Free, or already mine."
+
+     Claiming a name writes to two places: usernames/{id} reserves it, and
+     users/{uid}.username is what the app actually reads back. If the first
+     write lands and the second does not — a dropped connection, a backgrounded
+     tab, a phone switching from wifi to cellular mid-tap — the account ends up
+     owning a name that the app cannot see. It then asks for an 아이디 again,
+     refuses the user's own name as "이미 사용 중", and there is no way out
+     except inventing a new name, which can strand another one the same way.
+
+     Treating a name you already own as available is what breaks that loop. */
+  async function isUsernameAvailableFor(rawId, forUid) {
+    const owner = await usernameOwner(rawId);
+    if (!owner) return true;
+    return !!forUid && owner === forUid;
+  }
+
   async function signInUsername(rawId, password) {
     if (!auth) throw new Error("Firebase가 설정되지 않았습니다.");
     await persistenceReady;
@@ -386,16 +412,29 @@ const Cloud = (() => {
     const id = normalizeUsername(rawId);
     const bad = usernameError(id);
     if (bad) { const e = new Error(bad); e.code = "fitlog/bad-username"; throw e; }
-    if (!(await isUsernameFree(id))) {
+
+    const owner = await usernameOwner(id);
+    if (owner && owner !== u.uid) {
       const e = new Error("taken"); e.code = "fitlog/username-taken"; throw e;
     }
-    try {
-      await store.collection("usernames").doc(id).set({
-        uid: u.uid, email: u.email || "", createdAt: Date.now(),
-      });
-    } catch (_) {
-      const e = new Error("taken"); e.code = "fitlog/username-taken"; throw e;
+
+    /* Reserve the name only if it is not already reserved by us. Re-writing our
+       own reservation would be an update, and the rules forbid updates outright
+       (a name must never be re-pointed at a different account), so a repeat
+       claim has to skip this step rather than fail on it. */
+    if (!owner) {
+      try {
+        await store.collection("usernames").doc(id).set({
+          uid: u.uid, email: u.email || "", createdAt: Date.now(),
+        });
+      } catch (_) {
+        /* Lost a race: somebody created it between the read and the write. */
+        const e = new Error("taken"); e.code = "fitlog/username-taken"; throw e;
+      }
     }
+
+    /* The field the app reads. Written every time, including on a repeat claim,
+       because a missing value here is exactly the damage being repaired. */
     await store.collection("users").doc(u.uid).set({ username: id }, { merge: true });
     return id;
   }
@@ -447,9 +486,17 @@ const Cloud = (() => {
     return out;
   }
 
+  /* Throws rather than returning null when there is nobody to save for.
+     Returning null made "nothing was written" look identical to "written
+     successfully, nothing to report", so a save that silently went nowhere
+     still ended with a 저장했습니다 toast. */
   async function saveProfile(prof) {
     const u = currentUser;
-    if (!store || !u) return null;
+    if (!store || !u) {
+      const e = new Error("인증이 아직 준비되지 않았습니다.");
+      e.code = "fitlog/auth-not-ready";
+      throw e;
+    }
     const clean = sanitizeProfile(prof);
     const patch = { profile: clean, updatedAt: Date.now() };
     if (clean.name) patch.displayName = clean.name;
@@ -635,6 +682,8 @@ const Cloud = (() => {
     claimUsername,
     lookupUsername,
     isUsernameFree,
+    usernameOwner,
+    isUsernameAvailableFor,
     normalizeUsername,
     usernameError,
     sendPasswordReset,
