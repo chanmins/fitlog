@@ -1449,10 +1449,10 @@ body.overlay-open { overflow: hidden; }
 .import-yes { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
 
 /* ── 운동 그림 ──────────────────────────────────────────────────────────
-   두 장(시작/마침)을 겹쳐 놓고 번갈아 보여줍니다. 동작이 어디서 시작해
-   어디서 끝나는지가 정지 사진 한 장보다 훨씬 잘 읽힙니다. 버티는 자세는
-   한 장짜리라 그냥 가만히 있습니다. 움직임을 끈 사용자에게는 시작 자세만
-   고정으로 보여줍니다. */
+   한 동작을 3장으로 나눠 그린 그림을 이어 붙여 보여줍니다. 겹쳐 놓고
+   차례로 나타냈다 사라지게 하는데, 앞뒤가 짧게 겹치도록 해서 딱딱 끊기지
+   않고 이어집니다. 프레임 수마다 한 장이 머무는 시간이 달라야 하므로
+   장수별로 따로 정의했습니다. */
 .ex-photo {
   position: relative; width: 100%; aspect-ratio: 3 / 2; margin: 0 0 14px;
   border-radius: var(--r-md); overflow: hidden; background: var(--surface-2);
@@ -1460,26 +1460,34 @@ body.overlay-open { overflow: hidden; }
 }
 .ex-photo-img {
   position: absolute; inset: 0; width: 100%; height: 100%;
-  object-fit: cover; opacity: 0;
-  animation: ex-photo-cycle 2.6s infinite;
+  object-fit: contain; padding: 12px; opacity: 0;
 }
-.ex-photo-img.a { animation-delay: 0s; }
-.ex-photo-img.b { animation-delay: 1.3s; }
-/* 직접 그린 자세 그림은 사진과 달리 여백이 의미를 가지므로 잘라내지 않고
-   전체를 넣고, 선이 테두리에 닿지 않게 안쪽 여백을 줍니다. */
-.ex-photo.drawn { background: var(--surface-2); }
-.ex-photo.drawn .ex-photo-img { object-fit: contain; padding: 10px; }
-/* 한 장짜리는 번갈아 보여줄 상대가 없으므로 애니메이션 없이 그대로 둡니다. */
-.ex-photo.single .ex-photo-img { animation: none; opacity: 1; }
-@keyframes ex-photo-cycle {
-  0%   { opacity: 0; }
-  8%   { opacity: 1; }
-  42%  { opacity: 1; }
-  50%  { opacity: 0; }
-  100% { opacity: 0; }
+/* 한 장짜리는 번갈아 보여줄 상대가 없으므로 그대로 세워 둡니다. */
+.ex-photo.f1 .ex-photo-img { opacity: 1; }
+
+.ex-photo.f2 .ex-photo-img {
+  animation: ex-cycle-2 2.8s infinite;
+  animation-delay: calc(var(--i) * 1.4s);
 }
+@keyframes ex-cycle-2 {
+  0% { opacity: 0 } 6% { opacity: 1 } 44% { opacity: 1 } 50% { opacity: 0 } 100% { opacity: 0 }
+}
+
+.ex-photo.f3 .ex-photo-img {
+  animation: ex-cycle-3 3.9s infinite;
+  animation-delay: calc(var(--i) * 1.3s);
+}
+@keyframes ex-cycle-3 {
+  0% { opacity: 0 } 4% { opacity: 1 } 29% { opacity: 1 } 33% { opacity: 0 } 100% { opacity: 0 }
+}
+
+/* 움직임을 끈 사용자에게는 첫 장만 고정으로 보여줍니다. */
 @media (prefers-reduced-motion: reduce) {
-  .ex-photo-img { animation: none; }
-  .ex-photo-img.a { opacity: 1; }
-  .ex-photo-img.b { opacity: 0; }
+  .ex-photo-img { animation: none !important; opacity: 0; }
+  .ex-photo .ex-photo-img:first-child { opacity: 1; }
 }
+
+/* 출처 표기 — CC BY-SA 는 저작자와 라이선스를 밝히도록 요구합니다. */
+.credit-block { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.credit-block p { font-size: 11px; line-height: 1.7; color: var(--muted); margin: 0 0 6px; }
+.credit-block a { color: var(--sub); text-decoration: underline; }

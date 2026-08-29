@@ -2203,19 +2203,17 @@
     const tips = (libEx.tips||[]).map((tip,i)=>`
       <li><div class="tip-num">${i+1}</div><span>${esc(tip)}</span></li>`).join('');
 
-    /* The start and end of the movement, cross-faded on a loop. It is not a
-       3D render, but it answers the only question a picture is actually asked
-       here ("what does this look like?") for about 22KB. Held poses have one
-       frame and simply sit still. Loading is left to the browser: the sheet is
-       the only place these appear, so nothing downloads until someone taps ⓘ.
-       An exercise with no entry renders no block at all. */
+    /* Three drawings of the same body moving through the lift, cross-faded on
+       a loop. Two photographs alternating read as "the picture changed"; three
+       frames of one figure read as movement, which is the whole point of
+       showing a picture here. A single frame just sits still — right for a
+       held stretch. Nothing loads until someone opens this sheet. */
     const media = (typeof EXERCISE_MEDIA !== 'undefined' && libEx.id) ? EXERCISE_MEDIA[libEx.id] : null;
-    const frame = (suffix, cls, label) =>
-      `<img class="ex-photo-img ${cls}" src="./media/${esc(libEx.id)}-${suffix}.${esc(media.t)}" alt="${esc(libEx.name)} ${label}" loading="lazy" decoding="async">`;
     const photo = media
-      ? `<div class="ex-photo${media.n === 1 ? ' single' : ''}${media.t === 'svg' ? ' drawn' : ''}">
-           ${frame('a', 'a', media.n === 1 ? '자세' : '시작 자세')}
-           ${media.n === 2 ? frame('b', 'b', '마친 자세') : ''}
+      ? `<div class="ex-photo f${media.n}">
+           ${Array.from({ length: media.n }, (_, i) =>
+             `<img class="ex-photo-img" style="--i:${i}" src="./media/${esc(libEx.id)}-${i + 1}.${esc(media.t)}"
+                   alt="${esc(libEx.name)} 동작 ${i + 1}" loading="lazy" decoding="async">`).join('')}
          </div>`
       : '';
 
@@ -2561,6 +2559,17 @@
               <div class="settings-item-sub">클라우드 기록까지 완전히 삭제 · 되돌릴 수 없음</div>
             </div>
           </button>` : ''}
+        </div>
+
+        <!-- 운동 그림의 저작자 표기. CC BY-SA 4.0 은 저작자와 라이선스를
+             밝히도록 요구하므로 화면 어딘가에 반드시 있어야 합니다. -->
+        <div class="credit-block">
+          <p>운동 그림 &copy; <a href="https://bryllim.com" target="_blank" rel="noopener">Bryl Lim</a>
+             (Workout Guide) &middot; 원작 <a href="https://github.com/everkinetic/data" target="_blank" rel="noopener">Everkinetic</a>
+             &middot; <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a>
+             &middot; 크기 조정 외 변경 없음</p>
+          <p>일부 그림은 <a href="https://github.com/yuhonas/free-exercise-db" target="_blank" rel="noopener">free-exercise-db</a>
+             (퍼블릭 도메인) 및 직접 그린 그림입니다.</p>
         </div>
       </main>`;
   }

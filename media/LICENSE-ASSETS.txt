@@ -1,0 +1,27 @@
+Workout Guide visual assets are licensed under the Creative Commons
+Attribution-ShareAlike 4.0 International license (CC BY-SA 4.0).
+
+Copyright (c) 2026 Bryl Lim, except where ATTRIBUTION.md identifies an
+upstream source.
+
+You may share and adapt these assets for any purpose, including commercially,
+provided that you give appropriate credit, link to the license, indicate
+changes, and distribute adaptations under the same license.
+
+License text: https://creativecommons.org/licenses/by-sa/4.0/legalcode
+Human-readable summary: https://creativecommons.org/licenses/by-sa/4.0/
+
+--------------------------------------------------------------------
+FITLOG 에서 한 변경 사항 (CC BY-SA 4.0 은 변경 내용을 밝히도록 요구합니다)
+
+· SVG 의 width / height 속성을 제거해 화면 크기에 맞게 늘어나도록 함
+· 한 운동의 3장이 같은 화면 좌표를 쓰도록 viewBox 를 세 장의 내용
+  경계를 합친 값으로 통일 (그림 자체는 고치지 않음)
+· 파일 이름을 {운동id}-{프레임번호}.svg 로 변경
+
+그림 자체의 선·형태·색은 원본 그대로이며, 이 파일들은 원본과 동일하게
+CC BY-SA 4.0 으로 배포됩니다.
+
+원작: Everkinetic  https://github.com/everkinetic/data
+확장: Bryl Lim (Workout Guide)  https://bryllim.com
+라이선스: https://creativecommons.org/licenses/by-sa/4.0/
