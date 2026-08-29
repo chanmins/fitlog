@@ -550,6 +550,28 @@ const Cloud = (() => {
     return Array.isArray(rows) ? rows : [];
   }
 
+  /* 몸무게 기록도 문서 하나에 들어갈 만큼 작습니다. 하루 한 줄, 2년이면
+     700줄 남짓이라 넉넉합니다. */
+  async function saveMetrics(rows) {
+    const u = currentUser;
+    if (!store || !u) return;
+    const clean = (rows || []).slice(-1000).map(r => ({
+      date: String(r.date || "").slice(0, 10),
+      weightKg: Number(r.weightKg) || 0,
+    })).filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.date) && r.weightKg > 0);
+    await store.collection("users").doc(u.uid).set({ metrics: clean }, { merge: true });
+  }
+
+  async function loadMetrics(forUid) {
+    if (!store) return [];
+    const id = forUid || uid();
+    if (!id) return [];
+    const snap = await store.collection("users").doc(id).get();
+    if (!snap.exists) return [];
+    const rows = (snap.data() || {}).metrics;
+    return Array.isArray(rows) ? rows : [];
+  }
+
   async function saveProfile(prof) {
     const u = currentUser;
     if (!store || !u) {
@@ -647,14 +669,25 @@ const Cloud = (() => {
     await col.doc(id).delete();
   }
 
+  /* 루틴과 몸무게는 users/{uid} 문서 한 곳에 들어 있으므로 여기서 같이 읽습니다.
+     loadRoutines()/loadMetrics()를 따로 부르면 같은 문서를 두 번 읽게 되고,
+     무료 요금제의 하루 읽기 수를 이유 없이 두 배로 씁니다. */
   async function pullAll() {
     const sessionsCol = userCol("sessions");
     const customCol = userCol("customExercises");
-    if (!sessionsCol) return { sessions: [], customExercises: [] };
-    const [sessSnap, customSnap] = await Promise.all([sessionsCol.get(), customCol.get()]);
+    if (!sessionsCol) return { sessions: [], customExercises: [], routines: [], metrics: [] };
+    const id = uid();
+    const [sessSnap, customSnap, userSnap] = await Promise.all([
+      sessionsCol.get(),
+      customCol.get(),
+      store.collection("users").doc(id).get(),
+    ]);
+    const userDoc = userSnap.exists ? (userSnap.data() || {}) : {};
     return {
       sessions: sessSnap.docs.map((d) => d.data()).filter((s) => s && s.date),
       customExercises: customSnap.docs.map((d) => d.data()).filter((e) => e && e.id),
+      routines: Array.isArray(userDoc.routines) ? userDoc.routines : [],
+      metrics: Array.isArray(userDoc.metrics) ? userDoc.metrics : [],
     };
   }
 
@@ -752,6 +785,8 @@ const Cloud = (() => {
     saveProfile,
     saveRoutines,
     loadRoutines,
+    saveMetrics,
+    loadMetrics,
     loadProfile,
     signOut,
     touchProfile,

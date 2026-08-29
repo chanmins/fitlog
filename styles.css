@@ -1648,3 +1648,61 @@ body.overlay-open { overflow: hidden; }
 
 /* 여러 줄 안내는 줄바꿈이 살아야 읽힙니다. */
 .dialog-body.pre { white-space: pre-wrap; text-align: left; line-height: 1.65; }
+
+/* ── 부위별 분석 ────────────────────────────────────────────────────────── */
+.pa-list { display: flex; flex-direction: column; gap: 13px; }
+.pa-head { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
+.pa-name { font-size: 13px; font-weight: 800; color: var(--text); }
+.pa-verdict { font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 999px;
+  white-space: nowrap; flex: 0 0 auto; }
+.pa-verdict.good { background: var(--accent-soft); color: var(--accent); }
+.pa-verdict.ok   { background: color-mix(in srgb, var(--orange) 15%, transparent); color: var(--orange); }
+.pa-verdict.bad  { background: var(--red-soft); color: var(--red); }
+.pa-up   { margin-left: auto; font-size: 11px; font-weight: 800; color: var(--accent); }
+.pa-down { margin-left: auto; font-size: 11px; font-weight: 800; color: var(--red); }
+.pa-flat { margin-left: auto; font-size: 11px; font-weight: 800; color: var(--muted); }
+.pa-bar { height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.pa-bar span { display: block; height: 100%; border-radius: 999px; }
+.pa-meta { margin-top: 5px; font-size: 11px; font-weight: 600; color: var(--muted); }
+.pa-none { margin: 12px 0 0; padding-top: 12px; border-top: 1px solid var(--line);
+  font-size: 12px; font-weight: 600; color: var(--muted); line-height: 1.5; }
+.pa-none b { color: var(--text); font-weight: 700; }
+
+/* ── 변화 리포트 ────────────────────────────────────────────────────────── */
+.ch-overall {
+  padding: 12px 14px; border-radius: var(--r-md); margin-bottom: 12px;
+  font-size: 13px; font-weight: 700; background: var(--surface-2); color: var(--sub);
+}
+.ch-overall.good { background: var(--accent-soft); color: var(--accent); }
+.ch-overall.warn { background: color-mix(in srgb, var(--orange) 13%, transparent); color: var(--orange); }
+.ch-list { display: flex; flex-direction: column; gap: 1px; }
+.ch-row {
+  display: grid; grid-template-columns: 8px 42px 1fr; gap: 9px; align-items: center;
+  padding: 9px 2px; border-bottom: 1px solid var(--line);
+}
+.ch-row:last-child { border-bottom: none; }
+.ch-part { font-size: 12px; font-weight: 800; color: var(--sub); }
+.ch-text { font-size: 12px; font-weight: 600; color: var(--muted); }
+.ch-text.good { color: var(--accent); }
+.ch-text.warn { color: var(--orange); }
+.ch-stall-head {
+  margin-top: 16px; margin-bottom: 8px; font-size: 11px; font-weight: 800;
+  color: var(--muted); text-transform: uppercase; letter-spacing: .05em;
+}
+.ch-stall {
+  display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center;
+  padding: 9px 12px; margin-bottom: 5px; border-radius: var(--r-sm); background: var(--surface-2);
+}
+.ch-stall-name { font-size: 13px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ch-stall-kg { font-size: 13px; font-weight: 800; color: var(--orange); }
+.ch-stall-wk { font-size: 11px; font-weight: 700; color: var(--muted); }
+.ch-note { margin-top: 8px; font-size: 11px; line-height: 1.6; color: var(--muted); }
+
+/* ── 몸무게 ─────────────────────────────────────────────────────────────── */
+:root { --wt-color: #54a0ff; --wt-fill: rgba(84,160,255,0.12); }
+.wt-now { display: flex; align-items: baseline; gap: 6px; margin-bottom: 6px; }
+.wt-now b { font-size: 24px; font-weight: 800; color: var(--text); }
+.wt-now span { font-size: 12px; font-weight: 700; color: var(--muted); }
+.wt-now em { margin-left: auto; font-style: normal; font-size: 10px; font-weight: 700; color: var(--muted); }
+
+.dsum-timing { margin: 6px 0 14px; font-size: 12px; font-weight: 600; color: var(--muted); }

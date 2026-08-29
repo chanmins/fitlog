@@ -8,6 +8,22 @@
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   }
+  /* 날짜를 YYYY-MM-DD 로 적을 때 toISOString() 을 쓰면 안 됩니다. 그 함수는
+     UTC 기준이라, 한국(UTC+9)에서 자정으로 맞춘 날짜는 전날 15시로 바뀌어
+     하루 앞선 날짜가 나옵니다. 이 앱의 날짜는 전부 사용자의 달력 날짜입니다. */
+  function isoLocal(d) {
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+  /* 앞 단어의 받침에 따라 조사를 고릅니다 — "코어를" / "팔을".
+     받침 여부는 한글 음절 코드에서 바로 나옵니다: (코드 - 0xAC00) % 28 이
+     0 이면 받침이 없습니다. 한글이 아니면 받침 없는 쪽을 씁니다. */
+  function josa(word, withJong, withoutJong) {
+    const ch = String(word || '').trim().slice(-1);
+    if (!ch) return withoutJong;
+    const code = ch.charCodeAt(0);
+    if (!(code >= 0xac00 && code <= 0xd7a3)) return withoutJong;
+    return (code - 0xac00) % 28 ? withJong : withoutJong;
+  }
   function isoToDate(iso)  { const [y,m,d] = iso.split('-').map(Number); return new Date(y,m-1,d); }
   function shortDate(iso)  { const [,m,d] = iso.split('-'); return `${Number(m)}.${Number(d)}`; }
   function longDate(iso)   { const [y,m,d] = iso.split('-').map(Number); return `${m}월 ${d}일 (${WEEKDAYS[new Date(y,m-1,d).getDay()]})`; }
@@ -361,6 +377,189 @@
     const sets = ex.sets || [];
     return { done: sets.filter(s => s.done).length, total: sets.length };
   }
+  /* ── 운동 시간과 휴식 ────────────────────────────────────────────────────
+     세트를 완료할 때 남긴 시각으로 계산합니다. 첫 세트와 마지막 세트 사이가
+     그날 실제로 운동한 시간이고, 그 사이 간격들의 중앙값이 세트 간 휴식입니다.
+
+     평균이 아니라 중앙값을 쓰는 이유: 중간에 전화를 받거나 자리를 비우면
+     간격 하나가 20분이 되는데, 평균은 그 하나에 통째로 끌려갑니다. 중앙값은
+     그런 이상치에 흔들리지 않아 "보통 얼마나 쉬는가" 를 제대로 말해 줍니다. */
+  function sessionTiming(s) {
+    const stamps = [];
+    for (const ex of s?.exercises || []) {
+      for (const st of ex.sets || []) {
+        if (st.done && Number.isFinite(st.doneAt)) stamps.push(st.doneAt);
+      }
+    }
+    if (stamps.length < 2) return null;
+    stamps.sort((a, b) => a - b);
+    const gaps = [];
+    for (let i = 1; i < stamps.length; i++) {
+      const g = (stamps[i] - stamps[i - 1]) / 1000;
+      /* 8분이 넘는 간격은 '쉰 것' 이 아니라 '자리를 뜬 것' 으로 봅니다. */
+      if (g > 3 && g <= 480) gaps.push(g);
+    }
+    const minutes = Math.round((stamps[stamps.length - 1] - stamps[0]) / 60000);
+    if (minutes <= 0 || minutes > 300) return null;
+    let rest = 0;
+    if (gaps.length) {
+      const sorted = gaps.slice().sort((a, b) => a - b);
+      rest = Math.round(sorted[Math.floor(sorted.length / 2)]);
+    }
+    return { minutes, rest, sets: stamps.length };
+  }
+
+  function fmtDur(sec) {
+    const m = Math.floor(sec / 60), ss = Math.round(sec % 60);
+    return m ? `${m}분 ${ss}초` : `${ss}초`;
+  }
+
+  /* ── 부위별 볼륨 분석 ────────────────────────────────────────────────────
+     세트 수만 세면 40kg 12세트와 100kg 12세트가 같은 운동이 됩니다. 그래서
+     세트 수와 볼륨(무게 × 횟수)을 함께 봅니다.
+
+     세트 수 기준은 근비대 메타분석에서 가져왔습니다 — 주당 근육군별로
+     최소 4세트는 있어야 자극이 되고, 5~10세트 구간의 효율이 가장 좋으며,
+     그보다 많아도 효과는 이어지되 시간 대비 수익이 줄어듭니다.
+
+     다만 이 앱의 '부위' 는 근육 하나가 아니라 묶음입니다(팔 = 이두 + 삼두).
+     그래서 기준을 그대로 들이대면 실제보다 많아 보입니다. 화면에서 이 점을
+     밝히고, 숫자를 단정이 아니라 참고로 제시합니다. */
+  const VOL_MIN = 4, VOL_GOOD_LO = 5, VOL_GOOD_HI = 10, VOL_HIGH = 20;
+  const ANALYSIS_WEEKS = 4;
+
+  /* 스트레칭은 이 분석에서 뺍니다. 위 기준은 근비대를 위한 '작업 세트' 수라서
+     스트레칭에 갖다 대면 "주 4세트 미만이라 부족" 같은 틀린 말이 나옵니다.
+     스트레칭은 볼륨을 쌓는 운동이 아닙니다. */
+  function analysisParts() {
+    return PARTS.filter(p => p.kind === 'weight' && p.id !== 'stretch');
+  }
+
+  function weekStartDate(d) {
+    const x = new Date(d); const dow = (x.getDay() + 6) % 7;
+    x.setDate(x.getDate() - dow); x.setHours(0, 0, 0, 0); return x;
+  }
+
+  /* 최근 n주 / 그 직전 n주의 부위별 세트·볼륨·최대중량 */
+  function partWindows(weeks = ANALYSIS_WEEKS) {
+    const now = weekStartDate(new Date(todayISO() + 'T00:00:00'));
+    const curFrom = new Date(now); curFrom.setDate(curFrom.getDate() - (weeks - 1) * 7);
+    const prevFrom = new Date(curFrom); prevFrom.setDate(prevFrom.getDate() - weeks * 7);
+    const iso = isoLocal;
+    const blank = () => ({ sets: 0, volume: 0, maxKg: 0, days: new Set() });
+    const cur = {}, prev = {};
+    for (const part of PARTS) { cur[part.id] = blank(); prev[part.id] = blank(); }
+
+    for (const s of state.sessions) {
+      const inCur = s.date >= iso(curFrom);
+      const inPrev = !inCur && s.date >= iso(prevFrom) && s.date < iso(curFrom);
+      if (!inCur && !inPrev) continue;
+      const bucket = inCur ? cur : prev;
+      for (const ex of s.exercises || []) {
+        const b = bucket[ex.part]; if (!b) continue;
+        for (const st of ex.sets || []) {
+          if (!st.done || st.warmup) continue;
+          const kg = Number(st.kg), reps = Number(st.reps);
+          b.sets++;
+          b.days.add(s.date);
+          if (Number.isFinite(kg) && Number.isFinite(reps)) b.volume += kg * reps;
+          if (Number.isFinite(kg) && kg > b.maxKg) b.maxKg = kg;
+        }
+      }
+    }
+    const wrap = o => Object.fromEntries(Object.entries(o).map(([k, v]) =>
+      [k, { sets: v.sets, volume: v.volume, maxKg: v.maxKg, days: v.days.size,
+            setsPerWeek: v.sets / weeks, volPerWeek: v.volume / weeks }]));
+    return { weeks, cur: wrap(cur), prev: wrap(prev) };
+  }
+
+  function volumeVerdict(setsPerWeek) {
+    if (setsPerWeek <= 0) return { key: 'none', label: '안 함', cls: 'bad' };
+    if (setsPerWeek < VOL_MIN) return { key: 'low', label: '부족', cls: 'bad' };
+    if (setsPerWeek <= VOL_GOOD_HI) return { key: 'good', label: '적정', cls: 'good' };
+    if (setsPerWeek <= VOL_HIGH) return { key: 'plenty', label: '충분', cls: 'ok' };
+    return { key: 'over', label: '많음', cls: 'ok' };
+  }
+
+  function pctChange(now, before) {
+    if (!before) return now > 0 ? null : 0;   // 이전이 0이면 배수로 말할 수 없습니다
+    return Math.round(((now - before) / before) * 100);
+  }
+
+  /* ── 변화 읽기 ───────────────────────────────────────────────────────────
+     "볼륨이 12% 늘었다" 같은 숫자만으로는 무슨 일이 있었는지 모릅니다.
+     세트를 더 했는지, 같은 세트에 무게를 올렸는지, 아니면 세트를 줄이고
+     무게만 올렸는지가 전혀 다른 이야기인데 볼륨 하나로는 구분이 안 됩니다.
+
+     그래서 세 가지를 같이 봅니다 — 세트 수, 볼륨, 최대 중량. 셋의 방향
+     조합으로 실제로 무슨 일이 있었는지 문장을 만듭니다. */
+  function readChange(now, before) {
+    const dSets = pctChange(now.setsPerWeek, before.setsPerWeek);
+    const dVol  = pctChange(now.volPerWeek, before.volPerWeek);
+    const dKg   = now.maxKg - before.maxKg;
+    const up = v => v != null && v >= 8;
+    const down = v => v != null && v <= -8;
+    const flat = v => v != null && !up(v) && !down(v);
+
+    if (!before.sets && now.sets) return { tone: 'good', text: '새로 시작했어요' };
+    if (before.sets && !now.sets)  return { tone: 'bad',  text: `${ANALYSIS_WEEKS}주째 안 했어요` };
+
+    if (down(dSets) && up(dVol))
+      return { tone: 'good', text: `세트는 줄었는데 볼륨은 ${dVol}% 늘었어요 — 무게를 올렸네요` };
+    if (up(dSets) && down(dVol))
+      return { tone: 'warn', text: `세트는 늘었는데 볼륨은 ${Math.abs(dVol)}% 줄었어요 — 무게가 내려갔습니다` };
+    if (up(dVol) && dKg > 0)
+      return { tone: 'good', text: `볼륨 ${dVol}% 증가 · 최고 중량 ${Math.round(dKg)}kg 상승` };
+    if (up(dVol))
+      return { tone: 'good', text: `볼륨이 ${dVol}% 늘었어요` };
+    if (down(dVol))
+      return { tone: 'warn', text: `볼륨이 ${Math.abs(dVol)}% 줄었어요` };
+    if (flat(dVol) && flat(dSets) && dKg === 0)
+      return { tone: 'flat', text: '세트도 무게도 그대로예요' };
+    if (dKg > 0) return { tone: 'good', text: `최고 중량이 ${Math.round(dKg)}kg 올랐어요` };
+    if (dKg < 0) return { tone: 'warn', text: `최고 중량이 ${Math.abs(Math.round(dKg))}kg 내려갔어요` };
+    return { tone: 'flat', text: '지난 기간과 비슷해요' };
+  }
+
+  /* 운동별 정체: 계속 하고 있는데 최고 중량이 오래 그대로인 것 */
+  function stalledExercises(minWeeks = 4) {
+    const byName = new Map();
+    for (const s of state.sessions) {
+      for (const ex of s.exercises || []) {
+        let best = 0;
+        for (const st of ex.sets || []) {
+          if (!st.done || st.warmup) continue;
+          const kg = Number(st.kg);
+          if (Number.isFinite(kg) && kg > best) best = kg;
+        }
+        if (!best) continue;
+        const cur = byName.get(ex.name) || { name: ex.name, part: ex.part, days: [] };
+        cur.days.push({ date: s.date, kg: best });
+        byName.set(ex.name, cur);
+      }
+    }
+    const today = new Date(todayISO() + 'T00:00:00');
+    const out = [];
+    for (const v of byName.values()) {
+      v.days.sort((a, b) => a.date.localeCompare(b.date));
+      /* 최근 3주 안에 한 적이 있어야 '정체' 입니다. 아예 안 하는 운동은
+         정체가 아니라 그냥 안 하는 것이고, 그건 다른 이야기입니다. */
+      const last = v.days[v.days.length - 1];
+      const sinceLast = (today - new Date(last.date + 'T00:00:00')) / 86400000;
+      if (sinceLast > 21 || v.days.length < 4) continue;
+      const best = Math.max(...v.days.map(d => d.kg));
+      /* 지금도 그 무게를 들고 있어야 '정체' 입니다. 예전에 50kg 을 들었다가
+         요즘 35kg 으로 내려온 운동은 정체가 아니라 후퇴이고, 거기에 대고
+         "무게를 올려 보세요" 라고 하면 틀린 조언이 됩니다. 무게가 내려간
+         이야기는 위의 부위별 '변화' 줄이 이미 하고 있습니다. */
+      if (last.kg < best * 0.95) continue;
+      const firstBest = v.days.find(d => d.kg === best);
+      const weeks = Math.floor((today - new Date(firstBest.date + 'T00:00:00')) / 604800000);
+      if (weeks >= minWeeks) out.push({ ...v, kg: best, weeks, since: firstBest.date });
+    }
+    return out.sort((a, b) => b.weeks - a.weeks).slice(0, 4);
+  }
+
   function sessionStats(s) {
     let done = 0, total = 0, volume = 0;
     for (const ex of s.exercises || []) {
@@ -600,6 +799,34 @@
       document.addEventListener('keydown', onKey);
       document.body.appendChild(wrap);
       requestAnimationFrame(() => { input.focus(); input.select(); });
+    });
+  }
+
+  /* 판정에 쓴 기준은 반드시 밝힙니다. '부족' 이라는 말은 근거가 없으면
+     그냥 앱이 훈수 두는 것이 됩니다. */
+  async function showVolumeInfo() {
+    await ask({
+      title: '부위별 분석 기준',
+      body: [
+        `최근 ${ANALYSIS_WEEKS}주를 평균 내어 주당 세트 수로 봅니다.`,
+        '',
+        `· ${VOL_MIN}세트 미만 — 부족`,
+        `· ${VOL_GOOD_LO}~${VOL_GOOD_HI}세트 — 적정`,
+        `· ~${VOL_HIGH}세트 — 충분`,
+        `· ${VOL_HIGH}세트 초과 — 많음`,
+        '',
+        '근비대 연구를 모은 메타분석에서 가져온 구간입니다. 최소 4세트는',
+        '있어야 자극이 되고, 5~10세트 구간이 시간 대비 효율이 가장 좋으며,',
+        '그보다 많아도 효과는 이어지되 수익이 줄어듭니다.',
+        '',
+        '주의: 이 앱의 부위는 근육 하나가 아니라 묶음입니다. "팔" 에는',
+        '이두와 삼두가 함께 들어가므로, 실제 근육별 세트 수는 여기 숫자보다',
+        '적습니다. 단정이 아니라 참고로 보세요.',
+        '',
+        '세트 수만으로는 40kg 12세트와 100kg 12세트가 같아 보이므로,',
+        '볼륨(무게 × 횟수)과 최고 중량을 함께 적었습니다.',
+      ].join('\n'),
+      confirmText: '알겠어요', cancelText: '',
     });
   }
 
@@ -2049,6 +2276,13 @@
             <div class="sum-val">${Number.isFinite(runKm)&&runKm?runKm:'-'}<span>km</span></div>
             <div class="sum-lbl">러닝</div>
           </div>` : ''}
+          ${(() => {
+            const t = sessionTiming(s);
+            return t ? `<div class="sum-item">
+              <div class="sum-val">${t.minutes}<span>분</span></div>
+              <div class="sum-lbl">운동 시간</div>
+            </div>` : '';
+          })()}
         </div>
         ${stats.total ? `<div class="sum-bar"><div class="sum-bar-fill" style="width:${pct}%"></div></div>` : ''}
       </div>` : '';
@@ -2219,9 +2453,17 @@
             <div><b>${s.exercises.length}</b><span>운동</span></div>
             <div><b>${stats.done}</b><span>완료 세트</span></div>
             ${hasRunData(s.run) && Number.isFinite(runKm) && runKm ? `<div><b>${runKm}</b><span>km</span></div>` : ''}
+            ${(() => {
+              const t = sessionTiming(s);
+              return t ? `<div><b>${t.minutes}</b><span>분</span></div>` : '';
+            })()}
           </div>
         </div>
         ${body}
+        ${(() => {
+          const t = sessionTiming(s);
+          return t && t.rest ? `<p class="dsum-timing">세트 사이 보통 ${esc(fmtDur(t.rest))} 쉬었어요</p>` : '';
+        })()}
         <button class="btn-ghost dsum-edit" data-act="edit-day" data-date="${s.date}">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4v16h16v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
           이 날 기록 편집하기
@@ -2607,7 +2849,7 @@
     const d = new Date(iso + 'T00:00:00');
     const dow = (d.getDay() + 6) % 7;
     d.setDate(d.getDate() - dow);
-    return d.toISOString().slice(0, 10);
+    return isoLocal(d);
   }
 
   function statsBuckets() {
@@ -2618,7 +2860,7 @@
     for (let i = n - 1; i >= 0; i--) {
       if (mode === 'week') {
         const d = new Date(today); d.setDate(d.getDate() - i * 7);
-        keys.push(weekStart(d.toISOString().slice(0, 10)));
+        keys.push(weekStart(isoLocal(d)));
       } else {
         const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
         keys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
@@ -2781,6 +3023,173 @@
     </div>`;
   }
 
+  /* ── 몸무게 ──────────────────────────────────────────────────────────────
+     프로필의 몸무게는 한 번 적고 끝이라 '지금 몇 kg' 만 알 수 있습니다.
+     날짜별로 쌓아 두면 운동량 추이와 나란히 놓고 볼 수 있습니다 — 볼륨이
+     느는데 몸무게가 그대로인지, 같이 오르는지는 전혀 다른 신호입니다.
+
+     선 그래프를 쓰는 이유: 몸무게는 이어지는 값이라 막대로 끊어 보이면
+     하루하루가 별개의 사건처럼 읽힙니다. 그리고 0 부터 그리지 않습니다 —
+     80kg 대의 1kg 변화를 0 기준 축에 얹으면 아무 변화도 없어 보입니다. */
+  async function handleAddWeight() {
+    const last = state.metrics[state.metrics.length - 1];
+    const cur = last ? last.weightKg : Number(state.profile?.weightKg) || '';
+    const v = await promptText({
+      title: '몸무게 기록',
+      message: '오늘 몸무게를 적어 주세요.',
+      value: cur ? String(cur) : '',
+      placeholder: 'kg',
+      confirmText: '기록',
+    });
+    if (!v) return;
+    const kg = Number(String(v).replace(/[^0-9.]/g, ''));
+    if (!Number.isFinite(kg) || kg < 20 || kg > 300) { toast('20~300 사이로 적어 주세요'); return; }
+    const row = { date: todayISO(), weightKg: Math.round(kg * 10) / 10 };
+    state.metrics = state.metrics.filter(m => m.date !== row.date).concat(row)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    await WorkoutDB.putMetric(row);
+    cloudSync(() => Cloud.saveMetrics(state.metrics));
+    render();
+    toast(`${row.weightKg}kg 기록했습니다`);
+  }
+
+  function renderWeightCard() {
+    const rows = state.metrics.slice(-30);
+    if (!rows.length) {
+      return `<div class="stats-card">
+        <div class="stats-head"><div class="sec-title">몸무게</div></div>
+        <p class="balance-empty">몸무게를 기록해 두면 운동량과 함께 변화를 볼 수 있어요.</p>
+        <button class="picker-confirm" data-act="add-weight" style="margin-top:12px">몸무게 기록하기</button>
+      </div>`;
+    }
+    const W = 320, H = 108, PAD_L = 34, PAD_B = 18, PAD_T = 10;
+    const plotH = H - PAD_B - PAD_T;
+    const vals = rows.map(r => r.weightKg);
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    if (hi - lo < 2) { const mid = (hi + lo) / 2; lo = mid - 1; hi = mid + 1; }
+    const pad = (hi - lo) * 0.15; lo -= pad; hi += pad;
+    const x = i => PAD_L + (rows.length === 1 ? (W - PAD_L) / 2 : (i / (rows.length - 1)) * (W - PAD_L - 6));
+    const y = v => PAD_T + plotH - ((v - lo) / (hi - lo)) * plotH;
+    const line = rows.map((r, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(r.weightKg).toFixed(1)}`).join(' ');
+    const area = `${line} L${x(rows.length - 1).toFixed(1)} ${PAD_T + plotH} L${x(0).toFixed(1)} ${PAD_T + plotH} Z`;
+    const dots = rows.map((r, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(r.weightKg).toFixed(1)}" r="${i === rows.length - 1 ? 4 : 2.5}"
+      fill="var(--wt-color)"><title>${r.date} · ${r.weightKg}kg</title></circle>`).join('');
+
+    const first = rows[0], last = rows[rows.length - 1];
+    const diff = Math.round((last.weightKg - first.weightKg) * 10) / 10;
+    const trend = diff > 0.1 ? `<span class="pa-up">+${diff}kg</span>`
+                : diff < -0.1 ? `<span class="pa-down">${diff}kg</span>`
+                : `<span class="pa-flat">변화 없음</span>`;
+
+    return `<div class="stats-card">
+      <div class="stats-head">
+        <div class="sec-title">몸무게</div>
+        <button class="stats-tab on" data-act="add-weight">+ 기록</button>
+      </div>
+      <div class="wt-now"><b>${last.weightKg}</b><span>kg</span> ${trend}
+        <em>${esc(shortDate(first.date))} → ${esc(shortDate(last.date))}</em></div>
+      <svg class="ch" viewBox="0 0 ${W} ${H}" role="img" aria-label="몸무게 추이">
+        <text x="${PAD_L - 6}" y="${PAD_T + 4}" class="ch-axis" text-anchor="end">${hi.toFixed(1)}</text>
+        <text x="${PAD_L - 6}" y="${PAD_T + plotH + 4}" class="ch-axis" text-anchor="end">${lo.toFixed(1)}</text>
+        <path d="${area}" fill="var(--wt-fill)"/>
+        <path d="${line}" fill="none" stroke="var(--wt-color)" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round"/>
+        ${dots}
+      </svg>
+    </div>`;
+  }
+
+  /* ── 부위별 분석 카드 ── */
+  function renderPartAnalysisCard() {
+    const w = partWindows();
+    const parts = analysisParts();
+    /* 한 세트도 안 한 부위는 막대를 그려 봐야 0 짜리 선 하나에 "안 함 · 주
+       0.0세트 · 0kg" 이 붙습니다. 네 부위가 그러면 카드 절반이 빈 줄입니다.
+       안 한다는 사실 자체는 균형을 볼 때 중요하니 버리지는 않고, 카드 아래
+       한 줄로 모읍니다. */
+    const trained = parts.filter(p => w.cur[p.id].sets > 0 || w.prev[p.id].sets > 0);
+    const untouched = parts.filter(p => !w.cur[p.id].sets && !w.prev[p.id].sets);
+    if (!trained.length) return '';
+
+    const maxVol = Math.max(...trained.map(p => w.cur[p.id].volPerWeek), 1);
+    const rows = trained.map(part => {
+      const c = w.cur[part.id], pv = w.prev[part.id];
+      const v = volumeVerdict(c.setsPerWeek);
+      const dVol = pctChange(c.volPerWeek, pv.volPerWeek);
+      const arrow = dVol == null ? '' : dVol >= 8 ? `<span class="pa-up">▲${dVol}%</span>`
+                  : dVol <= -8 ? `<span class="pa-down">▼${Math.abs(dVol)}%</span>`
+                  : `<span class="pa-flat">–</span>`;
+      const width = Math.max(2, Math.round((c.volPerWeek / maxVol) * 100));
+      return `<div class="pa-row">
+        <div class="pa-head">
+          <span class="dsum-dot" style="background:${part.color}"></span>
+          <span class="pa-name">${part.label}</span>
+          <span class="pa-verdict ${v.cls}">${v.label}</span>
+          ${arrow}
+        </div>
+        <div class="pa-bar"><span style="width:${width}%;background:${part.color}"></span></div>
+        <div class="pa-meta">주 ${c.setsPerWeek.toFixed(1)}세트 · ${fmtNum(Math.round(c.volPerWeek))}kg${c.maxKg ? ` · 최고 ${c.maxKg}kg` : ''}</div>
+      </div>`;
+    }).join('');
+
+    return `<div class="stats-card">
+      <div class="stats-head">
+        <div class="sec-title">부위별 분석</div>
+        <button class="stats-tab" data-act="vol-info">최근 ${w.weeks}주 ⓘ</button>
+      </div>
+      <div class="pa-list">${rows}</div>
+      ${untouched.length ? (() => {
+        const names = untouched.map(p => p.label);
+        return `<p class="pa-none">최근 ${w.weeks}주 동안 <b>${names.map(esc).join(' · ')}</b>${josa(names[names.length - 1], '은', '는')} 한 번도 안 했어요.</p>`;
+      })() : ''}
+    </div>`;
+  }
+
+  /* ── 변화 리포트 카드 ── */
+  function renderChangeCard() {
+    const w = partWindows();
+    const parts = analysisParts();
+    const items = parts
+      .filter(p => w.cur[p.id].sets || w.prev[p.id].sets)
+      .map(p => ({ part: p, ch: readChange(w.cur[p.id], w.prev[p.id]) }));
+    const stalled = stalledExercises();
+    if (!items.length && !stalled.length) return '';
+
+    /* 전체 합계도 같은 방식으로 한 줄 요약합니다. */
+    const sum = (o) => parts.reduce((a, p) => ({
+      sets: a.sets + o[p.id].sets, setsPerWeek: a.setsPerWeek + o[p.id].setsPerWeek,
+      volPerWeek: a.volPerWeek + o[p.id].volPerWeek, volume: a.volume + o[p.id].volume,
+      maxKg: Math.max(a.maxKg, o[p.id].maxKg),
+    }), { sets: 0, setsPerWeek: 0, volPerWeek: 0, volume: 0, maxKg: 0 });
+    const overall = readChange(sum(w.cur), sum(w.prev));
+
+    const rows = items.map(({ part, ch }) => `
+      <div class="ch-row">
+        <span class="dsum-dot" style="background:${part.color}"></span>
+        <span class="ch-part">${part.label}</span>
+        <span class="ch-text ${ch.tone}">${esc(ch.text)}</span>
+      </div>`).join('');
+
+    const stall = stalled.length ? `
+      <div class="ch-stall-head">무게가 오래 그대로예요</div>
+      ${stalled.map(x => `<div class="ch-stall">
+        <span class="ch-stall-name">${esc(x.name)}</span>
+        <span class="ch-stall-kg">${x.kg}kg</span>
+        <span class="ch-stall-wk">${x.weeks}주째</span>
+      </div>`).join('')}
+      <p class="ch-note">이 정도 기간이면 무게를 조금 올리거나 횟수를 늘려볼 때입니다.</p>` : '';
+
+    return `<div class="stats-card">
+      <div class="stats-head">
+        <div class="sec-title">변화</div>
+        <span class="balance-window">최근 ${w.weeks}주 vs 직전 ${w.weeks}주</span>
+      </div>
+      <div class="ch-overall ${overall.tone}">${esc(overall.text)}</div>
+      <div class="ch-list">${rows}</div>
+      ${stall}
+    </div>`;
+  }
+
   function renderPRCard() {
     const rows = allPersonalBests();
     if (!rows.length) return '';
@@ -2828,6 +3237,9 @@
        올 이유인 '얼마나 했나' 가 그 아래 파묻힙니다. 어느 날 운동했는지는
        위 달력이 이미 보여주고, 날짜를 누르면 그 자리에서 펼쳐집니다. */
     body += renderStatsCard();
+    body += renderPartAnalysisCard();
+    body += renderChangeCard();
+    body += renderWeightCard();
     body += renderPRCard();
 
     const rows = state.sessions.filter(s => s.date.startsWith(mKey));
@@ -3069,6 +3481,8 @@
     if (act === 'stats-range') { state.statsRange = btn.dataset.range; render(); return; }
     if (act === 'pr-toggle') { state.prAll = !state.prAll; render(); return; }
     if (act === 'hist-all')  { state.histAll = !state.histAll; render(); return; }
+    if (act === 'add-weight') { await handleAddWeight(); return; }
+    if (act === 'vol-info')   { await showVolumeInfo(); return; }
     if (act === 'open-routines') { state.routineSheet = true; render(); return; }
     if (act === 'new-routine')   { openRoutineEditor(null); return; }
     if (act === 'edit-routine')  { openRoutineEditor(btn.dataset.id); return; }
@@ -4229,6 +4643,42 @@
     return [...map.values()];
   }
 
+  /* 루틴 합치기 — 클라우드를 먼저 깔고 이 기기 것을 그 위에 얹습니다.
+     같은 id 가 양쪽에 있으면 이 기기 쪽이 방금 편집한 것일 가능성이 높아
+     이 기기를 남기되, '마지막으로 쓴 시각'만은 두 값 중 큰 쪽을 씁니다 —
+     폰에서 쓴 루틴이 노트북에서 다시 오래된 것처럼 보이면 안 됩니다.
+
+     삭제는 이 방식으로 되돌아옵니다(클라우드에 남아 있던 줄이 다시 들어옴).
+     루틴 삭제는 곧바로 saveRoutines() 로 클라우드에도 반영되므로, 두 기기가
+     동시에 오프라인인 드문 경우에만 생기는 일이고, 그 대가로 새 기기에서
+     루틴이 통째로 비어 보이는 일은 없어집니다. */
+  function mergeRoutines(localRows, cloudRows) {
+    const map = new Map();
+    for (const row of cloudRows || []) {
+      if (row && row.id && row.name) map.set(row.id, row);
+    }
+    for (const row of localRows || []) {
+      if (!row || !row.id) continue;
+      const prev = map.get(row.id);
+      const usedAt = Math.max(Number(row.usedAt) || 0, prev ? Number(prev.usedAt) || 0 : 0);
+      map.set(row.id, { ...row, usedAt });
+    }
+    return [...map.values()].sort((a, b) => (b.usedAt || 0) - (a.usedAt || 0));
+  }
+
+  /* 몸무게는 하루 한 줄이고 날짜가 열쇠입니다. 같은 날 양쪽에 값이 있으면
+     이 기기 것을 남깁니다 — 오늘 잰 값을 적은 곳이 이 기기이기 때문입니다. */
+  function mergeMetrics(localRows, cloudRows) {
+    const map = new Map();
+    for (const row of cloudRows || []) {
+      if (row && row.date && Number(row.weightKg) > 0) map.set(row.date, row);
+    }
+    for (const row of localRows || []) {
+      if (row && row.date && Number(row.weightKg) > 0) map.set(row.date, row);
+    }
+    return [...map.values()].sort((a, b) => a.date.localeCompare(b.date));
+  }
+
   /* ── Importing pre-login records ──────────────────────────────────────────
      Someone can log workouts without an account, then sign up later — that
      data is theirs and should be offered, not silently stranded.
@@ -4271,6 +4721,7 @@
     state.sessions = await WorkoutDB.getAllSessions();
     state.customExercises = await WorkoutDB.getCustomExercises();
     state.routines = await WorkoutDB.getRoutines();
+    state.metrics = await WorkoutDB.getMetrics();
     const saved = await WorkoutDB.getSession(today);
     state.session = normalizeSession(saved || emptySession(today));
     closeAllSheets();
@@ -4474,6 +4925,22 @@
       const customExercises = mergeCustom(localCustom, cloudData.customExercises);
       await WorkoutDB.replaceAll(sessions, customExercises);
       await withTimeout(Cloud.pushAll(sessions, customExercises), 15000, '저장');
+
+      /* 루틴과 몸무게도 같이 맞춥니다. 예전에는 저장만 올려보내고 내려받는
+         쪽이 없어서, 새 기기로 로그인하면 만들어 둔 루틴과 몸무게 기록이
+         통째로 사라진 것처럼 보였습니다. */
+      const routines = mergeRoutines(await WorkoutDB.getRoutines(), cloudData.routines);
+      const metrics  = mergeMetrics(await WorkoutDB.getMetrics(), cloudData.metrics);
+      for (const r of routines) await WorkoutDB.putRoutine(clone(r));
+      for (const m of metrics)  await WorkoutDB.putMetric(clone(m));
+      state.routines = routines;
+      state.metrics  = metrics;
+      /* 합친 결과를 다시 올려야 이 기기에만 있던 줄이 클라우드로 갑니다.
+         실패해도 동기화 전체를 무너뜨릴 만한 일은 아니라 따로 감쌉니다. */
+      try {
+        await withTimeout(Cloud.saveRoutines(routines), 10000, '루틴 저장');
+        await withTimeout(Cloud.saveMetrics(metrics), 10000, '몸무게 저장');
+      } catch (err) { console.warn('routine/metric push failed', err); }
 
       /* Refresh data in place — loadWorkspace() would reset the tab and close
          sheets, yanking the user out of whatever they were editing. */

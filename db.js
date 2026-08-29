@@ -3,9 +3,10 @@ const WorkoutDB = (() => {
   /* 저장소를 하나 추가할 때마다 이 숫자를 올려야 합니다.
        1 → sessions, customExercises
        2 → + routines (루틴 저장)
+       3 → + metrics  (몸무게 등 신체 기록)
      올리는 걸 잊으면, 아래 '빠진 저장소 복구' 가 DB 를 2 로 올려놓은 뒤
      다음 실행에서 다시 1 을 요청하게 되어 VersionError 가 납니다. */
-  const DB_VERSION = 2;
+  const DB_VERSION = 3;
   let scope = "guest";
   let dbPromise = null;
 
@@ -36,6 +37,10 @@ const WorkoutDB = (() => {
     /* 저장한 루틴 (자주 하는 부위·운동 조합) */
     if (!db.objectStoreNames.contains("routines")) {
       db.createObjectStore("routines", { keyPath: "id" });
+    }
+    /* 몸무게 같은 신체 기록. 하루에 하나면 충분하므로 날짜가 곧 키입니다. */
+    if (!db.objectStoreNames.contains("metrics")) {
+      db.createObjectStore("metrics", { keyPath: "date" });
     }
   }
 
@@ -76,7 +81,8 @@ const WorkoutDB = (() => {
          onupgradeneeded and repairs the database in place. */
       if (!db.objectStoreNames.contains("sessions") ||
           !db.objectStoreNames.contains("customExercises") ||
-          !db.objectStoreNames.contains("routines")) {
+          !db.objectStoreNames.contains("routines") ||
+          !db.objectStoreNames.contains("metrics")) {
         const bumped = db.version + 1;
         try { db.close(); } catch (_) {}
         db = await openAt(dbName(), bumped);
@@ -169,6 +175,27 @@ const WorkoutDB = (() => {
     const db = await open();
     const tx = db.transaction("routines", "readwrite");
     tx.objectStore("routines").delete(id);
+    return txDone(tx);
+  }
+
+  async function getMetrics() {
+    const db = await open();
+    const tx = db.transaction("metrics", "readonly");
+    const rows = await requestToPromise(tx.objectStore("metrics").getAll());
+    return (rows || []).sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  async function putMetric(row) {
+    const db = await open();
+    const tx = db.transaction("metrics", "readwrite");
+    tx.objectStore("metrics").put(row);
+    return txDone(tx);
+  }
+
+  async function deleteMetric(date) {
+    const db = await open();
+    const tx = db.transaction("metrics", "readwrite");
+    tx.objectStore("metrics").delete(date);
     return txDone(tx);
   }
 
@@ -276,6 +303,9 @@ const WorkoutDB = (() => {
     getRoutines,
     putRoutine,
     deleteRoutine,
+    getMetrics,
+    putMetric,
+    deleteMetric,
     replaceAll,
     exportAll,
     importAll,
