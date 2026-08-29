@@ -607,29 +607,114 @@
     } catch (_) {}
   }
 
+  /* ── 앱 밖에서도 남는 휴식 타이머 ────────────────────────────────────────
+     웹앱은 다른 앱 위에 떠 있는 창(안드로이드의 오버레이)을 만들 수 없습니다.
+     그건 네이티브 앱만 가진 권한입니다. 대신 웹앱이 할 수 있는 두 가지로
+     같은 목적을 채웁니다.
+
+     1) 타이머를 종료 '시각'으로 저장해 둡니다. 앱을 완전히 껐다 켜도 남은
+        시간이 그대로 이어집니다 — 화면이 꺼져 있던 동안 시간이 멈추지
+        않으니까요.
+     2) 휴식을 시작할 때 알림을 하나 띄우고 거기에 끝나는 시각을 적습니다.
+        알림창을 내리면 "11:32 종료" 가 보입니다. 남은 시간을 1초씩 세는
+        알림은 만들 수 없지만(브라우저가 알림을 대신 갱신해 주지 않습니다),
+        끝나는 시각은 앱이 죽어도 계속 맞습니다.
+
+     알림은 페이지가 아니라 서비스워커로 띄웁니다. 페이지에서 띄운 알림은
+     탭이 사라지면 같이 사라지지만, 서비스워커 알림은 남습니다. */
+  const REST_KEY = 'fitlog-rest';
+
+  function saveRestTimer() {
+    try {
+      if (state.restTimer) localStorage.setItem(REST_KEY, JSON.stringify({
+        endsAt: state.restTimer.endsAt, duration: state.restTimer.duration, label: state.restTimer.label,
+      }));
+      else localStorage.removeItem(REST_KEY);
+    } catch (_) {}
+  }
+
+  function restoreRestTimer() {
+    if (!restTimerOn()) return;
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(REST_KEY) || 'null'); } catch (_) {}
+    if (!saved || !saved.endsAt) return;
+    /* 이미 끝난 타이머는 되살리지 않습니다 — 어제 남은 알림이 오늘 뜨면
+       그게 더 이상합니다. */
+    if (saved.endsAt <= Date.now()) { try { localStorage.removeItem(REST_KEY); } catch (_) {} return; }
+    state.restTimer = { ...saved, chimed: false };
+    renderRestTimerBar();
+  }
+
+  function endClock(ts) {
+    const d = new Date(ts);
+    return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  }
+
+  async function showRestNotification(title, body, silent) {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    const opts = {
+      body, tag: 'fitlog-rest', renotify: !silent, silent: !!silent,
+      icon: './icons/icon-192.png', badge: './icons/icon-192.png',
+    };
+    try {
+      const reg = navigator.serviceWorker && await navigator.serviceWorker.ready;
+      if (reg && reg.showNotification) { await reg.showNotification(title, opts); return; }
+    } catch (_) {}
+    try { new Notification(title, opts); } catch (_) {}
+  }
+
+  async function clearRestNotification() {
+    try {
+      const reg = navigator.serviceWorker && await navigator.serviceWorker.ready;
+      if (!reg || !reg.getNotifications) return;
+      (await reg.getNotifications({ tag: 'fitlog-rest' })).forEach(n => n.close());
+    } catch (_) {}
+  }
+
   function startRestTimer(seconds, label) {
     /* Checked here rather than at each call site so nothing can start the timer
        behind the setting's back. */
     if (!restTimerOn()) return;
     state.restTimer = { endsAt: Date.now() + seconds * 1000, duration: seconds, label: label || '', chimed: false };
+    saveRestTimer();
     renderRestTimerBar();
     /* Ask once, lazily, only when the feature is actually used — so a background
        notification can fire if the user switches tabs/apps while resting. Never
        re-prompt if they dismissed or denied it. */
     try {
-      if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+      if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission().then(() => pushRestNotification());
+      } else pushRestNotification();
     } catch (_) {}
+  }
+
+  /* 남은 시간과 끝나는 시각을 알림에 적습니다. 앱이 살아 있는 동안에는
+     주기적으로 다시 적어 남은 시간이 갱신되고, 앱이 죽으면 마지막에 적힌
+     "끝나는 시각" 이 그대로 남습니다. */
+  function pushRestNotification() {
+    const rt = state.restTimer;
+    if (!rt) return;
+    const left = Math.max(0, Math.round((rt.endsAt - Date.now()) / 1000));
+    if (left <= 0) return;
+    const mm = Math.floor(left / 60), ss = left % 60;
+    const body = `${mm}:${String(ss).padStart(2,'0')} 남음 · ${endClock(rt.endsAt)} 종료`
+               + (rt.label ? ` · ${rt.label}` : '');
+    showRestNotification('휴식 중', body, true);
   }
 
   function adjustRestTimer(deltaSec) {
     if (!state.restTimer) return;
     state.restTimer.endsAt += deltaSec * 1000;
     state.restTimer.duration = Math.max(5, state.restTimer.duration + deltaSec);
+    saveRestTimer();
     renderRestTimerBar();
+    pushRestNotification();
   }
 
   function cancelRestTimer() {
     state.restTimer = null;
+    saveRestTimer();
+    clearRestNotification();
     document.querySelector('.rest-timer-bar')?.remove();
     document.body.classList.remove('has-rest-timer');
   }
@@ -642,11 +727,13 @@
     const remaining = Math.max(0, Math.round((rt.endsAt - Date.now()) / 1000));
     if (remaining <= 0 && !rt.chimed) {
       rt.chimed = true;
+      try { localStorage.removeItem(REST_KEY); } catch (_) {}
       playRestChime();
       if (navigator.vibrate) { try { navigator.vibrate([120, 80, 120]); } catch (_) {} }
-      if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
-        try { new Notification('휴식 종료', { body: '다음 세트를 시작하세요 💪', tag: 'fitlog-rest' }); } catch (_) {}
-      }
+      /* 끝났을 때는 화면을 보고 있든 아니든 알립니다 — 다른 앱을 보다가
+         돌아오는 게 이 기능의 목적이라, 화면이 켜져 있다고 조용할 이유가
+         없습니다. */
+      showRestNotification('휴식 종료', (rt.label ? rt.label + ' · ' : '') + '다음 세트를 시작하세요 💪', false);
     }
 
     const pct = Math.max(0, Math.min(100, (remaining / rt.duration) * 100));
@@ -692,6 +779,14 @@
   function startRestTicker() {
     if (_restTickHandle) return;
     _restTickHandle = setInterval(() => { if (state.restTimer) renderRestTimerBar(); }, 250);
+    /* 알림 본문은 15초에 한 번만 다시 씁니다. 매초 갱신하면 알림이 계속
+       새로 뜬 것처럼 굴어 시끄럽습니다. */
+    setInterval(() => { if (state.restTimer && !state.restTimer.chimed) pushRestNotification(); }, 15000);
+    /* 화면이 꺼져 있던 동안에도 시간은 흘렀으므로, 돌아오는 순간 다시 계산해
+       바를 맞춥니다. */
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && state.restTimer) renderRestTimerBar();
+    });
   }
 
   /* ── Navigation ─────────────────────────── */
@@ -4091,6 +4186,8 @@
     markDisplayMode();
     render();
     startRestTicker();
+    /* 앱을 껐다 켜도 쉬던 중이었다면 남은 시간이 이어집니다. */
+    restoreRestTimer();
     watchForGateGoingStale();
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js').catch(()=>{});

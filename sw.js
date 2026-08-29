@@ -1,4 +1,4 @@
-const CACHE = "fitlog-v44";
+const CACHE = "fitlog-v45";
 /* Photos live in their own cache that version bumps do NOT clear. They never
    change once published, and re-downloading 2MB of them on every update would
    spend the free tier's daily transfer for nothing. */
@@ -6,13 +6,13 @@ const MEDIA_CACHE = "fitlog-media-v1";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=44",
-  "./app.js?v=44",
-  "./db.js?v=44",
-  "./exercises.js?v=44",
-  "./exercise-photos.js?v=44",
-  "./cloud.js?v=44",
-  "./firebase-config.js?v=44",
+  "./styles.css?v=45",
+  "./app.js?v=45",
+  "./db.js?v=45",
+  "./exercises.js?v=45",
+  "./exercise-photos.js?v=45",
+  "./cloud.js?v=45",
+  "./firebase-config.js?v=45",
   "./manifest.json",
   "./icons/icon.svg",
   "./icons/icon-192.png",
@@ -104,5 +104,20 @@ self.addEventListener("fetch", event => {
         caches.match(event.request)
           .then(cached => cached || caches.match("./index.html"))
       )
+  );
+});
+
+/* 휴식 알림을 누르면 앱으로 돌아옵니다. 이미 열려 있는 창이 있으면 그 창을
+   앞으로 가져오고(새 창을 또 띄우면 기록이 두 군데로 갈립니다), 없을 때만
+   새로 엽니다. */
+self.addEventListener("notificationclick", event => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(list => {
+      for (const c of list) {
+        if ("focus" in c) return c.focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow("./");
+    })
   );
 });
