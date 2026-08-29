@@ -28,6 +28,10 @@ const WorkoutDB = (() => {
     if (!db.objectStoreNames.contains("customExercises")) {
       db.createObjectStore("customExercises", { keyPath: "id" });
     }
+    /* 저장한 루틴 (자주 하는 부위·운동 조합) */
+    if (!db.objectStoreNames.contains("routines")) {
+      db.createObjectStore("routines", { keyPath: "id" });
+    }
   }
 
   function openAt(name, version) {
@@ -52,7 +56,8 @@ const WorkoutDB = (() => {
          sign-out below it never ran. Reopening one version higher re-runs
          onupgradeneeded and repairs the database in place. */
       if (!db.objectStoreNames.contains("sessions") ||
-          !db.objectStoreNames.contains("customExercises")) {
+          !db.objectStoreNames.contains("customExercises") ||
+          !db.objectStoreNames.contains("routines")) {
         const bumped = db.version + 1;
         try { db.close(); } catch (_) {}
         db = await openAt(dbName(), bumped);
@@ -124,6 +129,27 @@ const WorkoutDB = (() => {
     const db = await open();
     const tx = db.transaction("customExercises", "readwrite");
     tx.objectStore("customExercises").delete(id);
+    return txDone(tx);
+  }
+
+  async function getRoutines() {
+    const db = await open();
+    const tx = db.transaction("routines", "readonly");
+    const rows = await requestToPromise(tx.objectStore("routines").getAll());
+    return (rows || []).sort((a, b) => (b.usedAt || 0) - (a.usedAt || 0));
+  }
+
+  async function putRoutine(routine) {
+    const db = await open();
+    const tx = db.transaction("routines", "readwrite");
+    tx.objectStore("routines").put(routine);
+    return txDone(tx);
+  }
+
+  async function deleteRoutine(id) {
+    const db = await open();
+    const tx = db.transaction("routines", "readwrite");
+    tx.objectStore("routines").delete(id);
     return txDone(tx);
   }
 
@@ -224,6 +250,9 @@ const WorkoutDB = (() => {
     getCustomExercises,
     putCustomExercise,
     deleteCustomExercise,
+    getRoutines,
+    putRoutine,
+    deleteRoutine,
     replaceAll,
     exportAll,
     importAll,

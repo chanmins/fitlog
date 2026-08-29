@@ -1479,7 +1479,7 @@ body.overlay-open { overflow: hidden; }
    러닝(km)과 부위별 세트는 단위가 달라 그래프를 따로 둡니다. 한 그래프에
    축을 두 개 그리면 두 값이 서로 관계있는 것처럼 읽히는데, 실제로는
    아무 관계도 없습니다. */
-:root { --run-color: #4ecdc4; }
+:root { --run-color: #4ecdc4; --vol-color: #B8E23C; }
 
 .stats-card {
   background: var(--surface); border: 1px solid var(--line);
@@ -1495,7 +1495,7 @@ body.overlay-open { overflow: hidden; }
 
 .stats-sum { display: flex; gap: 8px; margin-bottom: 16px; }
 .stats-sum > div {
-  flex: 1; background: var(--surface-2); border-radius: var(--r-sm);
+  flex: 1; min-width: 0; background: var(--surface-2); border-radius: var(--r-sm);
   padding: 9px 6px; text-align: center;
 }
 .stats-sum b { display: block; font-size: 17px; font-weight: 800; color: var(--text); }
@@ -1516,3 +1516,61 @@ body.overlay-open { overflow: hidden; }
 .ch-legend { display: flex; flex-wrap: wrap; gap: 5px 10px; margin-top: 2px; }
 .ch-leg { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 700; color: var(--sub); }
 .ch-leg i { width: 8px; height: 8px; border-radius: 3px; display: inline-block; }
+
+/* ── 개인 기록 ──────────────────────────────────────────────────────────
+   세트 줄에서는 자리를 거의 안 쓰면서 눈에 띄어야 해서 작은 배지로 둡니다. */
+.pr-flag {
+  font-size: 9px; font-weight: 900; letter-spacing: .04em;
+  color: var(--bg); background: var(--accent);
+  padding: 2px 5px; border-radius: 5px; justify-self: center;
+}
+.dsum-set.pr { border-color: var(--accent-line); }
+.dsum-set em {
+  font-style: normal; font-size: 8px; font-weight: 900;
+  color: var(--accent); margin-left: 4px; letter-spacing: .04em;
+}
+.pr-list { display: flex; flex-direction: column; gap: 2px; }
+.pr-row {
+  display: grid; grid-template-columns: 8px 1fr auto auto; gap: 9px;
+  align-items: center; padding: 9px 2px; border-bottom: 1px solid var(--line);
+}
+.pr-row:last-child { border-bottom: none; }
+.pr-dot { width: 8px; height: 8px; border-radius: 50%; }
+.pr-name { font-size: 13px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-kg { font-size: 14px; font-weight: 800; color: var(--accent); }
+.pr-kg i { font-style: normal; font-size: 10px; font-weight: 700; color: var(--muted); }
+.pr-kg s { text-decoration: none; font-size: 11px; font-weight: 700; color: var(--muted); }
+.pr-date { font-size: 10px; font-weight: 700; color: var(--muted); }
+
+/* ── 루틴 ───────────────────────────────────────────────────────────────── */
+.routine-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--surface-2); color: var(--sub);
+  font-size: 12px; font-weight: 800; cursor: pointer;
+}
+.routine-save {
+  width: 100%; margin-top: 10px; padding: 11px;
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  border-radius: var(--r-md); border: 1px dashed var(--line);
+  background: transparent; color: var(--muted);
+  font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.routine-save:active { background: var(--surface-2); }
+.routine-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.routine-main {
+  flex: 1; min-width: 0; text-align: left; padding: 11px 12px;
+  border-radius: var(--r-md); border: 1px solid var(--line);
+  background: var(--surface-2); cursor: pointer;
+}
+.routine-name { font-size: 14px; font-weight: 800; color: var(--text); }
+.routine-sub { font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 3px; }
+
+/* 한 줄 입력 대화상자 */
+.dialog-input {
+  width: 100%; margin: 12px 0 4px; padding: 11px 13px;
+  border-radius: var(--r-sm); border: 1.5px solid var(--line);
+  background: var(--surface-2); color: var(--text);
+  font-size: 15px; font-weight: 700; font-family: inherit;
+}
+.dialog-input:focus { outline: none; border-color: var(--accent-line); }

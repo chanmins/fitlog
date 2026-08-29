@@ -117,6 +117,8 @@
     histDay: null,
     /* 운동량 추이 그래프의 범위 — 'week' | 'month' */
     statsRange: 'week',
+    /* 개인 기록 목록을 전부 펼쳤는지 */
+    prAll: false,
 
     /* Toast */
     toast: '',
@@ -236,6 +238,99 @@
     }
     return null;
   }
+  /* ── 개인 기록 (PR) ──────────────────────────────────────────────────────
+     "이번 세트가 지금까지 중 최고인가" 를 판단합니다. 기준은 두 가지입니다.
+
+       · 최고 중량   그 운동에서 들어본 가장 무거운 무게
+       · 추정 1RM    한 번에 들 수 있는 무게의 추정치 (Epley: kg × (1 + 회수/30))
+
+     중량만 보면 100kg×1 이 90kg×10 을 이깁니다. 실제로는 후자가 훨씬 강한
+     수행인데도요. 그래서 둘 다 봅니다. 웜업 세트는 제외합니다 — 가볍게 몸을
+     푼 것을 기록이라고 부르면 기록이라는 말이 값을 잃습니다. */
+  function epley1RM(kg, reps) {
+    if (!Number.isFinite(kg) || !Number.isFinite(reps) || kg <= 0 || reps <= 0) return 0;
+    return kg * (1 + reps / 30);
+  }
+
+  function setScore(st) {
+    const kg = Number(st.kg), reps = Number(st.reps);
+    if (st.warmup || !Number.isFinite(kg) || !Number.isFinite(reps) || kg <= 0 || reps <= 0) return null;
+    return { kg, reps, orm: epley1RM(kg, reps) };
+  }
+
+  /* 이 운동의 지금까지 최고 기록. beforeDate 를 주면 그 날은 빼고 셉니다
+     (오늘 세트가 오늘의 다른 세트에 밀려 기록이 아닌 것으로 판정되면
+     곤란하므로, 판정할 때는 항상 오늘을 빼고 봅니다). */
+  function personalBest(name, beforeDate) {
+    let best = null;
+    for (const s of state.sessions) {
+      if (beforeDate && s.date >= beforeDate) continue;
+      for (const ex of s.exercises || []) {
+        if (ex.name !== name) continue;
+        for (const st of ex.sets || []) {
+          if (!st.done) continue;
+          const sc = setScore(st);
+          if (!sc) continue;
+          if (!best || sc.kg > best.kg) best = { ...sc, date: s.date, kind: 'kg' };
+        }
+      }
+    }
+    return best;
+  }
+
+  function bestOrm(name, beforeDate) {
+    let best = 0;
+    for (const s of state.sessions) {
+      if (beforeDate && s.date >= beforeDate) continue;
+      for (const ex of s.exercises || []) {
+        if (ex.name !== name) continue;
+        for (const st of ex.sets || []) {
+          if (!st.done) continue;
+          const sc = setScore(st);
+          if (sc && sc.orm > best) best = sc.orm;
+        }
+      }
+    }
+    return best;
+  }
+
+  /* 방금 완료한 세트가 기록을 깼는지. 깼으면 무엇을 깼는지 돌려줍니다. */
+  function checkPR(ex, set, date) {
+    const sc = setScore(set);
+    if (!sc) return null;
+    const prevKg = personalBest(ex.name, date);
+    const prevOrm = bestOrm(ex.name, date);
+    /* 첫 기록은 PR 로 치지 않습니다. 처음 한 것은 전부 최고 기록이라
+       축하가 의미를 잃습니다. */
+    if (!prevKg && !prevOrm) return null;
+    if (sc.kg > (prevKg ? prevKg.kg : 0)) return { type: 'kg', kg: sc.kg, reps: sc.reps, prev: prevKg ? prevKg.kg : 0 };
+    if (sc.orm > prevOrm + 0.01) return { type: 'orm', kg: sc.kg, reps: sc.reps, orm: sc.orm, prev: prevOrm };
+    return null;
+  }
+
+  /* 운동별 최고 기록 목록 — 히스토리의 "개인 기록" 카드에서 씁니다. */
+  function allPersonalBests() {
+    const map = new Map();
+    for (const s of state.sessions) {
+      for (const ex of s.exercises || []) {
+        for (const st of ex.sets || []) {
+          if (!st.done) continue;
+          const sc = setScore(st);
+          if (!sc) continue;
+          const cur = map.get(ex.name);
+          if (!cur || sc.kg > cur.kg) map.set(ex.name, { ...sc, date: s.date, part: ex.part });
+        }
+      }
+    }
+    return [...map.entries()]
+      .map(([name, v]) => ({ name, ...v }))
+      .sort((a, b) => {
+        const pa = PARTS.findIndex(p => p.id === a.part), pb = PARTS.findIndex(p => p.id === b.part);
+        if (pa !== pb) return pa - pb;
+        return b.kg - a.kg;
+      });
+  }
+
   function fmtSets(sets) {
     return (sets||[])
       .filter(s => s.kg!==''||s.reps!=='')
@@ -458,6 +553,51 @@
         const first = wrap.querySelector('.dialog-btn.cancel');
         if (first) first.focus();
       });
+    });
+  }
+
+  /* ask 와 같은 모양이되 한 줄을 받아 오는 대화상자. 브라우저 기본
+     window.prompt 은 ask 를 걷어낸 이유와 똑같은 문제를 갖고 있어 쓰지
+     않습니다. */
+  function promptText(opts) {
+    const o = opts || {};
+    return new Promise(resolve => {
+      const wrap = document.createElement('div');
+      wrap.className = 'dialog-backdrop';
+      wrap.innerHTML = `
+        <div class="dialog" role="dialog" aria-modal="true">
+          <div class="dialog-title">${esc(o.title || '입력')}</div>
+          ${o.message ? `<div class="dialog-body">${esc(o.message)}</div>` : ''}
+          <input class="dialog-input" type="text" maxlength="40"
+                 value="${esc(o.value || '')}" placeholder="${esc(o.placeholder || '')}">
+          <div class="dialog-actions">
+            <button class="dialog-btn cancel" data-v="0">취소</button>
+            <button class="dialog-btn go" data-v="1">${esc(o.confirmText || '저장')}</button>
+          </div>
+        </div>`;
+      const input = wrap.querySelector('.dialog-input');
+      let settled = false;
+      const close = (val) => {
+        if (settled) return;
+        settled = true;
+        wrap.classList.add('is-closing');
+        setTimeout(() => wrap.remove(), 140);
+        document.removeEventListener('keydown', onKey);
+        resolve(val);
+      };
+      const submit = () => close(input.value.trim() || null);
+      const onKey = (e) => {
+        if (e.key === 'Escape') close(null);
+        if (e.key === 'Enter' && document.activeElement === input) submit();
+      };
+      wrap.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-v]');
+        if (btn) { btn.dataset.v === '1' ? submit() : close(null); return; }
+        if (e.target === wrap) close(null);
+      });
+      document.addEventListener('keydown', onKey);
+      document.body.appendChild(wrap);
+      requestAnimationFrame(() => { input.focus(); input.select(); });
     });
   }
 
@@ -820,6 +960,7 @@
   function closeAllSheets() {
     state.pickerPart = null;
     state.pickSelection = [];
+    state.routineSheet = false;
     state.exerciseInfoId = null;
     state.weightPicker = null;
     state.repsPicker = null;
@@ -945,6 +1086,7 @@
     if (state.repsPicker)     html += renderRepsPickerSheet();
     if (state.exerciseInfoId) html += renderExerciseInfoSheet(state.exerciseInfoId);
     if (state.pickerPart)     html += renderExercisePickerSheet(state.pickerPart);
+    if (state.routineSheet)   html += renderRoutineSheet();
 
     html += renderBottomNav();
     /* Full-screen overlay, so it can be opened from home, history or the
@@ -1957,8 +2099,19 @@
           </button>
         </div>
         ${summary}
-        <div class="sec-head" style="margin-top:18px"><div class="sec-title">부위 선택</div></div>
+        <div class="sec-head" style="margin-top:18px">
+          <div class="sec-title">부위 선택</div>
+          <button class="routine-btn" data-act="open-routines">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+            루틴${state.routines.length ? ` ${state.routines.length}` : ''}
+          </button>
+        </div>
         <div class="part-grid">${partTiles}</div>
+        ${(state.session.exercises || []).length ? `
+        <button class="routine-save" data-act="save-routine">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
+          지금 구성을 루틴으로 저장
+        </button>` : ''}
         ${blocks}
         ${finishBar}
         ${state.editingPast ? `
@@ -2016,8 +2169,8 @@
             const val = hold
               ? `${esc(String(reps))}<i>초</i>`
               : `${esc(String(kg))}<i>kg</i> × ${esc(String(reps))}`;
-            return `<span class="dsum-set${warm ? ' warm' : ''}${set.done ? ' done' : ''}">
-              <b>${warm ? 'W' : workingNo}</b>${val}
+            return `<span class="dsum-set${warm ? ' warm' : ''}${set.done ? ' done' : ''}${set.pr ? ' pr' : ''}">
+              <b>${warm ? 'W' : workingNo}</b>${val}${set.pr ? '<em>PR</em>' : ''}
             </span>`;
           }).join('');
           const p = exProgress(ex);
@@ -2123,6 +2276,7 @@
           <span class="val-chip-num">${reps}</span>
           <span class="val-chip-unit">${hold ? '초' : '회'}</span>
         </button>
+        ${set.pr ? '<span class="pr-flag" title="개인 기록">PR</span>' : ''}
         <button class="done-toggle${done?' done':''}" data-act="toggle-done" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="세트 완료">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
         </button>
@@ -2458,7 +2612,7 @@
         keys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
       }
     }
-    const blank = () => ({ km: 0, min: 0, sets: {}, total: 0, days: 0 });
+    const blank = () => ({ km: 0, min: 0, sets: {}, total: 0, days: 0, volume: 0 });
     const map = new Map(keys.map(k => [k, blank()]));
     for (const s of state.sessions) {
       const key = mode === 'week' ? weekStart(s.date) : monthKey(s.date);
@@ -2470,6 +2624,13 @@
         if (!done) continue;
         b.sets[ex.part] = (b.sets[ex.part] || 0) + done;
         b.total += done; any = true;
+        /* 완료한 세트만 볼륨에 넣습니다. 적어만 두고 안 한 세트까지 더하면
+           숫자가 실제 한 운동량보다 커집니다. */
+        b.volume += (ex.sets || []).reduce((sum, st) => {
+          if (!st.done || st.warmup) return sum;
+          const kg = Number(st.kg), reps = Number(st.reps);
+          return sum + (Number.isFinite(kg) && Number.isFinite(reps) ? kg * reps : 0);
+        }, 0);
       }
       const km = Number(s.run?.km), min = Number(s.run?.minutes);
       if (Number.isFinite(km) && km) { b.km += km; any = true; }
@@ -2560,9 +2721,25 @@
     const legend = usedParts.map(p =>
       `<span class="ch-leg"><i style="background:${p.color}"></i>${esc(p.label)}</span>`).join('');
 
+    /* ── 총 볼륨 (무게 × 횟수)
+          세트 수는 60kg×10 과 100kg×10 을 똑같이 1세트로 셉니다. 실제로 든
+          무게를 곱해야 힘든 날과 가벼운 날이 구분됩니다. 한 종류라 범례는
+          필요 없습니다 — 제목이 곧 이름입니다. */
+    const maxVol = Math.max(...rows.map(r => r.volume), 1);
+    const fmtVol = v => v >= 10000 ? `${(v / 1000).toFixed(1)}t` : fmtNum(v);
+    const volBars = rows.map((r, i) => {
+      const x = PAD_L + slot * i + (slot - bw) / 2;
+      const h = r.volume ? Math.max(3, (r.volume / maxVol) * plotH) : 0;
+      const y = PAD_T + plotH - h;
+      return bar(x, y, bw, h, 'var(--vol-color)', 4)
+        + (r.volume ? `<text x="${x + bw / 2}" y="${y - 4}" class="ch-val">${fmtVol(r.volume)}</text>` : '')
+        + `<title>${r.label} · ${fmtNum(r.volume)}kg</title>`;
+    }).join('');
+
     const totKm = rows.reduce((a, r) => a + r.km, 0);
     const totSets = rows.reduce((a, r) => a + r.total, 0);
     const totDays = rows.reduce((a, r) => a + r.days, 0);
+    const totVol = rows.reduce((a, r) => a + r.volume, 0);
 
     return `<div class="stats-card">
       <div class="stats-head"><div class="sec-title">운동량 추이</div>${toggle}</div>
@@ -2570,6 +2747,7 @@
       <div class="stats-sum">
         <div><b>${totDays}</b><span>운동일</span></div>
         <div><b>${totSets}</b><span>세트</span></div>
+        <div><b>${fmtVol(totVol)}</b><span>총 볼륨</span></div>
         <div><b>${totKm % 1 ? totKm.toFixed(1) : totKm}</b><span>km</span></div>
       </div>
 
@@ -2578,11 +2756,38 @@
         ${base}${yLab(maxKm % 1 ? maxKm.toFixed(1) : maxKm)}${runBars}${axis}
       </svg>
 
+      <div class="ch-title">총 볼륨 <span>무게 × 횟수</span></div>
+      <svg class="ch" viewBox="0 0 ${W} ${H}" role="img" aria-label="${modeLabel}별 총 볼륨">
+        ${base}${yLab(fmtVol(maxVol))}${volBars}${axis}
+      </svg>
+
       <div class="ch-title">부위별 세트</div>
       <svg class="ch" viewBox="0 0 ${W} ${H}" role="img" aria-label="${modeLabel}별 부위 세트 수">
         ${base}${yLab(maxSets)}${setBars}${axis}
       </svg>
       ${legend ? `<div class="ch-legend">${legend}</div>` : ''}
+    </div>`;
+  }
+
+  function renderPRCard() {
+    const rows = allPersonalBests();
+    if (!rows.length) return '';
+    const shown = state.prAll ? rows : rows.slice(0, 6);
+    const items = shown.map(r => {
+      const part = PARTS.find(p => p.id === r.part);
+      return `<div class="pr-row">
+        <span class="pr-dot" style="background:${part ? part.color : 'var(--muted)'}"></span>
+        <span class="pr-name">${esc(r.name)}</span>
+        <span class="pr-kg">${r.kg}<i>kg</i> <s>×${r.reps}</s></span>
+        <span class="pr-date">${esc(shortDate(r.date))}</span>
+      </div>`;
+    }).join('');
+    return `<div class="stats-card">
+      <div class="stats-head">
+        <div class="sec-title">개인 기록</div>
+        ${rows.length > 6 ? `<button class="stats-tab" data-act="pr-toggle">${state.prAll ? '접기' : `전체 ${rows.length}개`}</button>` : ''}
+      </div>
+      <div class="pr-list">${items}</div>
     </div>`;
   }
 
@@ -2634,6 +2839,7 @@
       body += `<div class="empty-state" style="margin-top:22px">이 달에는 아직 기록이 없습니다.</div>`;
     }
 
+    body += renderPRCard();
     body += renderStatsCard();
     /* 마지막 카드가 하단 탭바에 가리지 않도록 여백을 둡니다. */
     body += '<div style="height:18px"></div>';
@@ -2838,6 +3044,11 @@
     }
     if (act === 'close-hist-day') { state.histDay = null; render(); return; }
     if (act === 'stats-range') { state.statsRange = btn.dataset.range; render(); return; }
+    if (act === 'pr-toggle') { state.prAll = !state.prAll; render(); return; }
+    if (act === 'open-routines') { state.routineSheet = true; render(); return; }
+    if (act === 'save-routine')  { await handleSaveRoutine(); return; }
+    if (act === 'apply-routine') { await handleApplyRoutine(btn.dataset.id); return; }
+    if (act === 'del-routine')   { await handleDeleteRoutine(btn.dataset.id); return; }
     if (act === 'cal-shift')  {
       state.histMonth = shiftMonth(state.histMonth || monthKey(todayISO()), Number(btn.dataset.delta));
       render(); return;
@@ -3654,6 +3865,94 @@
     await persist(); render();
   }
 
+  /* ── 루틴 ────────────────────────────────────────────────────────────────
+     같은 조합을 반복하는 사람에게 매번 부위를 고르고 운동을 담는 일은 통째로
+     낭비입니다. 오늘 구성한 그대로에 이름을 붙여 두고 다음에 한 번에 불러옵니다.
+
+     저장하는 것은 '무엇을 할지'(부위와 운동 이름)뿐입니다. 무게와 횟수는
+     넣지 않습니다 — 그건 지난 기록에서 자동으로 따라오는 것이 맞고, 루틴에
+     굳혀 두면 오늘 컨디션과 상관없는 숫자가 딸려옵니다. */
+  async function persistRoutines() {
+    for (const r of state.routines) await WorkoutDB.putRoutine(clone(r));
+    cloudSync(() => Cloud.saveRoutines(state.routines));
+  }
+
+  async function handleSaveRoutine() {
+    const s = state.session;
+    if (!s || !(s.exercises || []).length) { toast('저장할 운동이 없습니다'); return; }
+    const suggested = orderedParts(s.parts).map(p => p.label).join('·') || '내 루틴';
+    const name = await promptText({
+      title: '루틴 저장',
+      message: '이 구성에 이름을 붙여 두면 다음에 한 번에 불러올 수 있어요.',
+      value: suggested,
+      placeholder: '루틴 이름',
+    });
+    if (!name) return;
+    state.routines.unshift({
+      id: uid(),
+      name: name.slice(0, 40),
+      parts: orderedParts(s.parts).map(p => p.id),
+      exercises: (s.exercises || []).map(e => ({ id: e.id, part: e.part, name: e.name })),
+      usedAt: Date.now(),
+    });
+    await persistRoutines();
+    render();
+    toast(`"${name}" 루틴을 저장했습니다`);
+  }
+
+  async function handleApplyRoutine(id) {
+    const r = state.routines.find(x => x.id === id);
+    const s = state.session;
+    if (!r || !s) return;
+    let added = 0;
+    for (const pid of r.parts) if (!s.parts.includes(pid)) s.parts.push(pid);
+    for (const e of r.exercises) if (addExerciseToSession(e.part, e.name, e.id)) added++;
+    r.usedAt = Date.now();
+    await persistRoutines();
+    await persist();
+    state.routineSheet = false;
+    render();
+    toast(added ? `${r.name} — ${added}개 운동을 담았습니다` : '이미 다 담겨 있습니다');
+  }
+
+  async function handleDeleteRoutine(id) {
+    const r = state.routines.find(x => x.id === id);
+    if (!r) return;
+    if (!await ask({ title: '루틴 삭제', body: `"${r.name}" 을(를) 지울까요? 지난 기록은 그대로 남습니다.`, confirmText: '삭제', danger: true })) return;
+    state.routines = state.routines.filter(x => x.id !== id);
+    await WorkoutDB.deleteRoutine(id);
+    cloudSync(() => Cloud.saveRoutines(state.routines));
+    render();
+    toast('루틴을 지웠습니다');
+  }
+
+  function renderRoutineSheet() {
+    const rows = state.routines.map(r => `
+      <div class="routine-row">
+        <button class="routine-main" data-act="apply-routine" data-id="${esc(r.id)}">
+          <div class="routine-name">${esc(r.name)}</div>
+          <div class="routine-sub">${esc(orderedParts(r.parts).map(p => p.label).join(', '))} · ${r.exercises.length}개 운동</div>
+        </button>
+        <button class="custom-del" data-act="del-routine" data-id="${esc(r.id)}">삭제</button>
+      </div>`).join('');
+    return `<div class="sheet-backdrop">
+      <div class="sheet-panel">
+        <div class="sheet-grab"></div>
+        <div class="sheet-head">
+          <div>
+            <div class="sheet-title">내 루틴</div>
+            <div class="sheet-title-sub">눌러서 오늘 기록에 담습니다</div>
+          </div>
+          <button class="sheet-x" data-act="close-sheet" aria-label="닫기">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        ${rows || '<div class="help-text">아직 저장한 루틴이 없습니다. 오늘 운동을 구성한 뒤 <strong>루틴으로 저장</strong>을 누르면 여기에 쌓입니다.</div>'}
+        <button class="btn-ghost" data-act="save-routine" style="margin-top:12px">지금 구성을 루틴으로 저장</button>
+      </div>
+    </div>`;
+  }
+
   async function handleAddSet(exId) {
     const ex = state.session.exercises.find(e=>e.id===exId);
     if (!ex) return;
@@ -3678,7 +3977,25 @@
     /* Only kick off rest when a set is completed, not when un-checking it. */
     if (set.done) startRestTimer(restDurationFor(set), ex?.name || '');
     else cancelRestTimer();
+
+    /* 기록 판정은 저장 '전에' 합니다. 저장하고 나면 방금 그 세트도 과거
+       기록에 섞여 들어가, 자기 자신과 비교해 늘 "기록 아님" 이 됩니다. */
+    let pr = null;
+    if (set.done) {
+      pr = checkPR(ex, set, state.session.date);
+      set.pr = !!pr;
+    } else {
+      delete set.pr;
+    }
+
     await persist(); render();
+
+    if (pr) {
+      if (navigator.vibrate) { try { navigator.vibrate([25, 45, 25]); } catch (_) {} }
+      toast(pr.type === 'kg'
+        ? `개인 기록! ${ex.name} ${pr.kg}kg (이전 ${pr.prev}kg)`
+        : `개인 기록! ${ex.name} ${pr.kg}kg × ${pr.reps} — 추정 1RM ${Math.round(pr.orm)}kg`);
+    }
   }
 
   async function handleToggleWarmup(exId, setId) {
@@ -3803,6 +4120,7 @@
     state.date = today;
     state.sessions = await WorkoutDB.getAllSessions();
     state.customExercises = await WorkoutDB.getCustomExercises();
+    state.routines = await WorkoutDB.getRoutines();
     const saved = await WorkoutDB.getSession(today);
     state.session = normalizeSession(saved || emptySession(today));
     closeAllSheets();

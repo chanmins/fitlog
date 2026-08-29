@@ -523,6 +523,33 @@ const Cloud = (() => {
      Returning null made "nothing was written" look identical to "written
      successfully, nothing to report", so a save that silently went nowhere
      still ended with a 저장했습니다 toast. */
+  /* 루틴은 개수가 적고 문서 하나에 다 들어가므로 users/{uid} 안에 둡니다.
+     세션처럼 하위 컬렉션을 따로 둘 만큼 크지 않습니다. */
+  async function saveRoutines(routines) {
+    const u = currentUser;
+    if (!store || !u) return;
+    const clean = (routines || []).slice(0, 50).map(r => ({
+      id: String(r.id || ""),
+      name: String(r.name || "").slice(0, 40),
+      parts: Array.isArray(r.parts) ? r.parts.slice(0, 12).map(String) : [],
+      exercises: Array.isArray(r.exercises) ? r.exercises.slice(0, 60).map(e => ({
+        id: String(e.id || ""), part: String(e.part || ""), name: String(e.name || "").slice(0, 60),
+      })) : [],
+      usedAt: Number(r.usedAt) || 0,
+    })).filter(r => r.id && r.name);
+    await store.collection("users").doc(u.uid).set({ routines: clean }, { merge: true });
+  }
+
+  async function loadRoutines(forUid) {
+    if (!store) return [];
+    const id = forUid || uid();
+    if (!id) return [];
+    const snap = await store.collection("users").doc(id).get();
+    if (!snap.exists) return [];
+    const rows = (snap.data() || {}).routines;
+    return Array.isArray(rows) ? rows : [];
+  }
+
   async function saveProfile(prof) {
     const u = currentUser;
     if (!store || !u) {
@@ -723,6 +750,8 @@ const Cloud = (() => {
     sendPasswordResetFor,
     resolveResetTarget,
     saveProfile,
+    saveRoutines,
+    loadRoutines,
     loadProfile,
     signOut,
     touchProfile,
