@@ -177,6 +177,17 @@
   function sessionSummary(s) {
     return (s.parts||[]).map(id=>PARTS.find(p=>p.id===id)?.label).filter(Boolean).join(', ');
   }
+  /* A stretch is held, not lifted: there is no weight, and the number that
+     matters is seconds. The library marks these with hold:true and the set row
+     drops its kg column accordingly — asking someone how many kilos of 아기
+     자세 they did would be nonsense. */
+  function isHoldExercise(ex) {
+    if (!ex) return false;
+    if (ex.hold != null) return !!ex.hold;
+    const lib = findExercise(ex.id) || state.customExercises.find(e => e.id === ex.id);
+    return !!(lib && lib.hold);
+  }
+
   function hasRunData(run) {
     return run && ((run.km!==''&&run.km!=null)||(run.minutes!==''&&run.minutes!=null));
   }
@@ -524,6 +535,8 @@
 
   const WEIGHT_STEPS = [-5, -2.5, 2.5, 5];
   const REPS_STEPS = [-5, -1, 1, 5];
+  /* Held stretches move in useful chunks of seconds, not single ticks. */
+  const HOLD_STEPS = [-30, -10, 10, 30];
   function adjRow(act, steps) {
     return `<div class="picker-adj-row">${steps.map(v => {
       const cls = v < 0 ? 'adj-btn minus' : 'adj-btn plus';
@@ -790,6 +803,10 @@
     legs: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v6l-1.5 12M15 3v6l1.5 12M9 9h6"/></svg>`,
     core: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="4" width="10" height="16" rx="3.5"/><line x1="12" y1="5" x2="12" y2="19"/><line x1="7.5" y1="10" x2="16.5" y2="10"/><line x1="7.5" y1="14" x2="16.5" y2="14"/></svg>`,
     run: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="5" r="2"/><path d="M13 8l-3 3 2 2 1 5M12 13l-2 2-5-1M15 10l2-1 3 2 1-1"/></svg>`,
+    /* A figure folded forward over a straight leg — the shape of a held
+       stretch, drawn to sit next to the other part icons rather than an
+       emoji that would break the set. */
+    stretch: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="5.5" r="2"/><path d="M7 8v4.5"/><path d="M7 12.5h9"/><path d="M7 12.5l-2.5 6"/><path d="M8.5 9.5L15 12"/></svg>`,
   };
 
   /* ── Body Map SVG ─────────────────────────────────────────────────────────
@@ -1946,13 +1963,19 @@
         </div>
         ${list.map(ex => {
           let workingNo = 0;
+          const hold = isHoldExercise(ex);
           const chips = (ex.sets || []).map(set => {
             const warm = !!set.warmup;
             if (!warm) workingNo++;
             const kg = (set.kg !== '' && set.kg != null) ? set.kg : '–';
             const reps = (set.reps !== '' && set.reps != null) ? set.reps : '–';
+            /* A held stretch carries no weight, so "–kg × 30" would be noise
+               around the only number that means anything: the seconds. */
+            const val = hold
+              ? `${esc(String(reps))}<i>초</i>`
+              : `${esc(String(kg))}<i>kg</i> × ${esc(String(reps))}`;
             return `<span class="dsum-set${warm ? ' warm' : ''}${set.done ? ' done' : ''}">
-              <b>${warm ? 'W' : workingNo}</b>${esc(String(kg))}<i>kg</i> × ${esc(String(reps))}
+              <b>${warm ? 'W' : workingNo}</b>${val}
             </span>`;
           }).join('');
           const p = exProgress(ex);
@@ -2033,6 +2056,7 @@
     /* Warm-ups are labelled W and don't consume a number, so the working sets
        still read 1, 2, 3 — which is how a lifter counts them. */
     let workingNo = 0;
+    const hold = isHoldExercise(ex);
     const sets = ex.sets.map((set) => {
       const done = set.done;
       const warmup = !!set.warmup;
@@ -2040,15 +2064,15 @@
       const label = warmup ? 'W' : workingNo;
       const kg   = (set.kg   !== '' && set.kg   != null) ? set.kg   : '--';
       const reps = (set.reps !== '' && set.reps != null) ? set.reps : '--';
-      return `<div class="set-row${done?' done':''}${warmup?' warmup':''}">
+      return `<div class="set-row${done?' done':''}${warmup?' warmup':''}${hold?' hold':''}">
         <button class="set-num${warmup?' warmup':''}" data-act="toggle-warmup" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="웜업 세트로 전환" title="탭하면 웜업/일반 세트 전환">${label}</button>
-        <button class="val-chip${done?' done':''}" data-act="open-weight" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}">
+        ${hold ? '' : `<button class="val-chip${done?' done':''}" data-act="open-weight" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}">
           <span class="val-chip-num">${kg}</span>
           <span class="val-chip-unit">kg</span>
-        </button>
+        </button>`}
         <button class="val-chip${done?' done':''}" data-act="open-reps" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}">
           <span class="val-chip-num">${reps}</span>
-          <span class="val-chip-unit">회</span>
+          <span class="val-chip-unit">${hold ? '초' : '회'}</span>
         </button>
         <button class="done-toggle${done?' done':''}" data-act="toggle-done" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="세트 완료">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -2080,7 +2104,7 @@
       </div>
       ${prevHint}
       <div class="set-table">
-        <div class="set-table-head"><span>#</span><span>무게</span><span>횟수</span><span>완료</span><span></span></div>
+        <div class="set-table-head${hold ? ' hold' : ''}"><span>#</span>${hold ? '' : '<span>무게</span>'}<span>${hold ? '시간' : '횟수'}</span><span>완료</span><span></span></div>
         ${sets}
         <button class="add-set-row" data-act="add-set" data-ex="${esc(ex.id)}">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -2132,6 +2156,9 @@
     const numCls = `picker-big-num${p.str === '' ? ' is-empty' : ''}${p.fresh ? ' is-fresh' : ''}`;
     const ex = state.session?.exercises.find(x => x.id === state.repsPicker.exId);
     const sub = ex ? `${ex.name} · ${setLabelFor(ex, state.repsPicker.setId)}` : '';
+    /* A held stretch is measured in seconds, so the sheet has to say so —
+       "횟수 / 회" over a 아기 자세 would be asking the wrong question. */
+    const holdEx = isHoldExercise(ex);
     const numpadRows = [['7','8','9'],['4','5','6'],['1','2','3'],['C','0','⌫']];
     const numpad = numpadRows.map(row =>
       `<div class="numpad-row">${row.map(k => {
@@ -2144,16 +2171,16 @@
       <div class="sheet-panel" id="sheet-reps">
         <div class="sheet-grab"></div>
         <div class="sheet-head">
-          <div><div class="sheet-title">횟수</div>${sub?`<div class="sheet-title-sub">${esc(sub)}</div>`:''}</div>
+          <div><div class="sheet-title">${holdEx ? '시간' : '횟수'}</div>${sub?`<div class="sheet-title-sub">${esc(sub)}</div>`:''}</div>
           <button class="sheet-x" data-act="close-sheet" aria-label="닫기">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
-        <button class="picker-big" data-act="numpad-r-clear" aria-label="입력한 횟수 지우기">
+        <button class="picker-big" data-act="numpad-r-clear" aria-label="${holdEx ? '입력한 시간 지우기' : '입력한 횟수 지우기'}">
           <div class="${numCls}">${esc(display)}</div>
-          <div class="picker-big-unit">회</div>
+          <div class="picker-big-unit">${holdEx ? '초' : '회'}</div>
         </button>
-        ${adjRow('numpad-r-adj', REPS_STEPS)}
+        ${adjRow('numpad-r-adj', holdEx ? HOLD_STEPS : REPS_STEPS)}
         <div class="numpad">${numpad}</div>
         <button class="picker-confirm" data-act="confirm-reps">확인</button>
       </div>
@@ -2176,6 +2203,22 @@
     const tips = (libEx.tips||[]).map((tip,i)=>`
       <li><div class="tip-num">${i+1}</div><span>${esc(tip)}</span></li>`).join('');
 
+    /* The start and end of the movement, cross-faded on a loop. It is not a
+       3D render, but it answers the only question a picture is actually asked
+       here ("what does this look like?") for about 22KB. Held poses have one
+       frame and simply sit still. Loading is left to the browser: the sheet is
+       the only place these appear, so nothing downloads until someone taps ⓘ.
+       An exercise with no entry renders no block at all. */
+    const media = (typeof EXERCISE_MEDIA !== 'undefined' && libEx.id) ? EXERCISE_MEDIA[libEx.id] : null;
+    const frame = (suffix, cls, label) =>
+      `<img class="ex-photo-img ${cls}" src="./media/${esc(libEx.id)}-${suffix}.${esc(media.t)}" alt="${esc(libEx.name)} ${label}" loading="lazy" decoding="async">`;
+    const photo = media
+      ? `<div class="ex-photo${media.n === 1 ? ' single' : ''}${media.t === 'svg' ? ' drawn' : ''}">
+           ${frame('a', 'a', media.n === 1 ? '자세' : '시작 자세')}
+           ${media.n === 2 ? frame('b', 'b', '마친 자세') : ''}
+         </div>`
+      : '';
+
     return `<div class="sheet-backdrop">
       <div class="sheet-panel">
         <div class="sheet-grab"></div>
@@ -2192,6 +2235,7 @@
           <span class="info-badge eq">${esc(eq)}</span>
           <span class="info-badge"><span class="diff-stars">${diffStars}</span></span>
         </div>
+        ${photo}
         ${bodyMapSVG(primary, secondary)}
         <div class="muscle-legend">
           <div class="muscle-legend-title">주동근</div>
@@ -3271,9 +3315,17 @@
     const s = state.session;
     if (!name || s.exercises.some(e => e.part === partId && e.name === name)) return false;
     const last = lastLog(name, s.date);
-    const firstSet = last?.sets?.[0] || { kg:'', reps:'' };
+    /* Stretches record seconds, not kilos. Stamp the flag onto the session
+       exercise so the row keeps reading as a hold even if the library entry
+       is ever renamed or removed, and start it at the 30초 everyone means by
+       "정적 스트레칭 한 세트" rather than an empty pad. */
+    const lib = findExercise(exId) || findExercise(name) ||
+                state.customExercises.find(e => e.id === exId || e.name === name);
+    const hold = !!(lib && lib.hold);
+    const firstSet = last?.sets?.[0] || { kg:'', reps: hold ? 30 : '' };
     s.exercises.push({
       id: exId || uid(), part: partId, name,
+      ...(hold ? { hold: true } : {}),
       sets: [{ id: uid(), kg: firstSet.kg, reps: firstSet.reps, done: false, warmup: false }],
     });
     if (!s.parts.includes(partId)) s.parts.push(partId);

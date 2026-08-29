@@ -2,7 +2,14 @@
 
 const MUSCLE_GROUPS = {
   chest:      '가슴',
+  pecs_minor: '소흉근',
   shoulders:  '어깨',
+  levator:    '견갑거근',
+  rhomboids:  '능형근',
+  hip_flexor: '장요근',
+  quads_rf:   '대퇴직근',
+  adductors:  '내전근',
+  chest_wall: '흉추',
   triceps:    '삼두근',
   biceps:     '이두근',
   back:       '등',
@@ -23,6 +30,7 @@ const PARTS = [
   { id: 'arms',      label: '팔',    color: '#a29bfe', kind: 'weight' },
   { id: 'legs',      label: '하체',  color: '#6bcb77', kind: 'weight' },
   { id: 'core',      label: '코어',  color: '#ffd43b', kind: 'weight' },
+  { id: 'stretch',   label: '스트레칭', color: '#7ec8e3', kind: 'weight' },
   { id: 'run',       label: '러닝',  color: '#4ecdc4', kind: 'run'    },
 ];
 
@@ -803,6 +811,125 @@ const EXTRA_EXERCISES = {
       tips:['팔이 아닌 몸통 회전으로 당기세요','시선은 손을 따라가세요'] },
   ],
 };
+
+/* ============================================================
+   스트레칭 · 자세 교정
+   ============================================================
+   웨이트와 달리 무게가 없고 "몇 초 버텼는가"로 기록합니다. hold: true 가
+   그 표시이고, 앱은 이 값을 보고 세트 줄에서 kg 칸을 빼고 단위를 초로
+   바꿉니다.
+
+   두 가지 자세 문제를 다룹니다. 둘 다 같은 구조 — 특정 근육이 짧아져
+   당기고, 그 반대쪽이 약해져 못 버티는 것 — 이라서 늘리는 운동과
+   강화하는 운동이 짝으로 들어갑니다. 늘리기만 해서는 원래대로 돌아옵니다.
+
+   · 라운드숄더  짧아짐: 대흉근·소흉근·상부승모근·견갑거근
+                 약해짐: 능형근·하부승모근
+   · 골반 전방경사 짧아짐: 장요근·대퇴직근·척추기립근
+                 약해짐: 둔근·복근
+
+   시간은 정적 스트레칭의 통상 권장치인 30초를 기준으로 적었습니다. */
+const STRETCH_EXERCISES = [
+  /* ── 라운드숄더 ─────────────────────────────────────────── */
+  { id:'st-doorway-pec', name:'도어웨이 가슴 스트레칭', nameEn:'Doorway Pec Stretch',
+    equipment:'bodyweight', difficulty:1, hold:true,
+    primary:['chest'], secondary:['shoulders'],
+    description:'문틀에 팔을 대고 몸을 앞으로 보내 굳은 가슴을 엽니다. 라운드숄더에서 가장 먼저 풀어야 할 근육입니다.',
+    tips:['팔꿈치를 어깨 높이로 두세요','허리를 젖히지 말고 가슴만 여세요',
+          '팔 높이를 위·중간·아래로 바꾸면 가슴의 다른 부분이 늘어납니다','30초씩 좌우 2~3회'] },
+
+  { id:'st-pec-minor', name:'소흉근 스트레칭', nameEn:'Pec Minor Stretch',
+    equipment:'bodyweight', difficulty:1, hold:true,
+    primary:['pecs_minor'], secondary:['chest'],
+    description:'어깨를 앞으로 말아 내리는 소흉근을 늘립니다. 대흉근보다 깊이 있어 따로 풀어줘야 합니다.',
+    tips:['벽 모서리에 팔을 대고 몸을 반대로 돌리세요','어깨가 위로 솟지 않게 내린 채 유지하세요',
+          '통증이 아니라 당기는 느낌까지만','30초씩 좌우'] },
+
+  { id:'st-upper-trap', name:'상부승모근 스트레칭', nameEn:'Upper Trapezius Stretch',
+    equipment:'bodyweight', difficulty:1, hold:true,
+    primary:['traps'], secondary:[],
+    description:'목과 어깨 사이가 뻣뻣한 것을 풀어줍니다. 라운드숄더와 거북목에 함께 따라옵니다.',
+    tips:['머리를 옆으로 기울이고 반대쪽 어깨를 아래로 누르세요','손으로 살짝 당기되 힘주지 마세요',
+          '목을 돌리지 말고 옆으로만','30초씩 좌우'] },
+
+  { id:'st-levator', name:'견갑거근 스트레칭', nameEn:'Levator Scapulae Stretch',
+    equipment:'bodyweight', difficulty:1, hold:true,
+    primary:['levator'], secondary:['traps'],
+    description:'어깨뼈를 위로 끌어올리는 근육을 늘립니다. 상부승모근과 함께 풀어야 효과가 있습니다.',
+    tips:['고개를 45도 옆으로 돌리고 겨드랑이 쪽을 내려다보세요','같은 쪽 어깨는 아래로 고정하세요',
+          '30초씩 좌우'] },
+
+  { id:'st-thoracic-ext', name:'흉추 신전', nameEn:'Thoracic Extension',
+    equipment:'other', difficulty:1, hold:true,
+    primary:['chest_wall'], secondary:['back'],
+    description:'등 윗부분이 굽은 채 굳은 것을 폅니다. 폼롤러나 의자 등받이를 이용합니다.',
+    tips:['폼롤러를 날개뼈 아래에 두고 뒤로 넘어가세요','허리가 아니라 등 윗부분이 젖혀져야 합니다',
+          '손으로 머리를 받쳐 목에 힘이 안 들어가게 하세요','20~30초'] },
+
+  { id:'st-wall-angel', name:'월 엔젤', nameEn:'Wall Angel',
+    equipment:'bodyweight', difficulty:2, hold:true,
+    primary:['rhomboids'], secondary:['shoulders','traps'],
+    description:'벽에 붙어 팔을 위아래로 움직입니다. 늘리는 동시에 약해진 등 근육을 쓰게 만드는 운동입니다.',
+    tips:['뒤통수·등·엉덩이를 벽에 붙이세요','손등과 팔꿈치가 벽에서 떨어지지 않는 범위까지만',
+          '허리가 벽에서 뜨지 않게 배에 힘을 주세요','10회 천천히 · 한 세트를 초로 기록해도 됩니다'] },
+
+  { id:'st-chin-tuck', name:'턱 당기기', nameEn:'Chin Tuck',
+    equipment:'bodyweight', difficulty:1, hold:true,
+    primary:['traps'], secondary:[],
+    description:'앞으로 나온 머리를 제자리로 돌리는 운동입니다. 라운드숄더와 거북목은 같이 옵니다.',
+    tips:['턱을 뒤로 당겨 이중턱을 만드세요','고개를 숙이는 게 아니라 수평으로 미는 느낌',
+          '5초 유지 × 10회'] },
+
+  /* ── 골반 전방경사 ──────────────────────────────────────── */
+  { id:'st-kneeling-hipflexor', name:'무릎 꿇고 장요근 스트레칭', nameEn:'Kneeling Hip Flexor Stretch',
+    equipment:'bodyweight', difficulty:1, hold:true,
+    primary:['hip_flexor'], secondary:['quads'],
+    description:'골반을 앞으로 기울게 만드는 장요근을 늘립니다. 오래 앉아 있으면 가장 먼저 짧아지는 근육입니다.',
+    tips:['한쪽 무릎을 꿇고 반대 발을 앞에 두세요','꼬리뼈를 아래로 말아 넣은 뒤 앞으로 미세요',
+          '허리를 젖히면 스트레칭이 안 됩니다 — 골반을 세운 채로','30초씩 좌우 2~3회'] },
+
+  { id:'st-couch', name:'카우치 스트레칭', nameEn:'Couch Stretch',
+    equipment:'other', difficulty:2, hold:true,
+    primary:['quads_rf'], secondary:['hip_flexor'],
+    description:'뒷발을 벽이나 소파에 올려 대퇴직근까지 깊게 늘립니다. 위 스트레칭보다 강합니다.',
+    tips:['무릎이 아프면 수건을 받치세요','상체를 세울수록 강해집니다 — 버틸 수 있는 만큼만',
+          '골반을 말아 넣은 자세를 끝까지 유지하세요','30초씩 좌우'] },
+
+  { id:'st-hamstring', name:'햄스트링 스트레칭', nameEn:'Hamstring Stretch',
+    equipment:'bodyweight', difficulty:1, hold:true,
+    primary:['hamstrings'], secondary:['glutes'],
+    description:'허벅지 뒤를 늘립니다. 골반 전방경사에서는 햄스트링이 늘어난 채 당겨져 있어 뻣뻣하게 느껴집니다.',
+    tips:['무릎을 살짝 굽혀도 됩니다 — 허리를 둥글게 마는 것보다 낫습니다',
+          '허리가 아니라 고관절에서 접으세요','30초씩 좌우'] },
+
+  { id:'st-child-pose', name:'아기 자세', nameEn:"Child's Pose",
+    equipment:'bodyweight', difficulty:1, hold:true,
+    primary:['lower_back'], secondary:['lats'],
+    description:'과하게 조인 척추기립근과 허리를 풀어줍니다.',
+    tips:['무릎을 벌리고 엉덩이를 발뒤꿈치로 보내세요','팔을 멀리 뻗고 어깨를 늘어뜨리세요',
+          '깊게 숨을 쉬며 30~60초'] },
+
+  { id:'st-glute-bridge', name:'글루트 브릿지', nameEn:'Glute Bridge',
+    equipment:'bodyweight', difficulty:1, hold:true,
+    primary:['glutes'], secondary:['hamstrings','abs'],
+    description:'약해진 둔근을 깨웁니다. 장요근을 늘리기만 하고 둔근을 쓰지 않으면 골반은 곧 되돌아갑니다.',
+    tips:['갈비뼈를 아래로 내리고 배에 힘을 준 채 올리세요','허리로 젖히지 말고 엉덩이로 미세요',
+          '맨 위에서 엉덩이를 조이고 버티세요','20~30초 유지 또는 15회'] },
+
+  { id:'st-dead-bug-post', name:'데드버그 (자세 교정)', nameEn:'Dead Bug',
+    equipment:'bodyweight', difficulty:1, hold:true,
+    primary:['abs'], secondary:['lower_back'],
+    description:'허리를 바닥에 붙인 채 팔다리를 움직여, 골반을 세우는 복근을 훈련합니다.',
+    tips:['허리와 바닥 사이에 손이 들어가지 않게 붙이세요','허리가 뜨는 순간이 그날의 한계입니다',
+          '천천히 · 좌우 번갈아 10회씩'] },
+];
+
+if (!DEFAULT_EXERCISES.stretch) DEFAULT_EXERCISES.stretch = [];
+for (const item of STRETCH_EXERCISES) {
+  if (!DEFAULT_EXERCISES.stretch.some((e) => e.id === item.id)) {
+    DEFAULT_EXERCISES.stretch.push(item);
+  }
+}
 
 /* 기존 목록 뒤에 이어 붙입니다 (사용자가 직접 추가한 운동은 별도 저장이라 영향 없음). */
 for (const [part, list] of Object.entries(EXTRA_EXERCISES)) {

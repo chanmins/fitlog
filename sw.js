@@ -1,13 +1,18 @@
-const CACHE = "fitlog-v40";
+const CACHE = "fitlog-v43";
+/* Photos live in their own cache that version bumps do NOT clear. They never
+   change once published, and re-downloading 2MB of them on every update would
+   spend the free tier's daily transfer for nothing. */
+const MEDIA_CACHE = "fitlog-media-v1";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=40",
-  "./app.js?v=40",
-  "./db.js?v=40",
-  "./exercises.js?v=40",
-  "./cloud.js?v=40",
-  "./firebase-config.js?v=40",
+  "./styles.css?v=43",
+  "./app.js?v=43",
+  "./db.js?v=43",
+  "./exercises.js?v=43",
+  "./exercise-photos.js?v=43",
+  "./cloud.js?v=43",
+  "./firebase-config.js?v=43",
   "./manifest.json",
   "./icons/icon.svg",
   "./icons/icon-192.png",
@@ -25,7 +30,9 @@ self.addEventListener("install", event => {
 self.addEventListener("activate", event => {
   event.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(keys => Promise.all(
+        keys.filter(k => k !== CACHE && k !== MEDIA_CACHE).map(k => caches.delete(k))
+      ))
       .then(() => self.clients.claim())
       .then(() => {
         return self.clients.matchAll({ type: "window" }).then(clients => {
@@ -64,6 +71,22 @@ self.addEventListener("fetch", event => {
   if (event.request.mode === "navigate" || url.pathname === "/" || url.pathname.endsWith("/index.html")) {
     event.respondWith(
       fetch(event.request).catch(() => caches.match("./index.html"))
+    );
+    return;
+  }
+
+  /* Exercise photos: cache-first. They are immutable, so going to the network
+     for one we already hold is pure waste — and it makes the info sheet open
+     instantly the second time. */
+  if (url.pathname.indexOf("/media/") !== -1) {
+    event.respondWith(
+      caches.match(event.request).then(cached => cached || fetch(event.request).then(response => {
+        if (response && response.status === 200 && response.type !== "opaque") {
+          const copy = response.clone();
+          caches.open(MEDIA_CACHE).then(cache => cache.put(event.request, copy));
+        }
+        return response;
+      }).catch(() => cached))
     );
     return;
   }
