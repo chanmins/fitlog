@@ -785,38 +785,6 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .info-badge.eq { background: var(--accent-soft); color: var(--accent); }
 .diff-stars { color: var(--orange); font-size: 13px; letter-spacing: 1px; }
 
-/* body map */
-.body-map-wrap {
-  background: var(--surface-2); border: 1px solid var(--line);
-  border-radius: var(--r-lg); padding: 16px; margin-bottom: 16px;
-}
-.bv-radio { display: none; }
-.bm-tabs { display: flex; gap: 6px; justify-content: center; margin-bottom: 12px; }
-.bm-tab {
-  padding: 7px 22px; border-radius: 999px; font-size: 13px; font-weight: 800;
-  background: var(--surface-3); color: var(--muted); cursor: pointer;
-  border: 1.5px solid transparent; transition: all .15s; user-select: none; -webkit-user-select: none;
-}
-#bv-f:checked ~ .bm-tabs label[for="bv-f"],
-#bv-b:checked ~ .bm-tabs label[for="bv-b"] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
-.bm-panel { display: flex; justify-content: center; }
-#bv-f:checked ~ .bm-back { display: none; }
-#bv-b:checked ~ .bm-front { display: none; }
-.bm-panel svg { width: 150px; height: 285px; }
-
-/* Heat map: the harder a muscle works, the hotter it reads.
-   bb = body silhouette, mi = unused, ms = assisting, mp = prime mover. */
-.bb { fill: #232734; }
-.mi { fill: #2e3340; }
-.ms { fill: #8a3a3f; }
-.mp { fill: #FF4757; }
-@keyframes mpulse {
-  0%,100% { opacity: .9;  filter: drop-shadow(0 0 2px rgba(255,71,87,.55)); }
-  50%     { opacity: 1;   filter: drop-shadow(0 0 7px rgba(255,71,87,.9)); }
-}
-.mp { animation: mpulse 2.2s ease-in-out infinite; }
-@media (prefers-reduced-motion: reduce) { .mp { animation: none; } }
-
 .muscle-legend { margin-bottom: 16px; }
 .muscle-legend-title { font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
 .muscle-legend-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }

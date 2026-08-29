@@ -888,7 +888,7 @@
     toast('기록을 저장했습니다');
   }
 
-  /* ── Body Map SVG ────────────────────────── */
+  /* ── 부위 아이콘 ────────────────────────── */
   /* ── Part icons ───────────────────────────── */
   const PART_ICONS = {
     chest: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5c2.6-1.7 5.4-1.1 7.5.6M21 7.5c-2.6-1.7-5.4-1.1-7.5.6"/><path d="M3 7.5v3.5c0 3 2.4 5 5.5 5 2.2 0 3.5-1.3 3.5-3.4M21 7.5v3.5c0 3-2.4 5-5.5 5-2.2 0-3.5-1.3-3.5-3.4"/></svg>`,
@@ -904,76 +904,6 @@
     stretch: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="5.5" r="2"/><path d="M7 8v4.5"/><path d="M7 12.5h9"/><path d="M7 12.5l-2.5 6"/><path d="M8.5 9.5L15 12"/></svg>`,
   };
 
-  /* ── Body Map SVG ─────────────────────────────────────────────────────────
-     An anatomical chart, not a 3D render: muscle groups are drawn as their
-     real shapes (fanned pec, V-taper lat, teardrop quad, the two heads of a
-     calf) and shaded by how hard the exercise hits them — solid red for the
-     prime mover, dimmer red for assisting muscles. Mirroring the right half
-     from the left with a scale(-1) group keeps the body symmetric and halves
-     the number of paths to maintain.
-     ------------------------------------------------------------------------ */
-  function bodyMapSVG(primary = [], secondary = []) {
-    const P = new Set(primary);
-    const S = new Set(secondary);
-    function mc(ids) {
-      const arr = [].concat(ids);
-      if (arr.some(id => P.has(id))) return 'mp';   /* 주동근 — 진한 빨강 */
-      if (arr.some(id => S.has(id))) return 'ms';   /* 협응근 — 옅은 빨강 */
-      return 'mi';                                   /* 미사용 — 어두운 회색 */
-    }
-
-    /* Silhouette. Head/neck/torso are drawn whole; the arm and leg are drawn
-       as the left limb only and mirrored with the muscles, which keeps the
-       figure symmetric and the coordinates easy to reason about.
-       Landmarks (viewBox 80×152): shoulder line y=28, waist y=60,
-       hip y=86, knee y=118, ankle y=146. */
-    const torso = `
-      <ellipse class="bb" cx="40" cy="10.6" rx="6.8" ry="8.4"/>
-      <path class="bb" d="M36.4 15.6h7.2v7.2c0 1.3-1.2 2-3.6 2s-3.6-.7-3.6-2z"/>
-      <path class="bb" d="M24.5 28q.5-3.5 6.5-4.8Q40 21.6 49 23.2q6 1.3 6.5 4.8 1 8-2 14-2.5 9-3.5 18-.6 8 1.5 16 1 6-2.5 10H31q-3.5-4-2.5-10 2.1-8 1.5-16-1-9-3.5-18-3-6-2-14Z"/>`;
-
-    const limbs = `
-      <path class="bb" d="M24.2 28.2q-4.8 1.2-6.3 6-1.4 6-1.6 13l-.8 13q-.4 8 .4 14 .4 2.6 2.6 2.6t2.6-2.6q.8-6 .4-14l.8-13q.2-7 1.6-12 1.2-4.4-.9-7Z"/>
-      <path class="bb" d="M31 86q-3.5 2-4 10-.6 10 0 20l.6 6q-.6 10 0 18 .4 5.6 3 5.6t3-5.6q.8-8 .4-18l.6-6q1.4-10 2.6-20 .8-6 2.4-10Z"/>`;
-
-    /* Left-half muscle shapes; mirrored to the right side at render time. */
-    const frontHalf = `
-      <path class="${mc('shoulders')}" d="M24.4 28.2q-5 1.2-6.5 6-.9 3.8-.3 6.4.4 1.4 1.8.8 3.6-1.6 5.6-5 1.6-3 1.4-6.4-.1-2-2-1.8Z"/>
-      <path class="${mc('chest')}" d="M39 27.4 28.6 30q-2.6 1.4-2.6 5 0 4.2 3.4 7.2 3.2 2.8 8 3.4 1.6.2 1.6-1.4Z"/>
-      <path class="${mc('abs')}" d="M39 45.8v25q0 1.4-1.4 1.4h-2.6q-1.6 0-1.8-1.6-.6-8-.2-16 .2-5 .8-7.4.2-1.4 1.6-1.4Z"/>
-      <path class="${mc('biceps')}" d="M25.2 33.6q.8 6.4-.2 13-.8 5-2.6 6-1.8.8-2.8-1.2-1.2-2.8-.8-7.4.4-5.6 2.2-9.4 1.6-3.2 3-2.8 1.1.4 1.2 1.8Z"/>
-      <path class="${mc('quads')}" d="M38.2 88.6q-1.2 11.4-3 21.4-1.2 6.6-3.2 7.4-2 .6-3-3-1.4-5.8-.8-14.4.6-8 2.4-11.6 1.4-2.6 4.4-2.2 2.8.4 3.2 2.4Z"/>
-      <path class="${mc('calves')}" d="M34.2 123q.6 7-.2 13.4-.6 4.6-2.6 5.2-2 .4-2.8-3.2-.6-5 0-10.8.6-5.2 2-6.2 1.6-1 2.8 0 .7.6.8 1.6Z"/>`;
-
-    const backHalf = `
-      <path class="${mc('traps')}" d="M40 22.8q-4.2.6-6.8 3.4-2.8 3-3 7.8-.2 4 1.8 6.8 2.4 3.2 6.6 4.6 1.4.4 1.4-.8Z"/>
-      <path class="${mc('shoulders')}" d="M24.4 28.2q-5 1.2-6.5 6-.9 3.8-.3 6.4.4 1.4 1.8.8 3.6-1.6 5.6-5 1.6-3 1.4-6.4-.1-2-2-1.8Z"/>
-      <path class="${mc(['lats','back'])}" d="M39 38.8 28.6 41.4q-1.8 1-1.2 4.8 1 6.4 3.8 10.6 2 3.2 5 5.4 1.8 1.2 2.8.4Z"/>
-      <path class="${mc('triceps')}" d="M25.2 33.6q.8 6.4-.2 13-.8 5-2.6 6-1.8.8-2.8-1.2-1.2-2.8-.8-7.4.4-5.6 2.2-9.4 1.6-3.2 3-2.8 1.1.4 1.2 1.8Z"/>
-      <path class="${mc('lower_back')}" d="M40 61.4v18.2h-4q-1.8 0-2-2-.6-6.6.2-12.6.3-2.6 2-2.8Z"/>
-      <path class="${mc('glutes')}" d="M39.2 73.4q-4.8.8-7.6 3.4-2.8 2.6-2.8 6.6 0 4.2 2.6 6.4 2.8 2.4 7.8 3 1.6.2 1.6-1.2Z"/>
-      <path class="${mc('hamstrings')}" d="M38 92.6q-1 10.4-2.6 19.4-1 5.6-3 6.2-2 .4-3-3.2-1.2-5.4-.8-13 .4-7.4 2-10.4 1.4-2.4 4.4-2 2.6.4 3 3Z"/>
-      <path class="${mc('calves')}" d="M34.2 123q.6 7-.2 13.4-.6 4.6-2.6 5.2-2 .4-2.8-3.2-.6-5 0-10.8.6-5.2 2-6.2 1.6-1 2.8 0 .7.6.8 1.6Z"/>`;
-
-    const mirrored = (half) => `${half}<g transform="translate(80,0) scale(-1,1)">${half}</g>`;
-    const figure = (half) => `${torso}${mirrored(limbs)}${mirrored(half)}`;
-
-    return `
-      <div class="body-map-wrap">
-        <input type="radio" name="bv" id="bv-f" class="bv-radio" checked>
-        <input type="radio" name="bv" id="bv-b" class="bv-radio">
-        <div class="bm-tabs">
-          <label for="bv-f" class="bm-tab">앞면</label>
-          <label for="bv-b" class="bm-tab">뒷면</label>
-        </div>
-        <div class="bm-panel bm-front">
-          <svg viewBox="0 0 80 152" xmlns="http://www.w3.org/2000/svg">${figure(frontHalf)}</svg>
-        </div>
-        <div class="bm-panel bm-back">
-          <svg viewBox="0 0 80 152" xmlns="http://www.w3.org/2000/svg">${figure(backHalf)}</svg>
-        </div>
-      </div>`;
-  }
 
   /* ── Render Root ──────────────────────────── */
   function render() {
@@ -2329,7 +2259,6 @@
           <span class="info-badge"><span class="diff-stars">${diffStars}</span></span>
         </div>
         ${photo}
-        ${bodyMapSVG(primary, secondary)}
         <div class="muscle-legend">
           <div class="muscle-legend-title">주동근</div>
           <div class="muscle-legend-row">${primaryPills}</div>
