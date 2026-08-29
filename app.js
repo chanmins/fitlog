@@ -361,112 +361,6 @@
     const sets = ex.sets || [];
     return { done: sets.filter(s => s.done).length, total: sets.length };
   }
-  /* ── 소모 칼로리 추정 ────────────────────────────────────────────────────
-     계산식은 운동생리학의 표준인 MET 를 씁니다.
-
-         kcal = MET × 3.5 × 체중(kg) ÷ 200 × 분
-
-     MET 값은 2024 Adult Compendium of Physical Activities 에서 가져왔습니다.
-     이 문서는 활동별 에너지 소비를 실측해 정리한, 이 분야에서 가장 널리
-     쓰이는 기준표입니다.
-
-     ── 러닝은 근거가 단단합니다
-     거리와 시간이 있으니 속도가 나오고, 속도별 MET 는 표에 그대로 있습니다.
-
-     ── 웨이트는 시간이 관건입니다
-     세트 수만으로는 칼로리를 알 수 없습니다. 같은 10세트라도 40분에 한 것과
-     90분에 걸쳐 한 것은 소모가 다릅니다. 그래서 세트를 완료할 때 시각을
-     남기고(doneAt), 첫 세트부터 마지막 세트까지의 실제 시간을 씁니다.
-     그 기록이 없는 예전 운동은 세트당 2.2분으로 어림잡습니다 — 세트 수행
-     40초에 휴식 90초를 더한 값입니다.
-
-     ── 왜 '추정' 이라고 적는가
-     같은 사람이 같은 운동을 해도 실제 소모는 날마다 다르고, 어떤 공식도
-     그걸 맞히지 못합니다. 이 숫자는 추세를 보는 용도이지 다이어트 계산기가
-     아닙니다. 화면에 항상 '추정' 이라고 적는 이유입니다. */
-  const MET_LIFT = { light: 3.5, normal: 5.0, hard: 6.0 };
-  const LIFT_INTENSITY_LABEL = { light: '가볍게', normal: '보통', hard: '고강도' };
-  const MIN_PER_SET_FALLBACK = 2.2;
-
-  function liftIntensity() {
-    const v = localStorage.getItem('fitlog-intensity');
-    return MET_LIFT[v] ? v : 'normal';
-  }
-  function setLiftIntensity(v) {
-    try { localStorage.setItem('fitlog-intensity', v); } catch (_) {}
-  }
-
-  function bodyWeight() {
-    const w = Number(state.profile?.weightKg);
-    return Number.isFinite(w) && w > 20 ? w : 0;
-  }
-
-  /* 속도(km/h) → MET. Compendium 의 구간표를 그대로 옮기고 사이는 이어 씁니다. */
-  function runMet(kmh) {
-    if (!Number.isFinite(kmh) || kmh <= 0) return 0;
-    const T = [[6.4,6.5],[7.2,7.8],[8.4,8.5],[9.0,9.0],[9.7,9.3],[10.8,10.5],
-               [11.3,11.0],[12.9,11.8],[14.5,13.0],[16.1,14.8],[19.3,18.5],[22.5,23.0]];
-    if (kmh <= T[0][0]) return T[0][1];
-    for (let i = 1; i < T.length; i++) {
-      if (kmh <= T[i][0]) {
-        const [x0, y0] = T[i - 1], [x1, y1] = T[i];
-        return y0 + (y1 - y0) * ((kmh - x0) / (x1 - x0));
-      }
-    }
-    return T[T.length - 1][1];
-  }
-
-  function kcalFrom(met, minutes, weight) {
-    if (!met || !minutes || !weight) return 0;
-    return met * 3.5 * weight / 200 * minutes;
-  }
-
-  /* 웨이트에 실제로 쓴 시간(분). 완료 시각이 둘 이상 있으면 실측, 없으면 추정. */
-  function liftMinutes(s) {
-    const stamps = [];
-    let doneSets = 0;
-    for (const ex of s.exercises || []) {
-      for (const st of ex.sets || []) {
-        if (!st.done) continue;
-        doneSets++;
-        if (Number.isFinite(st.doneAt)) stamps.push(st.doneAt);
-      }
-    }
-    if (!doneSets) return { minutes: 0, measured: false, sets: 0 };
-    if (stamps.length >= 2) {
-      stamps.sort((a, b) => a - b);
-      /* 마지막 세트 자체의 수행 시간이 끝 시각 뒤에 안 잡히므로 한 세트분을
-         더합니다. 그리고 4시간을 넘기면 중간에 앱을 켜둔 채 자리를 뜬
-         경우로 보고 추정값으로 되돌립니다 — 그대로 쓰면 하루 소모가
-         터무니없이 커집니다. */
-      const span = (stamps[stamps.length - 1] - stamps[0]) / 60000 + MIN_PER_SET_FALLBACK;
-      if (span > 0 && span <= 240) return { minutes: span, measured: true, sets: doneSets };
-    }
-    return { minutes: doneSets * MIN_PER_SET_FALLBACK, measured: false, sets: doneSets };
-  }
-
-  /* 하루치 소모. { lift, run, total, measured, minutes } */
-  function sessionKcal(s) {
-    const w = bodyWeight();
-    const empty = { lift: 0, run: 0, total: 0, measured: false, minutes: 0, runMin: 0 };
-    if (!w || !s) return empty;
-
-    const lm = liftMinutes(s);
-    const lift = kcalFrom(MET_LIFT[liftIntensity()], lm.minutes, w);
-
-    const km = Number(s.run?.km), min = Number(s.run?.minutes);
-    let run = 0;
-    if (Number.isFinite(min) && min > 0) {
-      const kmh = (Number.isFinite(km) && km > 0) ? km / (min / 60) : 0;
-      /* 거리를 안 적었으면 '조깅, 자기 페이스' 7.5 MET 를 씁니다. */
-      run = kcalFrom(kmh ? runMet(kmh) : 7.5, min, w);
-    }
-    return {
-      lift: Math.round(lift), run: Math.round(run), total: Math.round(lift + run),
-      measured: lm.measured, minutes: Math.round(lm.minutes), runMin: Number.isFinite(min) ? min : 0,
-    };
-  }
-
   function sessionStats(s) {
     let done = 0, total = 0, volume = 0;
     for (const ex of s.exercises || []) {
@@ -707,32 +601,6 @@
       document.body.appendChild(wrap);
       requestAnimationFrame(() => { input.focus(); input.select(); });
     });
-  }
-
-  /* 칼로리 숫자 옆에는 반드시 '어떻게 나온 값인지' 로 가는 길이 있어야
-     합니다. 근거 없이 숫자만 있는 건 그냥 지어낸 값과 구분되지 않습니다. */
-  async function showKcalInfo() {
-    const w = bodyWeight();
-    const s = state.session;
-    const k = s ? sessionKcal(s) : null;
-    const lines = [
-      'MET × 3.5 × 체중 ÷ 200 × 분',
-      '',
-      `· 체중 ${w ? w + 'kg' : '(설정 안 됨)'} 기준`,
-      `· 웨이트 ${LIFT_INTENSITY_LABEL[liftIntensity()]} = ${MET_LIFT[liftIntensity()]} MET`,
-      '· 러닝은 거리와 시간으로 속도를 내어 그 속도의 MET 적용',
-      '',
-      k && k.total
-        ? (k.measured
-            ? `오늘은 세트 완료 시각으로 잰 실제 ${k.minutes}분을 썼습니다.`
-            : `오늘은 시간 기록이 없어 세트당 2.2분으로 어림잡았습니다 (${k.minutes}분).`)
-        : '세트를 완료하면 그 시각을 기록해 실제 운동 시간을 잽니다.',
-      '',
-      'MET 값 출처는 2024 Adult Compendium of Physical Activities 입니다.',
-      '같은 운동도 그날 컨디션에 따라 실제 소모가 달라지므로, 정확한 값이',
-      '아니라 추세를 보는 용도로 쓰세요.',
-    ];
-    await ask({ title: '소모 칼로리는 어떻게 계산하나요', body: lines.join('\n'), confirmText: '알겠어요', cancelText: '' });
   }
 
   /* ── Toast ──────────────────────────────── */
@@ -2181,14 +2049,6 @@
             <div class="sum-val">${Number.isFinite(runKm)&&runKm?runKm:'-'}<span>km</span></div>
             <div class="sum-lbl">러닝</div>
           </div>` : ''}
-          ${(() => {
-            const k = sessionKcal(s);
-            if (!k.total) return '';
-            return `<button class="sum-item" data-act="kcal-info">
-              <div class="sum-val">${fmtNum(k.total)}<span>kcal</span></div>
-              <div class="sum-lbl">추정 소모 ⓘ</div>
-            </button>`;
-          })()}
         </div>
         ${stats.total ? `<div class="sum-bar"><div class="sum-bar-fill" style="width:${pct}%"></div></div>` : ''}
       </div>` : '';
@@ -2359,7 +2219,6 @@
             <div><b>${s.exercises.length}</b><span>운동</span></div>
             <div><b>${stats.done}</b><span>완료 세트</span></div>
             ${hasRunData(s.run) && Number.isFinite(runKm) && runKm ? `<div><b>${runKm}</b><span>km</span></div>` : ''}
-            ${(() => { const k = sessionKcal(s); return k.total ? `<div><b>${fmtNum(k.total)}</b><span>kcal 추정</span></div>` : ''; })()}
           </div>
         </div>
         ${body}
@@ -2765,7 +2624,7 @@
         keys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
       }
     }
-    const blank = () => ({ km: 0, min: 0, sets: {}, total: 0, days: 0, volume: 0, kcal: 0 });
+    const blank = () => ({ km: 0, min: 0, sets: {}, total: 0, days: 0, volume: 0 });
     const map = new Map(keys.map(k => [k, blank()]));
     for (const s of state.sessions) {
       const key = mode === 'week' ? weekStart(s.date) : monthKey(s.date);
@@ -2788,7 +2647,7 @@
       const km = Number(s.run?.km), min = Number(s.run?.minutes);
       if (Number.isFinite(km) && km) { b.km += km; any = true; }
       if (Number.isFinite(min) && min) { b.min += min; any = true; }
-      if (any) { b.days++; b.kcal += sessionKcal(s).total; }
+      if (any) b.days++;
     }
     return keys.map(k => {
       const b = map.get(k);
@@ -2889,22 +2748,10 @@
         + `<title>${r.label} · ${fmtNum(r.volume)}kg</title>`;
     }).join('');
 
-    /* ── 추정 소모 칼로리 (한 종류라 범례 없음) */
-    const maxKcal = Math.max(...rows.map(r => r.kcal), 1);
-    const kcalBars = rows.map((r, i) => {
-      const x = PAD_L + slot * i + (slot - bw) / 2;
-      const h = r.kcal ? Math.max(3, (r.kcal / maxKcal) * plotH) : 0;
-      const y = PAD_T + plotH - h;
-      return bar(x, y, bw, h, 'var(--kcal-color)', 4)
-        + (r.kcal ? `<text x="${x + bw / 2}" y="${y - 4}" class="ch-val">${fmtNum(r.kcal)}</text>` : '')
-        + `<title>${r.label} · 약 ${fmtNum(r.kcal)}kcal</title>`;
-    }).join('');
-
     const totKm = rows.reduce((a, r) => a + r.km, 0);
     const totSets = rows.reduce((a, r) => a + r.total, 0);
     const totDays = rows.reduce((a, r) => a + r.days, 0);
     const totVol = rows.reduce((a, r) => a + r.volume, 0);
-    const totKcal = rows.reduce((a, r) => a + r.kcal, 0);
 
     return `<div class="stats-card">
       <div class="stats-head"><div class="sec-title">운동량 추이</div>${toggle}</div>
@@ -2913,7 +2760,6 @@
         <div><b>${totDays}</b><span>운동일</span></div>
         <div><b>${totSets}</b><span>세트</span></div>
         <div><b>${fmtVol(totVol)}</b><span>총 볼륨</span></div>
-        ${totKcal ? `<div><b>${fmtNum(totKcal)}</b><span>kcal 추정</span></div>` : ''}
         <div><b>${totKm % 1 ? totKm.toFixed(1) : totKm}</b><span>km</span></div>
       </div>
 
@@ -2921,12 +2767,6 @@
       <svg class="ch" viewBox="0 0 ${W} ${H}" role="img" aria-label="${modeLabel}별 러닝 거리">
         ${base}${yLab(maxKm % 1 ? maxKm.toFixed(1) : maxKm)}${runBars}${axis}
       </svg>
-
-      ${totKcal ? `
-      <div class="ch-title">추정 소모 <span>kcal · 눌러서 계산 방법 보기</span></div>
-      <svg class="ch" viewBox="0 0 ${W} ${H}" role="img" aria-label="${modeLabel}별 추정 소모 칼로리" data-act="kcal-info">
-        ${base}${yLab(fmtNum(maxKcal))}${kcalBars}${axis}
-      </svg>` : ''}
 
       <div class="ch-title">총 볼륨 <span>무게 × 횟수</span></div>
       <svg class="ch" viewBox="0 0 ${W} ${H}" role="img" aria-label="${modeLabel}별 총 볼륨">
@@ -3114,16 +2954,6 @@
             </div>
           </div>` : ''}
 
-          <div class="settings-item settings-block">
-            <div class="settings-item-text">
-              <div class="settings-item-title">운동 강도</div>
-              <div class="settings-item-sub">소모 칼로리를 어림잡는 기준입니다${bodyWeight() ? '' : ' · 몸무게를 넣어야 계산됩니다'}</div>
-            </div>
-            <div class="presets-scroll">
-              ${Object.keys(MET_LIFT).map(k => `<button class="preset-chip${liftIntensity()===k?' on':''}" data-act="set-intensity" data-v="${k}">${LIFT_INTENSITY_LABEL[k]}</button>`).join('')}
-            </div>
-            <button class="kcal-how" data-act="kcal-info">소모 칼로리는 어떻게 계산하나요?</button>
-          </div>
         </div>
 
         <p class="settings-note">${state.user
@@ -3239,13 +3069,6 @@
     if (act === 'stats-range') { state.statsRange = btn.dataset.range; render(); return; }
     if (act === 'pr-toggle') { state.prAll = !state.prAll; render(); return; }
     if (act === 'hist-all')  { state.histAll = !state.histAll; render(); return; }
-    if (act === 'kcal-info') { await showKcalInfo(); return; }
-    if (act === 'set-intensity') {
-      setLiftIntensity(btn.dataset.v);
-      render();
-      toast(`운동 강도: ${LIFT_INTENSITY_LABEL[btn.dataset.v]}`);
-      return;
-    }
     if (act === 'open-routines') { state.routineSheet = true; render(); return; }
     if (act === 'new-routine')   { openRoutineEditor(null); return; }
     if (act === 'edit-routine')  { openRoutineEditor(btn.dataset.id); return; }
@@ -4305,9 +4128,10 @@
     const set = ex?.sets.find(s=>s.id===setId);
     if (!set) return;
     set.done = !set.done;
-    /* 완료 시각을 남깁니다. 이게 있어야 그 운동에 실제로 몇 분을 썼는지
-       알 수 있고, 칼로리가 '세트 수로 어림잡은 값' 이 아니라 실제 시간에
-       근거한 값이 됩니다. 체크를 풀면 지웁니다. */
+    /* 완료 시각을 남깁니다. 지금 화면에 쓰는 곳은 없지만, 운동에 실제로
+       몇 분을 썼는지·세트 사이를 얼마나 쉬었는지는 이 값이 없으면 나중에
+       어떤 방법으로도 알아낼 수 없습니다. 지나간 시간은 되돌려 기록할 수
+       없으므로 지금부터 쌓아 둡니다. 체크를 풀면 지웁니다. */
     if (set.done) set.doneAt = Date.now(); else delete set.doneAt;
     /* Only kick off rest when a set is completed, not when un-checking it. */
     if (set.done) startRestTimer(restDurationFor(set), ex?.name || '');
