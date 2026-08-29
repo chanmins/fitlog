@@ -1460,3 +1460,59 @@ body.overlay-open { overflow: hidden; }
 .credit-block { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
 .credit-block p { font-size: 11px; line-height: 1.7; color: var(--muted); margin: 0 0 6px; }
 .credit-block a { color: var(--sub); text-decoration: underline; }
+
+/* ── 히스토리에서 펼친 하루 ─────────────────────────────────────────────
+   달력 바로 아래에 끼워 넣으므로, 전체 화면판과 달리 자기 테두리를 갖고
+   달력과 시각적으로 분리됩니다. */
+.hist-day {
+  margin-top: 14px; padding: 14px; border-radius: var(--r-lg);
+  background: var(--surface); border: 1px solid var(--line);
+}
+.hist-day-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.hist-day-title { font-size: 15px; font-weight: 800; color: var(--text); }
+.hist-day .dsum-hero { margin-top: 0; }
+
+/* ── 운동량 추이 ────────────────────────────────────────────────────────
+   러닝(km)과 부위별 세트는 단위가 달라 그래프를 따로 둡니다. 한 그래프에
+   축을 두 개 그리면 두 값이 서로 관계있는 것처럼 읽히는데, 실제로는
+   아무 관계도 없습니다. */
+:root { --run-color: #4ecdc4; }
+
+.stats-card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); padding: 16px; margin-top: 18px;
+}
+.stats-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.stats-toggle { display: flex; gap: 4px; background: var(--surface-2); border-radius: 999px; padding: 3px; }
+.stats-tab {
+  padding: 5px 13px; border-radius: 999px; border: none; background: transparent;
+  font-size: 12px; font-weight: 800; color: var(--muted); cursor: pointer;
+}
+.stats-tab.on { background: var(--accent-soft); color: var(--accent); }
+
+.stats-sum { display: flex; gap: 8px; margin-bottom: 16px; }
+.stats-sum > div {
+  flex: 1; background: var(--surface-2); border-radius: var(--r-sm);
+  padding: 9px 6px; text-align: center;
+}
+.stats-sum b { display: block; font-size: 17px; font-weight: 800; color: var(--text); }
+.stats-sum span { font-size: 10px; font-weight: 700; color: var(--muted); }
+
+.ch-title {
+  font-size: 11px; font-weight: 800; color: var(--sub);
+  text-transform: uppercase; letter-spacing: .05em; margin: 4px 0 2px;
+}
+.ch-title span { color: var(--muted); text-transform: none; letter-spacing: 0; }
+.ch { width: 100%; height: auto; margin-bottom: 10px; overflow: visible; }
+/* 격자와 축은 뒤로 물러나 있어야 막대가 먼저 읽힙니다. */
+.ch-base { stroke: var(--line); stroke-width: 1; }
+.ch-axis { fill: var(--muted); font-size: 9px; font-weight: 700; text-anchor: middle; }
+.ch-val  { fill: var(--sub);   font-size: 9px; font-weight: 800; text-anchor: middle; }
+
+/* 색만으로 구분하지 않도록 범례를 항상 답니다. */
+.ch-legend { display: flex; flex-wrap: wrap; gap: 5px 10px; margin-top: 2px; }
+.ch-leg { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 700; color: var(--sub); }
+.ch-leg i { width: 8px; height: 8px; border-radius: 3px; display: inline-block; }

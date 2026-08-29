@@ -113,6 +113,10 @@
 
     /* Day the read-only summary overlay is showing, or null */
     summaryDate: null,
+    /* 히스토리 달력에서 펼쳐 놓은 날짜 (전체 화면 summaryDate 와는 별개) */
+    histDay: null,
+    /* 운동량 추이 그래프의 범위 — 'week' | 'month' */
+    statsRange: 'week',
 
     /* Toast */
     toast: '',
@@ -174,8 +178,16 @@
       completedAt: Number(raw.completedAt) || 0,
     };
   }
+  /* 부위는 고른 순서가 아니라 항상 같은 순서로 적습니다. 가슴을 먼저 골랐든
+     팔을 먼저 골랐든 "가슴, 팔" 로 나와야, 기록 목록을 훑을 때 같은 조합이
+     같은 글자로 보여 눈에 익습니다. 순서는 PARTS 에 정의된 순서
+     (가슴·등·어깨·팔·하체·코어·스트레칭·러닝) 를 그대로 씁니다. */
+  function orderedParts(ids) {
+    const want = new Set(ids || []);
+    return PARTS.filter(p => want.has(p.id));
+  }
   function sessionSummary(s) {
-    return (s.parts||[]).map(id=>PARTS.find(p=>p.id===id)?.label).filter(Boolean).join(', ');
+    return orderedParts(s.parts).map(p => p.label).join(', ');
   }
   /* A stretch is held, not lifted: there is no weight, and the number that
      matters is seconds. The library marks these with hold:true and the set row
@@ -1969,10 +1981,15 @@
      pickers and part tiles, which is the wrong shape for looking back at a
      finished session. This one has no controls at all: every set is laid out as
      a chip so a whole workout reads in one glance. */
-  function renderDaySummary(date) {
-    const s = state.sessions.find(x => x.date === date)
-           || (state.session && state.session.date === date ? state.session : null);
-    if (!s) return '';
+  function findDay(date) {
+    return state.sessions.find(x => x.date === date)
+        || (state.session && state.session.date === date ? state.session : null);
+  }
+
+  /* 하루치 기록의 '내용'만 만듭니다. 전체 화면으로 띄울 때와 히스토리 달력
+     아래에 끼워 넣을 때가 똑같은 내용을 써야 하므로, 껍데기(상단바 등)와
+     분리해 둡니다. */
+  function daySummaryBody(s) {
     const stats = sessionStats(s);
     const runKm = Number(s.run?.km);
     const runMin = Number(s.run?.minutes);
@@ -2025,24 +2042,15 @@
 
     const body = (byPart + runBlock) || `<div class="empty-state" style="margin-top:30px">이 날은 기록된 운동이 없습니다.</div>`;
 
-    return `<div class="detail-screen">
-      <header class="topbar">
-        <button class="btn-icon ghost" data-act="close-summary" aria-label="닫기">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-        </button>
-        <div class="topbar-title">${esc(longDate(s.date))}</div>
-        <div class="topbar-spacer"></div>
-      </header>
-      <main class="screen">
+    return `
         <div class="dsum-hero${done ? ' done' : ''}">
           <div class="dsum-badge">
             ${done ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>운동 완료`
                    : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>진행 중`}
           </div>
-          <div class="dsum-parts">${(s.parts || []).map(id => {
-            const p = PARTS.find(x => x.id === id);
-            return p ? `<span class="muscle-tag" style="background:color-mix(in srgb,${p.color} 16%,var(--surface-2));color:${p.color}">${p.label}</span>` : '';
-          }).join('')}</div>
+          <div class="dsum-parts">${orderedParts(s.parts).map(p =>
+            `<span class="muscle-tag" style="background:color-mix(in srgb,${p.color} 16%,var(--surface-2));color:${p.color}">${p.label}</span>`
+          ).join('')}</div>
           <div class="dsum-stats">
             <div><b>${s.exercises.length}</b><span>운동</span></div>
             <div><b>${stats.done}</b><span>완료 세트</span></div>
@@ -2053,7 +2061,23 @@
         <button class="btn-ghost dsum-edit" data-act="edit-day" data-date="${s.date}">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4v16h16v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
           이 날 기록 편집하기
+        </button>`;
+  }
+
+  /* 홈이나 기록 화면에서 열 때 쓰는 전체 화면판. */
+  function renderDaySummary(date) {
+    const s = findDay(date);
+    if (!s) return '';
+    return `<div class="detail-screen">
+      <header class="topbar">
+        <button class="btn-icon ghost" data-act="close-summary" aria-label="닫기">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
+        <div class="topbar-title">${esc(longDate(s.date))}</div>
+        <div class="topbar-spacer"></div>
+      </header>
+      <main class="screen">
+        ${daySummaryBody(s)}
         <div style="height:20px"></div>
       </main>
     </div>`;
@@ -2397,9 +2421,190 @@
       </div>`;
   }
 
+  /* ── 주간·월간 통계 ──────────────────────────────────────────────────────
+     "얼마나 했나" 는 두 가지 서로 다른 숫자입니다 — 달린 거리(km)와 들어올린
+     세트 수. 단위가 다른 둘을 한 그래프에 축 두 개로 겹치면 아무 관계나
+     있어 보이게 되므로, 그래프를 둘로 나눕니다.
+
+     부위 색은 앱에서 이미 쓰는 색 그대로입니다. 이 색들은 어두운 배경 기준
+     밝기 대역 검사에서는 떨어지지만(전부 밝은 축), 정작 중요한 색맹 구분
+     (ΔE 9.9)과 배경 대비는 통과합니다. 그리고 사용자는 이미 기록 카드의
+     점 색으로 부위를 익혔기 때문에, 그래프에서만 다른 색을 쓰면 오히려
+     알아보기 어려워집니다. 대신 색만으로 구분하지 않도록 범례·구분 간격·
+     길게 눌렀을 때의 수치를 함께 넣습니다. */
+  const STATS_BUCKETS = { week: 8, month: 6 };
+
+  function statsRange() { return state.statsRange === 'month' ? 'month' : 'week'; }
+
+  /* 월요일 시작 주의 첫날 */
+  function weekStart(iso) {
+    const d = new Date(iso + 'T00:00:00');
+    const dow = (d.getDay() + 6) % 7;
+    d.setDate(d.getDate() - dow);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function statsBuckets() {
+    const mode = statsRange();
+    const n = STATS_BUCKETS[mode];
+    const keys = [];
+    const today = new Date(todayISO() + 'T00:00:00');
+    for (let i = n - 1; i >= 0; i--) {
+      if (mode === 'week') {
+        const d = new Date(today); d.setDate(d.getDate() - i * 7);
+        keys.push(weekStart(d.toISOString().slice(0, 10)));
+      } else {
+        const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+        keys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+      }
+    }
+    const blank = () => ({ km: 0, min: 0, sets: {}, total: 0, days: 0 });
+    const map = new Map(keys.map(k => [k, blank()]));
+    for (const s of state.sessions) {
+      const key = mode === 'week' ? weekStart(s.date) : monthKey(s.date);
+      const b = map.get(key);
+      if (!b) continue;
+      let any = false;
+      for (const ex of s.exercises || []) {
+        const done = (ex.sets || []).filter(st => st.done).length;
+        if (!done) continue;
+        b.sets[ex.part] = (b.sets[ex.part] || 0) + done;
+        b.total += done; any = true;
+      }
+      const km = Number(s.run?.km), min = Number(s.run?.minutes);
+      if (Number.isFinite(km) && km) { b.km += km; any = true; }
+      if (Number.isFinite(min) && min) { b.min += min; any = true; }
+      if (any) b.days++;
+    }
+    return keys.map(k => {
+      const b = map.get(k);
+      const label = mode === 'week'
+        ? (() => { const [, m, d] = k.split('-'); return `${Number(m)}/${Number(d)}`; })()
+        : `${Number(k.split('-')[1])}월`;
+      return { key: k, label, ...b };
+    });
+  }
+
+  /* 세로 막대 하나. 위쪽 끝만 둥글게 깎아 바닥선에 붙어 있게 둡니다. */
+  function bar(x, y, w, h, color, round) {
+    if (h <= 0) return '';
+    const r = Math.min(round || 0, w / 2, h);
+    return `<path d="M${x} ${y + h} L${x} ${y + r} Q${x} ${y} ${x + r} ${y}
+      L${x + w - r} ${y} Q${x + w} ${y} ${x + w} ${y + r} L${x + w} ${y + h} Z"
+      fill="${color}"/>`;
+  }
+
+  function renderStatsCard() {
+    const mode = statsRange();
+    const rows = statsBuckets();
+    const anyData = rows.some(r => r.total > 0 || r.km > 0);
+    const modeLabel = mode === 'week' ? '주' : '달';
+
+    const toggle = `<div class="stats-toggle" role="tablist">
+      <button role="tab" aria-selected="${mode === 'week'}" class="stats-tab${mode === 'week' ? ' on' : ''}" data-act="stats-range" data-range="week">주간</button>
+      <button role="tab" aria-selected="${mode === 'month'}" class="stats-tab${mode === 'month' ? ' on' : ''}" data-act="stats-range" data-range="month">월간</button>
+    </div>`;
+
+    if (!anyData) {
+      return `<div class="stats-card">
+        <div class="stats-head"><div class="sec-title">운동량 추이</div>${toggle}</div>
+        <p class="balance-empty">기록이 쌓이면 ${modeLabel}마다 얼마나 달렸는지, 어느 부위를 얼마나 했는지 여기에 그려 드려요.</p>
+      </div>`;
+    }
+
+    const W = 320, H = 118, PAD_L = 30, PAD_B = 20, PAD_T = 8;
+    const n = rows.length;
+    const slot = (W - PAD_L) / n;
+    const bw = Math.min(26, slot * 0.62);
+    const plotH = H - PAD_B - PAD_T;
+
+    /* ── 러닝 (한 종류라 범례가 필요 없습니다 — 제목이 곧 이름입니다) */
+    const maxKm = Math.max(...rows.map(r => r.km), 1);
+    const runBars = rows.map((r, i) => {
+      const x = PAD_L + slot * i + (slot - bw) / 2;
+      const h = r.km ? Math.max(3, (r.km / maxKm) * plotH) : 0;
+      const y = PAD_T + plotH - h;
+      return bar(x, y, bw, h, 'var(--run-color)', 4)
+        + (r.km ? `<text x="${x + bw / 2}" y="${y - 4}" class="ch-val">${r.km % 1 ? r.km.toFixed(1) : r.km}</text>` : '')
+        + `<title>${r.label} · ${r.km}km${r.min ? ` · ${r.min}분` : ''}</title>`;
+    }).join('');
+
+    /* ── 부위별 세트 (쌓은 막대. 조각 사이를 2px 띄워 색이 붙어 보이지
+          않게 합니다 — 밝기가 비슷한 색끼리 맞닿으면 경계가 사라집니다.) */
+    const weightParts = PARTS.filter(p => p.kind === 'weight');
+    const maxSets = Math.max(...rows.map(r => r.total), 1);
+    const setBars = rows.map((r, i) => {
+      const x = PAD_L + slot * i + (slot - bw) / 2;
+      let acc = 0, out = '', first = true;
+      for (const part of weightParts) {
+        const v = r.sets[part.id] || 0;
+        if (!v) continue;
+        const h = (v / maxSets) * plotH;
+        const y = PAD_T + plotH - acc - h;
+        out += bar(x, y + (first ? 0 : 1), bw, Math.max(1, h - (first ? 0 : 2)), part.color, first ? 4 : 0);
+        acc += h; first = false;
+      }
+      const detail = weightParts.filter(p => r.sets[p.id]).map(p => `${p.label} ${r.sets[p.id]}`).join(', ');
+      return out
+        + (r.total ? `<text x="${x + bw / 2}" y="${PAD_T + plotH - acc - 4}" class="ch-val">${r.total}</text>` : '')
+        + `<title>${r.label} · ${r.total}세트${detail ? ` (${detail})` : ''}</title>`;
+    }).join('');
+
+    const axis = rows.map((r, i) =>
+      `<text x="${PAD_L + slot * i + slot / 2}" y="${H - 6}" class="ch-axis">${esc(r.label)}</text>`).join('');
+    const yLab = v => `<text x="${PAD_L - 6}" y="${PAD_T + 4}" class="ch-axis" text-anchor="end">${v}</text>`
+                    + `<text x="${PAD_L - 6}" y="${PAD_T + plotH + 4}" class="ch-axis" text-anchor="end">0</text>`;
+    const base = `<line x1="${PAD_L}" y1="${PAD_T + plotH}" x2="${W}" y2="${PAD_T + plotH}" class="ch-base"/>`;
+
+    const usedParts = weightParts.filter(p => rows.some(r => r.sets[p.id]));
+    const legend = usedParts.map(p =>
+      `<span class="ch-leg"><i style="background:${p.color}"></i>${esc(p.label)}</span>`).join('');
+
+    const totKm = rows.reduce((a, r) => a + r.km, 0);
+    const totSets = rows.reduce((a, r) => a + r.total, 0);
+    const totDays = rows.reduce((a, r) => a + r.days, 0);
+
+    return `<div class="stats-card">
+      <div class="stats-head"><div class="sec-title">운동량 추이</div>${toggle}</div>
+
+      <div class="stats-sum">
+        <div><b>${totDays}</b><span>운동일</span></div>
+        <div><b>${totSets}</b><span>세트</span></div>
+        <div><b>${totKm % 1 ? totKm.toFixed(1) : totKm}</b><span>km</span></div>
+      </div>
+
+      <div class="ch-title">러닝 <span>km</span></div>
+      <svg class="ch" viewBox="0 0 ${W} ${H}" role="img" aria-label="${modeLabel}별 러닝 거리">
+        ${base}${yLab(maxKm % 1 ? maxKm.toFixed(1) : maxKm)}${runBars}${axis}
+      </svg>
+
+      <div class="ch-title">부위별 세트</div>
+      <svg class="ch" viewBox="0 0 ${W} ${H}" role="img" aria-label="${modeLabel}별 부위 세트 수">
+        ${base}${yLab(maxSets)}${setBars}${axis}
+      </svg>
+      ${legend ? `<div class="ch-legend">${legend}</div>` : ''}
+    </div>`;
+  }
+
   function renderHistory() {
     const mKey = state.histMonth || monthKey(todayISO());
     let body = renderCalendar(mKey);
+
+    /* 날짜를 고르면 전체 화면으로 덮지 않고 달력 바로 아래에서 펼칩니다.
+       달력이 사라지면 "옆 날짜는 어땠지" 를 보려고 매번 뒤로 나갔다
+       들어와야 합니다. 달력을 남겨 두면 그냥 다른 날을 누르면 됩니다. */
+    const picked = state.histDay && state.histDay.startsWith(mKey) ? findDay(state.histDay) : null;
+    if (picked) {
+      body += `<div class="hist-day">
+        <div class="hist-day-head">
+          <div class="hist-day-title">${esc(longDate(picked.date))}</div>
+          <button class="btn-icon ghost" data-act="close-hist-day" aria-label="닫기">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        ${daySummaryBody(picked)}
+      </div>`;
+    }
 
     const rows = state.sessions.filter(s => s.date.startsWith(mKey));
     if (rows.length) {
@@ -2428,6 +2633,10 @@
     } else {
       body += `<div class="empty-state" style="margin-top:22px">이 달에는 아직 기록이 없습니다.</div>`;
     }
+
+    body += renderStatsCard();
+    /* 마지막 카드가 하단 탭바에 가리지 않도록 여백을 둡니다. */
+    body += '<div style="height:18px"></div>';
 
     return `<header class="topbar"><div class="topbar-title">히스토리</div></header>
       <main class="screen">${body}</main>`;
@@ -2620,7 +2829,15 @@
     /* Tapping a past day shows what was done rather than opening the editor.
        Looking back is the common intent; 편집 is one tap further in, inside the
        summary, where it is an explicit choice rather than the default. */
-    if (act === 'open-day')   { state.summaryDate = btn.dataset.date; render(); return; }
+    if (act === 'open-day') {
+      /* 히스토리 안에서는 달력을 남긴 채 아래에서 펼치고, 다른 화면(홈 등)
+         에서는 지금처럼 전체 화면으로 띄웁니다. */
+      if (state.tab === 'history') { state.histDay = state.histDay === btn.dataset.date ? null : btn.dataset.date; }
+      else state.summaryDate = btn.dataset.date;
+      render(); return;
+    }
+    if (act === 'close-hist-day') { state.histDay = null; render(); return; }
+    if (act === 'stats-range') { state.statsRange = btn.dataset.range; render(); return; }
     if (act === 'cal-shift')  {
       state.histMonth = shiftMonth(state.histMonth || monthKey(todayISO()), Number(btn.dataset.delta));
       render(); return;
