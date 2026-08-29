@@ -119,6 +119,8 @@
     statsRange: 'week',
     /* 개인 기록 목록을 전부 펼쳤는지 */
     prAll: false,
+    /* 이 달의 기록 목록을 전부 펼쳤는지 */
+    histAll: false,
 
     /* Toast */
     toast: '',
@@ -961,6 +963,8 @@
     state.pickerPart = null;
     state.pickSelection = [];
     state.routineSheet = false;
+    /* routineEdit 는 시트가 아니라 화면이므로 여기서 닫지 않습니다 —
+       운동을 고르고 나면 만들던 자리로 돌아와야 합니다. */
     state.exerciseInfoId = null;
     state.weightPicker = null;
     state.repsPicker = null;
@@ -1087,6 +1091,7 @@
     if (state.exerciseInfoId) html += renderExerciseInfoSheet(state.exerciseInfoId);
     if (state.pickerPart)     html += renderExercisePickerSheet(state.pickerPart);
     if (state.routineSheet)   html += renderRoutineSheet();
+    if (state.routineEdit)    html += renderRoutineEditor();
 
     html += renderBottomNav();
     /* Full-screen overlay, so it can be opened from home, history or the
@@ -1105,11 +1110,22 @@
      still scrolled to wherever the last set was, and the overlay inherited a
      scroll position from whatever had been shown there before, so it arrived
      mid-content and jumped as the entry animation finished. */
+  /* 전체 화면이 '새로 열릴 때만' 맨 위로 보냅니다.
+     매 렌더마다 되돌리면, 루틴을 만들다 운동을 하나 담을 때마다 화면이
+     맨 위로 튀어 방금 보던 자리를 잃습니다. 무엇이 열려 있는지를 키로 삼아
+     바뀐 순간에만 초기화합니다. */
+  let _overlayKey = null;
   function syncOverlayScroll() {
     const overlay = document.querySelector('.detail-screen');
     document.body.classList.toggle('overlay-open', !!overlay);
-    if (!overlay) return;
-    overlay.scrollTop = 0;
+    const key = !overlay ? null
+      : state.routineEdit ? `routine:${state.routineEdit.id || 'new'}`
+      : state.summaryDate ? `day:${state.summaryDate}`
+      : 'other';
+    if (key !== _overlayKey) {
+      _overlayKey = key;
+      if (overlay) overlay.scrollTop = 0;
+    }
   }
 
   /* Newly added exercises get scrolled to and briefly outlined.
@@ -2080,9 +2096,6 @@
         <div class="topbar-title">운동 기록</div>
         <div class="topbar-spacer"></div>
         ${isToday ? '' : `<button class="btn-today" data-act="today">오늘로</button>`}
-        <button class="btn-icon danger" data-act="delete-day">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-        </button>
       </header>
       <main class="screen">
         <div class="day-nav">
@@ -2107,11 +2120,7 @@
           </button>
         </div>
         <div class="part-grid">${partTiles}</div>
-        ${(state.session.exercises || []).length ? `
-        <button class="routine-save" data-act="save-routine">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
-          지금 구성을 루틴으로 저장
-        </button>` : ''}
+
         ${blocks}
         ${finishBar}
         ${state.editingPast ? `
@@ -2125,6 +2134,8 @@
             <button class="btn-hero" data-act="save-past">저장</button>
           </div>
         </div>` : ''}
+        ${sessionHasAnything(s) ? `
+        <button class="day-wipe" data-act="delete-day">이 날 기록 전체 삭제</button>` : ''}
       </main>`;
   }
 
@@ -2248,12 +2259,6 @@
       `<span class="muscle-tag${primary.includes(m)?' primary':''}">${esc(MUSCLE_GROUPS[m]||m)}</span>`
     ).join('');
 
-    const prevHint = last
-      ? `<button class="prev-hint" data-act="copy-last" data-ex="${esc(ex.id)}">
-           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
-           <span><strong>지난 기록 ${shortDate(last.date)}</strong> · ${esc(fmtSets(last.sets)||'기록 없음')} · 탭하면 불러오기</span>
-         </button>`
-      : '';
 
     /* Warm-ups are labelled W and don't consume a number, so the working sets
        still read 1, 2, 3 — which is how a lifter counts them. */
@@ -2305,7 +2310,6 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
-      ${prevHint}
       <div class="set-table">
         <div class="set-table-head${hold ? ' hold' : ''}"><span>#</span>${hold ? '' : '<span>무게</span>'}<span>${hold ? '시간' : '횟수'}</span><span>완료</span><span></span></div>
         ${sets}
@@ -2459,7 +2463,10 @@
      immediately, so several exercises can be queued and committed in one go
      with the 완료 button. Rows already in today's session show as 추가됨. */
   function buildPickItems(partId) {
-    const added = new Set((state.session?.exercises||[]).filter(e=>e.part===partId).map(e=>e.name));
+    /* '추가됨' 표시는 지금 담고 있는 대상 기준입니다 — 루틴을 만드는 중이면
+       그 루틴, 아니면 오늘 기록. */
+    const target = state.routineEdit ? state.routineEdit.exercises : (state.session?.exercises || []);
+    const added = new Set(target.filter(e => e.part === partId).map(e => e.name));
     const q = state.exerciseSearch.trim().toLowerCase();
     const library = libraryFor(partId).filter(e => !q || e.name.toLowerCase().includes(q) || (e.nameEn||'').toLowerCase().includes(q));
     if (!library.length) return '<div class="help-text">검색 결과가 없습니다. 아래에서 직접 추가할 수 있습니다.</div>';
@@ -2816,10 +2823,22 @@
       </div>`;
     }
 
+    /* 그래프와 개인 기록을 목록보다 먼저 둡니다.
+       한 달치 기록을 전부 줄로 늘어놓으면 22줄이 넘어가고, 정작 이 화면에
+       올 이유인 '얼마나 했나' 가 그 아래 파묻힙니다. 어느 날 운동했는지는
+       위 달력이 이미 보여주고, 날짜를 누르면 그 자리에서 펼쳐집니다. */
+    body += renderStatsCard();
+    body += renderPRCard();
+
     const rows = state.sessions.filter(s => s.date.startsWith(mKey));
     if (rows.length) {
-      body += `<div class="sec-head"><div class="sec-title">이 달의 기록</div></div><div class="recent-list">`;
-      for (const s of rows) {
+      const limit = 5;
+      const shown = state.histAll ? rows : rows.slice(0, limit);
+      body += `<div class="sec-head" style="margin-top:22px">
+        <div class="sec-title">이 달의 기록</div>
+        ${rows.length > limit ? `<button class="stats-tab" data-act="hist-all">${state.histAll ? '접기' : `전체 ${rows.length}일`}</button>` : ''}
+      </div><div class="recent-list">`;
+      for (const s of shown) {
         const [, m, d] = s.date.split('-').map(Number);
         const summary = sessionSummary(s) || '기록';
         const sets = (s.exercises || []).reduce((a, ex) => a + (ex.sets || []).filter(st => st.done).length, 0);
@@ -2844,8 +2863,6 @@
       body += `<div class="empty-state" style="margin-top:22px">이 달에는 아직 기록이 없습니다.</div>`;
     }
 
-    body += renderPRCard();
-    body += renderStatsCard();
     /* 마지막 카드가 하단 탭바에 가리지 않도록 여백을 둡니다. */
     body += '<div style="height:18px"></div>';
 
@@ -3050,10 +3067,28 @@
     if (act === 'close-hist-day') { state.histDay = null; render(); return; }
     if (act === 'stats-range') { state.statsRange = btn.dataset.range; render(); return; }
     if (act === 'pr-toggle') { state.prAll = !state.prAll; render(); return; }
+    if (act === 'hist-all')  { state.histAll = !state.histAll; render(); return; }
     if (act === 'open-routines') { state.routineSheet = true; render(); return; }
-    if (act === 'save-routine')  { await handleSaveRoutine(); return; }
+    if (act === 'new-routine')   { openRoutineEditor(null); return; }
+    if (act === 'edit-routine')  { openRoutineEditor(btn.dataset.id); return; }
     if (act === 'apply-routine') { await handleApplyRoutine(btn.dataset.id); return; }
     if (act === 'del-routine')   { await handleDeleteRoutine(btn.dataset.id); return; }
+    if (act === 'save-routine-edit')    { await handleSaveRoutineEdit(); return; }
+    if (act === 'close-routine-editor') { await closeRoutineEditor(); return; }
+    if (act === 'rt-pick') {
+      /* 루틴을 만드는 중에도 운동 고르기는 같은 시트를 씁니다. 담는 곳만
+         오늘 기록이 아니라 만들던 루틴으로 바뀝니다. */
+      state.routineEdit.name = document.getElementById('routine-name')?.value || state.routineEdit.name;
+      state.pickerPart = btn.dataset.part;
+      state.pickSelection = [];
+      render(); return;
+    }
+    if (act === 'rt-del-ex') {
+      const d = state.routineEdit;
+      d.name = document.getElementById('routine-name')?.value || d.name;
+      d.exercises = d.exercises.filter(e => !(e.part === btn.dataset.part && e.name === btn.dataset.name));
+      render(); return;
+    }
     if (act === 'cal-shift')  {
       state.histMonth = shiftMonth(state.histMonth || monthKey(todayISO()), Number(btn.dataset.delta));
       render(); return;
@@ -3209,9 +3244,13 @@
     }
     if (act === 'commit-picks') { await handleCommitPicks(btn.dataset.part); return; }
     if (act === 'quick-del-ex') {
+      const name = btn.dataset.name, part = btn.dataset.part;
+      if (state.routineEdit) {
+        state.routineEdit.exercises = state.routineEdit.exercises.filter(e => !(e.part === part && e.name === name));
+        render(); return;
+      }
       const s = state.session;
-      const name = btn.dataset.name;
-      s.exercises = s.exercises.filter(e => !(e.part===btn.dataset.part && e.name===name));
+      s.exercises = s.exercises.filter(e => !(e.part===part && e.name===name));
       await persist(); render(); return;
     }
     if (act === 'add-custom') {
@@ -3231,7 +3270,6 @@
       return;
     }
     if (act === 'toggle-done') { await handleToggleDone(btn.dataset.ex, btn.dataset.set); return; }
-    if (act === 'copy-last') { await handleCopyLast(btn.dataset.ex); return; }
     if (act === 'open-summary') { state.summaryDate = btn.dataset.date; render(); return; }
     if (act === 'close-summary') { state.summaryDate = null; render(); return; }
     if (act === 'edit-day') {
@@ -3813,6 +3851,24 @@
   async function handleCommitPicks(partId) {
     const picks = state.pickSelection.slice();
     if (!picks.length) return;
+
+    /* 루틴을 만드는 중이면 오늘 기록이 아니라 그 루틴에 담습니다. 화면도
+       기록으로 돌아가지 않고 만들던 자리에 그대로 남습니다. */
+    if (state.routineEdit) {
+      const d = state.routineEdit;
+      let added = 0;
+      for (const p of picks) {
+        const part = p.part || partId;
+        if (d.exercises.some(e => e.part === part && e.name === p.name)) continue;
+        d.exercises.push({ id: p.exId || uid(), part, name: p.name });
+        added++;
+      }
+      closeAllSheets();
+      render();
+      toast(added ? `${added}개 운동을 담았습니다` : '이미 담겨 있습니다');
+      return;
+    }
+
     let n = 0;
     let firstId = null;
     const before = new Set(state.session.exercises.map(e => e.id));
@@ -3871,72 +3927,135 @@
   }
 
   /* ── 루틴 ────────────────────────────────────────────────────────────────
-     같은 조합을 반복하는 사람에게 매번 부위를 고르고 운동을 담는 일은 통째로
-     낭비입니다. 오늘 구성한 그대로에 이름을 붙여 두고 다음에 한 번에 불러옵니다.
+     처음에는 "오늘 구성한 걸 그대로 저장" 하나로 뒀는데, 그러면 루틴이
+     '오늘 하다 보니 생긴 것' 이 되어 버립니다. 무엇이 루틴이고 무엇이 오늘
+     기록인지 경계가 흐려지고, 만들 생각이 없었는데 버튼이 계속 보입니다.
 
-     저장하는 것은 '무엇을 할지'(부위와 운동 이름)뿐입니다. 무게와 횟수는
-     넣지 않습니다 — 그건 지난 기록에서 자동으로 따라오는 것이 맞고, 루틴에
-     굳혀 두면 오늘 컨디션과 상관없는 숫자가 딸려옵니다. */
+     그래서 만드는 자리를 따로 뒀습니다. 루틴은 전용 화면에서 이름을 붙이고
+     운동을 골라 '만드는' 것이고, 오늘 기록은 오늘 기록입니다. 둘이 섞이지
+     않습니다.
+
+     저장하는 것은 '무엇을 할지'(부위와 운동)뿐입니다. 무게와 횟수는 넣지
+     않습니다 — 그건 그날 몸 상태를 보고 정하는 것이고, 루틴에 굳혀 두면
+     오늘과 상관없는 숫자가 딸려옵니다. */
   async function persistRoutines() {
     for (const r of state.routines) await WorkoutDB.putRoutine(clone(r));
     cloudSync(() => Cloud.saveRoutines(state.routines));
   }
 
-  async function handleSaveRoutine() {
-    const s = state.session;
-    if (!s || !(s.exercises || []).length) { toast('저장할 운동이 없습니다'); return; }
-    const suggested = orderedParts(s.parts).map(p => p.label).join('·') || '내 루틴';
-    const name = await promptText({
-      title: '루틴 저장',
-      message: '이 구성에 이름을 붙여 두면 다음에 한 번에 불러올 수 있어요.',
-      value: suggested,
-      placeholder: '루틴 이름',
-    });
-    if (!name) return;
-    state.routines.unshift({
-      id: uid(),
-      name: name.slice(0, 40),
-      parts: orderedParts(s.parts).map(p => p.id),
-      exercises: (s.exercises || []).map(e => ({ id: e.id, part: e.part, name: e.name })),
-      usedAt: Date.now(),
-    });
-    await persistRoutines();
-    render();
-    toast(`"${name}" 루틴을 저장했습니다`);
+  function routineParts(r) {
+    const ids = [...new Set((r.exercises || []).map(e => e.part))];
+    return orderedParts(ids);
   }
 
-  async function handleApplyRoutine(id) {
-    const r = state.routines.find(x => x.id === id);
-    const s = state.session;
-    if (!r || !s) return;
-    let added = 0;
-    for (const pid of r.parts) if (!s.parts.includes(pid)) s.parts.push(pid);
-    for (const e of r.exercises) if (addExerciseToSession(e.part, e.name, e.id)) added++;
-    r.usedAt = Date.now();
-    await persistRoutines();
-    await persist();
+  /* ── 만들기/고치기 화면 ── */
+  function openRoutineEditor(id) {
+    const src = id ? state.routines.find(r => r.id === id) : null;
+    state.routineEdit = src
+      ? { id: src.id, name: src.name, exercises: (src.exercises || []).map(e => ({ ...e })) }
+      : { id: null, name: '', exercises: [] };
     state.routineSheet = false;
     render();
-    toast(added ? `${r.name} — ${added}개 운동을 담았습니다` : '이미 다 담겨 있습니다');
+    requestAnimationFrame(() => document.getElementById('routine-name')?.focus());
   }
 
-  async function handleDeleteRoutine(id) {
-    const r = state.routines.find(x => x.id === id);
-    if (!r) return;
-    if (!await ask({ title: '루틴 삭제', body: `"${r.name}" 을(를) 지울까요? 지난 기록은 그대로 남습니다.`, confirmText: '삭제', danger: true })) return;
-    state.routines = state.routines.filter(x => x.id !== id);
-    await WorkoutDB.deleteRoutine(id);
-    cloudSync(() => Cloud.saveRoutines(state.routines));
+  async function handleSaveRoutineEdit() {
+    const d = state.routineEdit;
+    if (!d) return;
+    const name = (document.getElementById('routine-name')?.value || d.name).trim();
+    if (!name) { toast('루틴 이름을 적어 주세요'); document.getElementById('routine-name')?.focus(); return; }
+    if (!d.exercises.length) { toast('운동을 하나 이상 골라 주세요'); return; }
+    const row = {
+      id: d.id || uid(),
+      name: name.slice(0, 40),
+      parts: routineParts(d).map(p => p.id),
+      exercises: d.exercises.map(e => ({ id: e.id, part: e.part, name: e.name })),
+      usedAt: d.id ? (state.routines.find(r => r.id === d.id)?.usedAt || 0) : 0,
+    };
+    const at = state.routines.findIndex(r => r.id === row.id);
+    if (at >= 0) state.routines[at] = row; else state.routines.unshift(row);
+    await persistRoutines();
+    state.routineEdit = null;
     render();
-    toast('루틴을 지웠습니다');
+    toast(at >= 0 ? '루틴을 수정했습니다' : `"${row.name}" 루틴을 만들었습니다`);
   }
 
+  async function closeRoutineEditor() {
+    const d = state.routineEdit;
+    const name = (document.getElementById('routine-name')?.value || '').trim();
+    /* 뭔가 적거나 고른 게 있을 때만 물어봅니다. 빈 화면에서 나가는데 확인을
+       받는 건 방해일 뿐입니다. */
+    if (d && (name || d.exercises.length)) {
+      if (!await ask({ title: '만들던 루틴을 버릴까요?', body: '저장하지 않은 내용은 사라집니다.', confirmText: '나가기', danger: true })) return;
+    }
+    state.routineEdit = null;
+    render();
+  }
+
+  function renderRoutineEditor() {
+    const d = state.routineEdit;
+    const byPart = routineParts(d).map(part => {
+      const list = d.exercises.filter(e => e.part === part.id);
+      return `<div class="rt-part">
+        <div class="rt-part-head">
+          <span class="dsum-dot" style="background:${part.color}"></span>${part.label}
+          <span class="rt-part-count">${list.length}개</span>
+        </div>
+        ${list.map(e => `<div class="rt-ex">
+          <span>${esc(e.name)}</span>
+          <button class="custom-del" data-act="rt-del-ex" data-part="${esc(e.part)}" data-name="${esc(e.name)}">빼기</button>
+        </div>`).join('')}
+      </div>`;
+    }).join('');
+
+    const tiles = PARTS.filter(p => p.kind === 'weight').map(p => {
+      const n = d.exercises.filter(e => e.part === p.id).length;
+      return `<button class="rt-tile${n ? ' on' : ''}" style="--pt-color:${p.color}" data-act="rt-pick" data-part="${p.id}">
+        <span class="pt-icon">${PART_ICONS[p.id] || ''}</span>
+        <span class="pt-name">${p.label}</span>
+        <span class="pt-count">${n ? `${n}개` : '고르기'}</span>
+      </button>`;
+    }).join('');
+
+    return `<div class="detail-screen">
+      <header class="topbar">
+        <button class="btn-icon ghost" data-act="close-routine-editor" aria-label="닫기">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <div class="topbar-title">${d.id ? '루틴 수정' : '새 루틴 만들기'}</div>
+        <div class="topbar-spacer"></div>
+        <button class="btn-today" data-act="save-routine-edit">저장</button>
+      </header>
+      <main class="screen">
+        <label class="field-label" for="routine-name">루틴 이름</label>
+        <input class="login-input" id="routine-name" maxlength="40" value="${esc(d.name)}"
+               placeholder="예: 가슴·삼두 데이">
+
+        <div class="sec-head" style="margin-top:22px"><div class="sec-title">운동 고르기</div></div>
+        <div class="part-grid">${tiles}</div>
+
+        ${d.exercises.length ? `
+          <div class="sec-head" style="margin-top:22px">
+            <div class="sec-title">담은 운동</div>
+            <span class="balance-window">${d.exercises.length}개</span>
+          </div>
+          ${byPart}` : `
+          <p class="balance-empty" style="margin-top:18px">부위를 눌러 이 루틴에 넣을 운동을 고르세요.</p>`}
+        <div style="height:24px"></div>
+      </main>
+    </div>`;
+  }
+
+  /* ── 목록(불러오기) ── */
   function renderRoutineSheet() {
     const rows = state.routines.map(r => `
       <div class="routine-row">
         <button class="routine-main" data-act="apply-routine" data-id="${esc(r.id)}">
           <div class="routine-name">${esc(r.name)}</div>
-          <div class="routine-sub">${esc(orderedParts(r.parts).map(p => p.label).join(', '))} · ${r.exercises.length}개 운동</div>
+          <div class="routine-sub">${esc(routineParts(r).map(p => p.label).join(', ') || '빈 루틴')} · ${r.exercises.length}개 운동</div>
+        </button>
+        <button class="rt-edit" data-act="edit-routine" data-id="${esc(r.id)}" aria-label="수정">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4v16h16v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
         </button>
         <button class="custom-del" data-act="del-routine" data-id="${esc(r.id)}">삭제</button>
       </div>`).join('');
@@ -3952,10 +4071,39 @@
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
-        ${rows || '<div class="help-text">아직 저장한 루틴이 없습니다. 오늘 운동을 구성한 뒤 <strong>루틴으로 저장</strong>을 누르면 여기에 쌓입니다.</div>'}
-        <button class="btn-ghost" data-act="save-routine" style="margin-top:12px">지금 구성을 루틴으로 저장</button>
+        ${rows || '<div class="help-text">아직 만든 루틴이 없습니다. 자주 하는 조합을 하나 만들어 두면 매번 부위를 고르고 운동을 담을 필요가 없어집니다.</div>'}
+        <button class="picker-confirm" data-act="new-routine" style="margin-top:14px">+ 새 루틴 만들기</button>
       </div>
     </div>`;
+  }
+
+  async function handleApplyRoutine(id) {
+    const r = state.routines.find(x => x.id === id);
+    const s = state.session;
+    if (!r || !s) return;
+    let added = 0;
+    for (const e of r.exercises) {
+      if (!s.parts.includes(e.part)) s.parts.push(e.part);
+      if (addExerciseToSession(e.part, e.name, e.id)) added++;
+    }
+    r.usedAt = Date.now();
+    await persistRoutines();
+    await persist();
+    state.routineSheet = false;
+    state.tab = 'workout';
+    render();
+    toast(added ? `${r.name} — ${added}개 운동을 담았습니다` : '이미 다 담겨 있습니다');
+  }
+
+  async function handleDeleteRoutine(id) {
+    const r = state.routines.find(x => x.id === id);
+    if (!r) return;
+    if (!await ask({ title: '루틴 삭제', body: `"${r.name}" 을(를) 지울까요? 지난 기록은 그대로 남습니다.`, confirmText: '삭제', danger: true })) return;
+    state.routines = state.routines.filter(x => x.id !== id);
+    await WorkoutDB.deleteRoutine(id);
+    cloudSync(() => Cloud.saveRoutines(state.routines));
+    render();
+    toast('루틴을 지웠습니다');
   }
 
   async function handleAddSet(exId) {
@@ -4011,15 +4159,6 @@
     await persist(); render();
   }
 
-  async function handleCopyLast(exId) {
-    const ex = state.session.exercises.find(e=>e.id===exId);
-    if (!ex) return;
-    const last = lastLog(ex.name, state.session.date);
-    if (!last) { toast('이전 기록이 없습니다'); return; }
-    ex.sets = last.sets.map(s=>({ id:uid(), kg:s.kg, reps:s.reps, done:false, warmup:!!s.warmup }));
-    await persist(); render();
-    toast('지난 기록을 불러왔습니다');
-  }
 
   async function handleDeleteDay() {
     if (!await ask({ title: '이 날 기록을 삭제할까요?',

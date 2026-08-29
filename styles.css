@@ -116,14 +116,24 @@ em { font-style: normal; }
 }
 @keyframes screenIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
+/* 상단바 높이는 반드시 '안전영역까지 더한' 값이어야 합니다.
+   box-sizing 이 border-box 라 height:56px 은 패딩을 포함한 전체 높이입니다.
+   아이폰의 위쪽 안전영역은 59px 안팎이라, 위아래 패딩만으로 이미 56px 을
+   넘어 내용이 들어갈 자리가 0 이 됩니다. 그래서 제목이 잘리고 내용이
+   상단바 밖으로 삐져나와 보였습니다 — 스크롤하면 뒤 내용이 그 틈으로
+   비쳐 크기가 변하는 것처럼 읽혔고요.
+   min-height 로 바꾸고 안전영역을 더해, 내용 자리를 항상 44px 확보합니다. */
 .topbar {
   position: sticky; top: 0; z-index: 20;
   display: flex; align-items: center; gap: 10px;
-  height: 56px; padding: calc(var(--safe-top) + 6px) 14px 6px;
-  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  min-height: calc(56px + var(--safe-top));
+  padding: calc(var(--safe-top) + 6px) 14px 6px;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
   backdrop-filter: saturate(180%) blur(18px);
   -webkit-backdrop-filter: saturate(180%) blur(18px);
 }
+/* 제목이 길어도 버튼을 밀어내지 않고 말줄임 처리합니다. */
+.topbar-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .topbar-title { font-size: 18px; font-weight: 800; letter-spacing: -0.03em; }
 .topbar-brand { font-size: 21px; font-weight: 900; letter-spacing: -0.04em; }
 .topbar-brand span { color: var(--accent); }
@@ -540,9 +550,17 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   border-color: transparent; color: var(--accent-ink);
   box-shadow: none;
 }
+/* 세트 지우기. 손끝은 30px 보다 넓어서, 칸 자체는 좁게 두되 실제로 눌리는
+   범위를 좌우로 넓혀 옆 버튼과 겹치지 않는 선까지 키웁니다. 흐릿하게 두는
+   것은 의도적입니다 — 자주 쓰는 버튼이 아니고, 완료 체크 옆에서 눈에 띄면
+   잘못 누르기 쉽습니다. */
 .set-del {
   width: 30px; height: 46px; display: grid; place-items: center;
-  color: var(--muted); opacity: .5; transition: opacity .15s, color .15s;
+  color: var(--muted); opacity: .55; transition: opacity .15s, color .15s;
+  position: relative;
+}
+.set-del::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: -8px; right: -6px;
 }
 .set-del:active { color: var(--red); opacity: 1; }
 .add-set-row {
@@ -1541,10 +1559,13 @@ body.overlay-open { overflow: hidden; }
   color: var(--accent); margin-left: 4px; letter-spacing: .04em;
 }
 .pr-list { display: flex; flex-direction: column; gap: 2px; }
+/* 열 너비를 고정해 숫자가 세로로 줄을 맞춥니다. auto 로 두면 79kg 과 74kg
+   처럼 글자폭이 다를 때마다 날짜가 좌우로 흔들려, 훑어볼 때 눈이 걸립니다. */
 .pr-row {
-  display: grid; grid-template-columns: 8px 1fr auto auto; gap: 9px;
+  display: grid; grid-template-columns: 8px 1fr 88px 34px; gap: 9px;
   align-items: center; padding: 9px 2px; border-bottom: 1px solid var(--line);
 }
+.pr-kg, .pr-date { text-align: right; }
 .pr-row:last-child { border-bottom: none; }
 .pr-dot { width: 8px; height: 8px; border-radius: 50%; }
 .pr-name { font-size: 13px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1585,3 +1606,42 @@ body.overlay-open { overflow: hidden; }
   font-size: 15px; font-weight: 700; font-family: inherit;
 }
 .dialog-input:focus { outline: none; border-color: var(--accent-line); }
+
+/* 하루치 기록을 통째로 지우는 버튼. 되돌릴 수 없는 동작이라 화면 맨 아래,
+   실수로 스치지 않는 자리에 조용히 둡니다 — 상단바에 두면 뒤로가기 옆이라
+   누를 일이 없는데도 계속 눈에 띄고, 잘못 누르기도 쉽습니다. */
+.day-wipe {
+  display: block; width: 100%; margin: 26px 0 8px; padding: 12px;
+  border: none; background: transparent; cursor: pointer;
+  font-size: 12px; font-weight: 700; color: var(--muted);
+}
+.day-wipe:active { color: var(--red); }
+
+/* ── 루틴 만들기 화면 ────────────────────────────────────────────────── */
+.rt-tile {
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  padding: 13px 6px; border-radius: var(--r-md);
+  background: var(--surface-2); border: 1.5px solid var(--line); cursor: pointer;
+}
+.rt-tile.on { border-color: var(--pt-color); background: color-mix(in srgb, var(--pt-color) 12%, var(--surface-2)); }
+.rt-tile .pt-icon { width: 24px; height: 24px; color: var(--pt-color); }
+.rt-tile .pt-icon svg { width: 100%; height: 100%; }
+.rt-tile .pt-name { font-size: 12px; font-weight: 800; color: var(--text); }
+.rt-tile .pt-count { font-size: 10px; font-weight: 700; color: var(--muted); }
+
+.rt-part { margin-bottom: 14px; }
+.rt-part-head {
+  display: flex; align-items: center; gap: 7px; margin-bottom: 7px;
+  font-size: 12px; font-weight: 800; color: var(--sub);
+}
+.rt-part-count { margin-left: auto; font-size: 11px; font-weight: 700; color: var(--muted); }
+.rt-ex {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 11px 13px; margin-bottom: 5px; border-radius: var(--r-sm);
+  background: var(--surface-2); font-size: 13px; font-weight: 700; color: var(--text);
+}
+.rt-edit {
+  width: 34px; height: 34px; flex-shrink: 0; border-radius: var(--r-sm);
+  display: grid; place-items: center; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--line); color: var(--muted);
+}
