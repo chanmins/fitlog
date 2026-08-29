@@ -1,6 +1,11 @@
 const WorkoutDB = (() => {
   const LEGACY_NAME = "workout-log";
-  const DB_VERSION = 1;
+  /* 저장소를 하나 추가할 때마다 이 숫자를 올려야 합니다.
+       1 → sessions, customExercises
+       2 → + routines (루틴 저장)
+     올리는 걸 잊으면, 아래 '빠진 저장소 복구' 가 DB 를 2 로 올려놓은 뒤
+     다음 실행에서 다시 1 을 요청하게 되어 VersionError 가 납니다. */
+  const DB_VERSION = 2;
   let scope = "guest";
   let dbPromise = null;
 
@@ -44,10 +49,24 @@ const WorkoutDB = (() => {
     });
   }
 
+  /* 이 기기의 DB 가 코드가 아는 버전보다 앞서 있을 수 있습니다 — 예전 버전의
+     복구 경로가 버전을 올려놨거나, 새 버전을 쓰던 기기에서 옛 앱을 열었거나.
+     그때 낮은 버전을 요청하면 IndexedDB 는 VersionError 를 던지고 앱이 통째로
+     막힙니다. 버전을 지정하지 않고 열면 있는 그대로 열리므로, 그렇게 연 뒤
+     빠진 저장소가 있으면 아래 복구가 처리합니다. */
+  async function openCurrent(name) {
+    try {
+      return await openAt(name, DB_VERSION);
+    } catch (err) {
+      if (err && err.name === "VersionError") return await openAt(name, undefined);
+      throw err;
+    }
+  }
+
   function open() {
     if (dbPromise) return dbPromise;
     const p = (async () => {
-      let db = await openAt(dbName(), DB_VERSION);
+      let db = await openCurrent(dbName());
       /* A database can sit at the right version and still be missing its
          stores — an upgrade interrupted by a closed tab, an evicted private
          session, or a scope switch mid-open leaves exactly that. Every
@@ -187,10 +206,14 @@ const WorkoutDB = (() => {
     await replaceAll(payload.sessions, payload.customExercises || []);
   }
 
+  /* 옮겨올 데이터를 '읽기만' 하는 용도입니다. 버전을 지정하면 그 DB 를
+     업그레이드하려 들고, 이미 더 높은 버전이면 VersionError 로 실패합니다.
+     읽으러 가서 남의 저장소 구조를 건드릴 이유가 없으므로 버전 없이 엽니다. */
   function openNamed(name) {
     return new Promise((resolve) => {
-      const req = indexedDB.open(name, DB_VERSION);
+      const req = indexedDB.open(name);
       req.onerror = () => resolve(null);
+      req.onblocked = () => resolve(null);
       req.onsuccess = () => resolve(req.result);
     });
   }
