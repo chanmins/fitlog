@@ -1419,9 +1419,15 @@ body.overlay-open { overflow: hidden; }
 /* ── 운동 그림 ──────────────────────────────────────────────────────────
    한 동작을 3장으로 나눠 그린 그림을 넘겨 보여줍니다.
 
-   부드럽게 겹쳐 넘기면(크로스페이드) 두 자세가 반투명하게 포개져 뭉개집니다.
-   그래서 GIF 처럼 딱 끊어 넘깁니다 — 넘어가는 구간을 0.1% 로 두면 사실상
-   즉시 전환이고, 사람 눈에는 그림이 '움직인' 것으로 읽힙니다.
+   여기서 한 번 틀렸던 부분: 장을 넘길 때 opacity 를 0 과 1 사이로 '변화'
+   시키면, 아무리 짧아도 두 장이 동시에 반투명해지는 순간이 생깁니다. 두
+   그림 다 배경이 비치는 선 그림이라 그 순간 선이 흐려졌다 돌아오고,
+   눈에는 깜빡임으로 보입니다. 겹치는 시간을 줄이는 걸로는 못 없앱니다 —
+   아예 중간값이 없어야 합니다.
+
+   그래서 step-end 를 씁니다. 각 구간의 값이 다음 구간까지 그대로 유지되고
+   전환은 한 순간에 일어나므로, 두 장이 동시에 보이는 시점이 존재하지
+   않습니다. 필름을 넘기듯 딱 바뀝니다.
 
    순서는 1 → 2 → 3 → 2 로 돌아옵니다. 3 에서 1 로 튀면 동작이 끊기지만,
    왔던 길을 되짚으면 들었다 내리는 실제 반복처럼 보입니다. */
@@ -1433,22 +1439,27 @@ body.overlay-open { overflow: hidden; }
 .ex-photo-img {
   position: absolute; inset: 0; width: 100%; height: 100%;
   object-fit: contain; padding: 12px; opacity: 0;
+  /* 각 장을 자기 레이어로 올려 두면 전환할 때 다시 그리지 않습니다. */
+  transform: translateZ(0); backface-visibility: hidden;
+  animation-timing-function: step-end;
+  animation-iteration-count: infinite;
+  animation-fill-mode: both;
 }
 .ex-photo.f1 .ex-photo-img { opacity: 1; }
 
 /* 2장짜리 — 번갈아 */
-.ex-photo.f2 .ex-photo-img { animation: ex2-a 1.1s infinite; }
+.ex-photo.f2 .ex-photo-img { animation-name: ex2-a; animation-duration: .9s; }
 .ex-photo.f2 .ex-photo-img:nth-child(2) { animation-name: ex2-b; }
-@keyframes ex2-a { 0%,49.9% { opacity:1 } 50%,100% { opacity:0 } }
-@keyframes ex2-b { 0%,49.9% { opacity:0 } 50%,100% { opacity:1 } }
+@keyframes ex2-a { 0% { opacity: 1 } 50% { opacity: 0 } }
+@keyframes ex2-b { 0% { opacity: 0 } 50% { opacity: 1 } }
 
 /* 3장짜리 — 1 2 3 2 로 왕복. 2번은 한 바퀴에 두 번 나옵니다. */
-.ex-photo.f3 .ex-photo-img { animation: ex3-a 2s infinite; }
+.ex-photo.f3 .ex-photo-img { animation-name: ex3-a; animation-duration: 1.7s; }
 .ex-photo.f3 .ex-photo-img:nth-child(2) { animation-name: ex3-b; }
 .ex-photo.f3 .ex-photo-img:nth-child(3) { animation-name: ex3-c; }
-@keyframes ex3-a { 0%,24.9% { opacity:1 } 25%,100% { opacity:0 } }
-@keyframes ex3-b { 0%,24.9% { opacity:0 } 25%,49.9% { opacity:1 } 50%,74.9% { opacity:0 } 75%,100% { opacity:1 } }
-@keyframes ex3-c { 0%,49.9% { opacity:0 } 50%,74.9% { opacity:1 } 75%,100% { opacity:0 } }
+@keyframes ex3-a { 0% { opacity: 1 } 25% { opacity: 0 } }
+@keyframes ex3-b { 0% { opacity: 0 } 25% { opacity: 1 } 50% { opacity: 0 } 75% { opacity: 1 } }
+@keyframes ex3-c { 0% { opacity: 0 } 50% { opacity: 1 } 75% { opacity: 0 } }
 
 /* 움직임을 끈 사용자에게는 첫 장만 고정으로 보여줍니다. */
 @media (prefers-reduced-motion: reduce) {

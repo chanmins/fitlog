@@ -2406,17 +2406,22 @@
     const tips = (libEx.tips||[]).map((tip,i)=>`
       <li><div class="tip-num">${i+1}</div><span>${esc(tip)}</span></li>`).join('');
 
-    /* Three drawings of the same body moving through the lift, cross-faded on
-       a loop. Two photographs alternating read as "the picture changed"; three
+    /* Three drawings of the same body moving through the lift, stepped on a
+       loop. Two photographs alternating read as "the picture changed"; three
        frames of one figure read as movement, which is the whole point of
        showing a picture here. A single frame just sits still — right for a
-       held stretch. Nothing loads until someone opens this sheet. */
+       held stretch.
+
+       세 장 다 곧바로 받습니다(lazy 아님). 2·3번은 시작할 때 투명한데,
+       게을리 받게 두면 자기 차례가 왔을 때 아직 도착하지 않아 한 번 비어
+       보입니다. 어차피 이 시트를 열 때만 만들어지는 태그라 미리 받아도
+       손해가 없습니다. */
     const media = (typeof EXERCISE_MEDIA !== 'undefined' && libEx.id) ? EXERCISE_MEDIA[libEx.id] : null;
     const photo = media
       ? `<div class="ex-photo f${media.n}">
            ${Array.from({ length: media.n }, (_, i) =>
-             `<img class="ex-photo-img" style="--i:${i}" src="./media/${esc(libEx.id)}-${i + 1}.${esc(media.t)}"
-                   alt="${esc(libEx.name)} 동작 ${i + 1}" loading="lazy" decoding="async">`).join('')}
+             `<img class="ex-photo-img" src="./media/${esc(libEx.id)}-${i + 1}.${esc(media.t)}"
+                   alt="${esc(libEx.name)} 동작 ${i + 1}" decoding="sync">`).join('')}
          </div>`
       : '';
 
