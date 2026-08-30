@@ -197,6 +197,137 @@ const APP_VERSION = (() => {
     return set && set.warmup ? Math.max(20, Math.round(restDuration() * 0.4)) : restDuration();
   }
 
+  /* ── 개인화 · 접근성 설정 ──────────────────────────────────────────────────
+     휴식 타이머 설정과 같은 방식입니다: 계정이 아니라 이 기기에 딸린 취향이라
+     localStorage 에 각각 따로 둡니다. 기본값은 지금까지의 동작과 정확히
+     같게 잡아서, 아무도 손대지 않으면 v61 과 화면·동작이 같습니다. */
+  const START_TABS = ['home', 'workout', 'history', 'settings'];
+  function startTab() {
+    try {
+      const v = localStorage.getItem('fitlog-start-tab');
+      return START_TABS.includes(v) ? v : 'home';
+    } catch (_) { return 'home'; }
+  }
+  function setStartTab(tab) { try { localStorage.setItem('fitlog-start-tab', tab); } catch (_) {} }
+
+  /* 월요일 시작이 지금까지의 기본 동작(weekStart, statsBuckets 등이 이미
+     월요일 기준)이라, 기본값은 true 로 둬서 스위치를 안 건드리면 그대로입니다. */
+  function weekStartsMon() {
+    try { return localStorage.getItem('fitlog-week-start') !== 'sun'; } catch (_) { return true; }
+  }
+  function setWeekStartsMon(mon) {
+    try { localStorage.setItem('fitlog-week-start', mon ? 'mon' : 'sun'); } catch (_) {}
+  }
+  /* 오늘이 속한 주의 시작일(자정). 설정에 따라 월요일 또는 일요일 기준. */
+  function weekStartOf(d) {
+    const x = new Date(d); x.setHours(0, 0, 0, 0);
+    const dow = weekStartsMon() ? (x.getDay() + 6) % 7 : x.getDay();
+    x.setDate(x.getDate() - dow);
+    return x;
+  }
+  /* 달력/주간 스트립에서 요일 헤더를 설정에 맞게 돌려 씁니다.
+     WEEKDAYS·WEEKDAYS_SHORT 원본 배열은 다른 곳(longDate 등)이 실제
+     요일 인덱스로 그대로 쓰고 있어 손대면 안 되고, 여기서만 회전한
+     사본을 만들어 씁니다. */
+  function weekdayStartIdx() { return weekStartsMon() ? 1 : 0; }
+  function weekdayLabelsKR()    { const s = weekdayStartIdx(); return Array.from({length:7}, (_,i)=>WEEKDAYS[(s+i)%7]); }
+  function weekdayLabelsShort() { const s = weekdayStartIdx(); return Array.from({length:7}, (_,i)=>WEEKDAYS_SHORT[(s+i)%7]); }
+
+  const FONT_SCALES = [0.92, 1, 1.08, 1.18];
+  function fontScale() {
+    const n = Number(localStorage.getItem('fitlog-font-scale'));
+    return FONT_SCALES.includes(n) ? n : 1;
+  }
+  function setFontScale(n) { try { localStorage.setItem('fitlog-font-scale', String(n)); } catch (_) {} }
+  /* 폰트가 아니라 화면 전체를 CSS zoom 으로 같이 키웁니다 — 기존 CSS 가
+     px 고정값 위주라 폰트 크기만 올리면 아이콘·여백·터치 영역은 그대로라
+     레이아웃이 깨집니다. zoom 은 그 전부를 비율대로 같이 키워 줍니다. */
+  function applyFontScale() {
+    try { document.documentElement.style.setProperty('--ui-scale', String(fontScale())); } catch (_) {}
+  }
+
+  /* 진동은 지금까지 항상 켜져 있었으니(휴식 종료·PR) 기본값 true. */
+  function hapticsOn() {
+    try { return localStorage.getItem('fitlog-haptics') !== '0'; } catch (_) { return true; }
+  }
+  function setHapticsOn(on) { try { localStorage.setItem('fitlog-haptics', on ? '1' : '0'); } catch (_) {} }
+  function vibrate(pattern) {
+    if (!hapticsOn() || !navigator.vibrate) return;
+    try { navigator.vibrate(pattern); } catch (_) {}
+  }
+  /* 휴식 종료 알림의 무음 여부. 기본값 true(소리 남) — 지금까지 항상
+     silent:false 로 보냈던 동작 그대로. */
+  function restSoundOn() {
+    try { return localStorage.getItem('fitlog-rest-sound') !== '0'; } catch (_) { return true; }
+  }
+  function setRestSoundOn(on) { try { localStorage.setItem('fitlog-rest-sound', on ? '1' : '0'); } catch (_) {} }
+
+  /* 오늘 아직 기록이 없으면 알려주는 리마인더. 진짜 백그라운드 푸시가
+     아니라(그러려면 서버가 있어야 합니다) 앱을 열어 둔 상태에서만 동작하는
+     최선의 근사치입니다 — 설정 화면에 그렇게 설명해 둡니다. */
+  function reminderOn() { try { return localStorage.getItem('fitlog-reminder') === '1'; } catch (_) { return false; } }
+  function setReminderOn(on) {
+    try { if (on) localStorage.setItem('fitlog-reminder', '1'); else localStorage.removeItem('fitlog-reminder'); } catch (_) {}
+  }
+  function reminderTime() { try { return localStorage.getItem('fitlog-reminder-time') || '20:00'; } catch (_) { return '20:00'; } }
+  function setReminderTime(v) { try { localStorage.setItem('fitlog-reminder-time', v); } catch (_) {} }
+
+  /* 무게·키 단위. 저장은 언제나 kg·cm — 화면에 보여주고 입력받을 때만
+     변환합니다. 그래야 단위를 몇 번을 바꿔도 기록 자체는 절대 어긋나지
+     않습니다(오늘 100kg 로 적은 세트가 내일 단위를 바꿨다고 값이 미끄러지면
+     개인 기록·볼륨 계산이 전부 조용히 틀어집니다). */
+  function unitWeight() { try { return localStorage.getItem('fitlog-unit-weight') === 'lb' ? 'lb' : 'kg'; } catch (_) { return 'kg'; } }
+  function setUnitWeight(u) { try { localStorage.setItem('fitlog-unit-weight', u); } catch (_) {} }
+  function unitHeight() { try { return localStorage.getItem('fitlog-unit-height') === 'in' ? 'in' : 'cm'; } catch (_) { return 'cm'; } }
+  function setUnitHeight(u) { try { localStorage.setItem('fitlog-unit-height', u); } catch (_) {} }
+
+  const LB_PER_KG = 2.2046226218;
+  /* 저장된 kg 값을 지금 단위의 "숫자만" 화면용으로 바꿉니다. */
+  function toDisplayWeight(kg) {
+    if (kg === '' || kg == null || !Number.isFinite(Number(kg))) return kg;
+    const n = Number(kg);
+    return unitWeight() === 'lb' ? Math.round(n * LB_PER_KG * 10) / 10 : Math.round(n * 10) / 10;
+  }
+  /* 지금 단위로 입력된 숫자를 저장용 kg 로 바꿉니다. */
+  function fromDisplayWeight(v) {
+    if (v === '' || v == null) return v;
+    const n = Number(v);
+    if (!Number.isFinite(n)) return n;
+    return unitWeight() === 'lb' ? Math.round((n / LB_PER_KG) * 100) / 100 : n;
+  }
+  function weightUnitLabel() { return unitWeight(); }
+  function fmtWeight(kg) {
+    if (kg === '' || kg == null || !Number.isFinite(Number(kg))) return '';
+    return `${toDisplayWeight(kg)}${weightUnitLabel()}`;
+  }
+  function toDisplayHeight(cm) {
+    if (cm === '' || cm == null || !Number.isFinite(Number(cm))) return cm;
+    const n = Number(cm);
+    return unitHeight() === 'in' ? Math.round(n / 2.54 * 10) / 10 : Math.round(n);
+  }
+  function fromDisplayHeight(v) {
+    if (v === '' || v == null) return v;
+    const n = Number(v);
+    if (!Number.isFinite(n)) return n;
+    return unitHeight() === 'in' ? Math.round(n * 2.54 * 10) / 10 : Math.round(n);
+  }
+  function heightUnitLabel() { return unitHeight(); }
+
+  /* 자주 쓰는 운동 즐겨찾기. id 가 있는 운동(기본 제공 + 나만의 운동)만
+     대상입니다 — id 없이는 나중에 다시 찾아 켤 방법이 없습니다. */
+  const FAV_KEY = 'fitlog-fav-ex';
+  function favoriteIds() {
+    try { return JSON.parse(localStorage.getItem(FAV_KEY) || '[]'); } catch (_) { return []; }
+  }
+  function isFavoriteEx(id) { return !!id && favoriteIds().includes(id); }
+  function toggleFavoriteEx(id) {
+    if (!id) return;
+    const cur = favoriteIds();
+    const i = cur.indexOf(id);
+    if (i === -1) cur.push(id); else cur.splice(i, 1);
+    try { localStorage.setItem(FAV_KEY, JSON.stringify(cur)); } catch (_) {}
+  }
+
 
   /* ── DOM root ───────────────────────────── */
   const appEl = document.getElementById('app');
@@ -477,10 +608,8 @@ const APP_VERSION = (() => {
     return PARTS.filter(p => p.kind === 'weight' && p.id !== 'stretch');
   }
 
-  function weekStartDate(d) {
-    const x = new Date(d); const dow = (x.getDay() + 6) % 7;
-    x.setDate(x.getDate() - dow); x.setHours(0, 0, 0, 0); return x;
-  }
+  /* 설정의 주 시작 요일(월/일)을 따릅니다 — weekStartOf 가 그 기준입니다. */
+  function weekStartDate(d) { return weekStartOf(d); }
 
   /* 최근 n주 / 그 직전 n주의 부위별 세트·볼륨·최대중량 */
   /* 두 창은 반드시 같은 길이여야 합니다.
@@ -565,15 +694,15 @@ const APP_VERSION = (() => {
     if (up(dSets) && down(dVol))
       return { tone: 'warn', text: `세트는 늘었는데 볼륨은 ${Math.abs(dVol)}% 줄었어요 — 무게가 내려갔습니다` };
     if (up(dVol) && dKg > 0)
-      return { tone: 'good', text: `볼륨 ${dVol}% 증가 · 최고 중량 ${Math.round(dKg)}kg 상승` };
+      return { tone: 'good', text: `볼륨 ${dVol}% 증가 · 최고 중량 ${Math.round(toDisplayWeight(dKg))}${weightUnitLabel()} 상승` };
     if (up(dVol))
       return { tone: 'good', text: `볼륨이 ${dVol}% 늘었어요` };
     if (down(dVol))
       return { tone: 'warn', text: `볼륨이 ${Math.abs(dVol)}% 줄었어요` };
     if (flat(dVol) && flat(dSets) && dKg === 0)
       return { tone: 'flat', text: '세트도 무게도 그대로예요' };
-    if (dKg > 0) return { tone: 'good', text: `최고 중량이 ${Math.round(dKg)}kg 올랐어요` };
-    if (dKg < 0) return { tone: 'warn', text: `최고 중량이 ${Math.abs(Math.round(dKg))}kg 내려갔어요` };
+    if (dKg > 0) return { tone: 'good', text: `최고 중량이 ${Math.round(toDisplayWeight(dKg))}${weightUnitLabel()} 올랐어요` };
+    if (dKg < 0) return { tone: 'warn', text: `최고 중량이 ${Math.abs(Math.round(toDisplayWeight(dKg)))}${weightUnitLabel()} 내려갔어요` };
     return { tone: 'flat', text: '지난 기간과 비슷해요' };
   }
 
@@ -684,12 +813,12 @@ const APP_VERSION = (() => {
       const last = i===n-1;
       return `<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="${last?4:2.5}"
         fill="${last?'var(--accent)':'var(--bg)'}" stroke="var(--accent)" stroke-width="1.5"/>
-        ${last?`<text x="${c.x.toFixed(1)}" y="${(c.y-7).toFixed(1)}" text-anchor="middle" font-size="7.5" font-weight="800" fill="var(--accent)">${c.kg}kg</text>`:''}`;
+        ${last?`<text x="${c.x.toFixed(1)}" y="${(c.y-7).toFixed(1)}" text-anchor="middle" font-size="7.5" font-weight="800" fill="var(--accent)">${toDisplayWeight(c.kg)}${weightUnitLabel()}</text>`:''}`;
     }).join('');
     return `<div class="trend-card">
       <div class="trend-header">
         <span class="trend-title">최고 무게 추이</span>
-        <span class="trend-pr">PR <strong>${prAll}kg</strong></span>
+        <span class="trend-pr">PR <strong>${toDisplayWeight(prAll)}${weightUnitLabel()}</strong></span>
       </div>
       <svg viewBox="0 0 100 46" class="trend-svg" overflow="visible">
         <defs><linearGradient id="tgrad" x1="0" y1="0" x2="0" y2="1">
@@ -719,15 +848,12 @@ const APP_VERSION = (() => {
     if (diff === -1) return '내일';
     return `${-diff}일 후`;
   }
-  /* Sunday-first, matching WEEKDAYS_SHORT and the history calendar.
-     (This used to start on Monday while the labels started on Sunday, so
-     every day in the week strip was captioned one day off.) */
+  /* 설정의 주 시작 요일을 따릅니다. 라벨은 weekdayLabelsShort() 로 같이
+     회전해서 쓰므로 인덱스가 항상 서로 맞습니다. */
   function getWeekDays() {
-    const today = new Date();
-    const sun = new Date(today);
-    sun.setDate(today.getDate() - today.getDay());
+    const start = weekStartOf(new Date());
     return Array.from({length:7}, (_,i) => {
-      const d = new Date(sun); d.setDate(sun.getDate()+i);
+      const d = new Date(start); d.setDate(start.getDate()+i);
       return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     });
   }
@@ -1002,6 +1128,9 @@ const APP_VERSION = (() => {
   }
 
   const WEIGHT_STEPS = [-5, -2.5, 2.5, 5];
+  /* lb 에서는 반 플레이트/반 원판 단위인 kg 스텝이 어색해서(2.5kg ≈
+     5.5lb), 흔히 쓰는 5·10lb 단위로 바꿔 보여줍니다. */
+  function weightStepValues() { return unitWeight() === 'lb' ? [-10, -5, 5, 10] : WEIGHT_STEPS; }
   const REPS_STEPS = [-5, -1, 1, 5];
   /* Held stretches move in useful chunks of seconds, not single ticks. */
   const HOLD_STEPS = [-30, -10, 10, 30];
@@ -1205,12 +1334,12 @@ const APP_VERSION = (() => {
     if (remaining <= 0 && !rt.chimed) {
       rt.chimed = true;
       try { localStorage.removeItem(REST_KEY); } catch (_) {}
-      playRestChime();
-      if (navigator.vibrate) { try { navigator.vibrate([120, 80, 120]); } catch (_) {} }
+      if (restSoundOn()) playRestChime();
+      vibrate([120, 80, 120]);
       /* 끝났을 때는 화면을 보고 있든 아니든 알립니다 — 다른 앱을 보다가
          돌아오는 게 이 기능의 목적이라, 화면이 켜져 있다고 조용할 이유가
-         없습니다. */
-      showRestNotification('휴식 종료', (rt.label ? rt.label + ' · ' : '') + '다음 세트를 시작하세요 💪', false);
+         없습니다. silent 는 설정의 '소리' 스위치를 그대로 따릅니다. */
+      showRestNotification('휴식 종료', (rt.label ? rt.label + ' · ' : '') + '다음 세트를 시작하세요 💪', !restSoundOn());
     }
 
     const pct = Math.max(0, Math.min(100, (remaining / rt.duration) * 100));
@@ -1268,8 +1397,38 @@ const APP_VERSION = (() => {
     /* 화면이 꺼져 있던 동안에도 시간은 흘렀으므로, 돌아오는 순간 다시 계산해
        바를 맞춥니다. */
     document.addEventListener('visibilitychange', () => {
-      if (!document.hidden && state.restTimer) renderRestTimerBar();
+      if (!document.hidden) {
+        if (state.restTimer) renderRestTimerBar();
+        maybeShowDailyReminder();
+      }
     });
+    /* 부팅 직후 곧바로 부르지 않습니다 — 이 시점엔 아직 기록을 불러오는
+       중이라(loadWorkspace 는 이후에 끝남) state.sessions 가 비어 있어,
+       "오늘 기록 없음" 으로 잘못 판단하고 하루짜리 표시를 써 버릴 수
+       있습니다. 60초 주기와 화면 복귀 시점이면 충분히 안전합니다. */
+    setInterval(maybeShowDailyReminder, 60000);
+  }
+
+  /* ── 오늘 운동 리마인더 ────────────────────────────────────────────────────
+     진짜 백그라운드 푸시가 아닙니다 — 이 앱은 서버가 없는 순수 클라이언트
+     PWA 라, 앱이 꺼져 있을 때 알림을 울리려면 푸시 서버가 있어야 합니다.
+     여기서 할 수 있는 최선은 "앱이 켜져 있는 동안(포그라운드 또는 백그라운드
+     탭) 설정한 시각이 지났는데 오늘 기록이 없으면 알려주기" 뿐입니다.
+     설정 화면에도 이 한계를 그대로 적어 둡니다. */
+  function maybeShowDailyReminder() {
+    if (!reminderOn()) return;
+    const now = new Date();
+    const hhmm = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+    if (hhmm < reminderTime()) return;
+    const today = todayISO();
+    let shownFor = '';
+    try { shownFor = localStorage.getItem('fitlog-reminder-shown') || ''; } catch (_) {}
+    if (shownFor === today) return;
+    try { localStorage.setItem('fitlog-reminder-shown', today); } catch (_) {}
+    const hasToday = state.sessions.some(s => s.date === today && sessionHasAnything(s));
+    if (hasToday) return;
+    toast('오늘 아직 운동 기록이 없어요 — 잊지 않으셨나요? 💪');
+    showRestNotification('오늘 운동하셨나요?', '아직 오늘 기록이 없어요.', !restSoundOn());
   }
 
   /* ── Navigation ─────────────────────────── */
@@ -1720,14 +1879,14 @@ const APP_VERSION = (() => {
           ${yearField(s.birthYear)}
         </div>
         <div>
-          <label class="field-label" for="su-height">키 (cm)</label>
+          <label class="field-label" for="su-height">키 (${heightUnitLabel()})</label>
           <input class="login-input" id="su-height" data-su="heightCm" type="text"
-                 inputmode="decimal" maxlength="5" placeholder="175" value="${esc(s.heightCm)}">
+                 inputmode="decimal" maxlength="5" placeholder="${Math.round(toDisplayHeight(175))}" value="${esc(s.heightCm)}">
         </div>
         <div>
-          <label class="field-label" for="su-weight">몸무게 (kg)</label>
+          <label class="field-label" for="su-weight">몸무게 (${weightUnitLabel()})</label>
           <input class="login-input" id="su-weight" data-su="weightKg" type="text"
-                 inputmode="decimal" maxlength="5" placeholder="70" value="${esc(s.weightKg)}">
+                 inputmode="decimal" maxlength="5" placeholder="${Math.round(toDisplayWeight(70))}" value="${esc(s.weightKg)}">
         </div>
       </div>
       <p class="field-hint">몸무게를 넣어두면 맨몸 운동의 부하를 자동으로 계산해 드립니다.</p>`;
@@ -1821,14 +1980,14 @@ const APP_VERSION = (() => {
             <div class="form-row">
               <label class="form-row-label" for="pf-height">키</label>
               <input class="form-row-input num" id="pf-height" data-su="heightCm" type="text"
-                     inputmode="decimal" maxlength="5" placeholder="175" value="${esc(s.heightCm)}">
-              <span class="form-row-unit">cm</span>
+                     inputmode="decimal" maxlength="5" placeholder="${Math.round(toDisplayHeight(175))}" value="${esc(s.heightCm)}">
+              <span class="form-row-unit">${heightUnitLabel()}</span>
             </div>
             <div class="form-row">
               <label class="form-row-label" for="pf-weight">몸무게</label>
               <input class="form-row-input num" id="pf-weight" data-su="weightKg" type="text"
-                     inputmode="decimal" maxlength="5" placeholder="70" value="${esc(s.weightKg)}">
-              <span class="form-row-unit">kg</span>
+                     inputmode="decimal" maxlength="5" placeholder="${Math.round(toDisplayWeight(70))}" value="${esc(s.weightKg)}">
+              <span class="form-row-unit">${weightUnitLabel()}</span>
             </div>
           </div>
         </div>
@@ -1981,12 +2140,12 @@ const APP_VERSION = (() => {
             ${yearField(s.birthYear)}
           </div>
           <div>
-            <label class="field-label" for="ob-height">키 (cm)</label>
-            <input class="login-input" id="ob-height" data-su="heightCm" type="text" inputmode="decimal" maxlength="5" placeholder="175" value="${esc(s.heightCm)}">
+            <label class="field-label" for="ob-height">키 (${heightUnitLabel()})</label>
+            <input class="login-input" id="ob-height" data-su="heightCm" type="text" inputmode="decimal" maxlength="5" placeholder="${Math.round(toDisplayHeight(175))}" value="${esc(s.heightCm)}">
           </div>
           <div>
-            <label class="field-label" for="ob-weight">몸무게 (kg)</label>
-            <input class="login-input" id="ob-weight" data-su="weightKg" type="text" inputmode="decimal" maxlength="5" placeholder="70" value="${esc(s.weightKg)}">
+            <label class="field-label" for="ob-weight">몸무게 (${weightUnitLabel()})</label>
+            <input class="login-input" id="ob-weight" data-su="weightKg" type="text" inputmode="decimal" maxlength="5" placeholder="${Math.round(toDisplayWeight(70))}" value="${esc(s.weightKg)}">
           </div>
         </div>
       </div>
@@ -2192,6 +2351,7 @@ const APP_VERSION = (() => {
     const today = todayISO();
     const todaySess = state.sessions.find(s => s.date === today);
     const weekDays = getWeekDays();
+    const wdLabels = weekdayLabelsShort();
     const td = new Date();
 
     const weekStrip = weekDays.map((iso, i) => {
@@ -2200,7 +2360,7 @@ const APP_VERSION = (() => {
       const isToday = iso === today;
       return `<div class="week-day${hasSess?' done':''}${isToday?' today':''}">
         <div class="ring">${hasSess ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : d}</div>
-        <span class="wd-label">${WEEKDAYS_SHORT[i]}</span>
+        <span class="wd-label">${wdLabels[i]}</span>
       </div>`;
     }).join('');
 
@@ -2545,13 +2705,13 @@ const APP_VERSION = (() => {
           const chips = (ex.sets || []).map(set => {
             const warm = !!set.warmup;
             if (!warm) workingNo++;
-            const kg = (set.kg !== '' && set.kg != null) ? set.kg : '–';
+            const kg = (set.kg !== '' && set.kg != null) ? toDisplayWeight(set.kg) : '–';
             const reps = (set.reps !== '' && set.reps != null) ? set.reps : '–';
             /* A held stretch carries no weight, so "–kg × 30" would be noise
                around the only number that means anything: the seconds. */
             const val = hold
               ? `${esc(String(reps))}<i>초</i>`
-              : `${esc(String(kg))}<i>kg</i> × ${esc(String(reps))}`;
+              : `${esc(String(kg))}<i>${weightUnitLabel()}</i> × ${esc(String(reps))}`;
             return `<span class="dsum-set${warm ? ' warm' : ''}${set.done ? ' done' : ''}${set.pr ? ' pr' : ''}">
               <b>${warm ? 'W' : workingNo}</b>${val}${set.pr ? '<em>PR</em>' : ''}
             </span>`;
@@ -2649,13 +2809,13 @@ const APP_VERSION = (() => {
       const warmup = !!set.warmup;
       if (!warmup) workingNo++;
       const label = warmup ? 'W' : workingNo;
-      const kg   = (set.kg   !== '' && set.kg   != null) ? set.kg   : '--';
+      const kg   = (set.kg   !== '' && set.kg   != null) ? toDisplayWeight(set.kg) : '--';
       const reps = (set.reps !== '' && set.reps != null) ? set.reps : '--';
       return `<div class="set-row${done?' done':''}${warmup?' warmup':''}${hold?' hold':''}">
         <button class="set-num${warmup?' warmup':''}" data-act="toggle-warmup" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="웜업 세트로 전환" title="탭하면 웜업/일반 세트 전환">${label}</button>
         ${hold ? '' : `<button class="val-chip${done?' done':''}" data-act="open-weight" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}">
           <span class="val-chip-num">${kg}</span>
-          <span class="val-chip-unit">kg</span>
+          <span class="val-chip-unit">${weightUnitLabel()}</span>
         </button>`}
         <button class="val-chip${done?' done':''}" data-act="open-reps" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}">
           <span class="val-chip-num">${reps}</span>
@@ -2727,9 +2887,9 @@ const APP_VERSION = (() => {
         </div>
         <button class="picker-big" data-act="numpad-w-clear" aria-label="입력한 무게 지우기">
           <div class="${numCls}">${esc(display)}</div>
-          <div class="picker-big-unit">kg</div>
+          <div class="picker-big-unit">${weightUnitLabel()}</div>
         </button>
-        ${adjRow('numpad-w-adj', WEIGHT_STEPS)}
+        ${adjRow('numpad-w-adj', weightStepValues())}
         <div class="numpad">${numpad}</div>
         <button class="picker-confirm" data-act="confirm-weight">확인</button>
       </div>
@@ -2848,8 +3008,16 @@ const APP_VERSION = (() => {
     const target = state.routineEdit ? state.routineEdit.exercises : (state.session?.exercises || []);
     const added = new Set(target.filter(e => e.part === partId).map(e => e.name));
     const q = state.exerciseSearch.trim().toLowerCase();
-    const library = libraryFor(partId).filter(e => !q || e.name.toLowerCase().includes(q) || (e.nameEn||'').toLowerCase().includes(q));
+    let library = libraryFor(partId).filter(e => !q || e.name.toLowerCase().includes(q) || (e.nameEn||'').toLowerCase().includes(q));
     if (!library.length) return '<div class="help-text">검색 결과가 없습니다. 아래에서 직접 추가할 수 있습니다.</div>';
+    /* 즐겨찾기를 맨 위로 — 같은 그룹(즐겨찾기/일반) 안에서는 원래 순서
+       그대로 두는 안정 정렬입니다. */
+    const favs = favoriteIds();
+    if (favs.length) {
+      library = library.map((item, i) => ({ item, i, fav: item.id && favs.includes(item.id) }))
+        .sort((a, b) => (b.fav - a.fav) || (a.i - b.i))
+        .map(x => x.item);
+    }
     return library.map(item => {
       /* Three visual states, kept distinct so the footer count always matches
          what looks selected: already in today's session (muted, "빼기"),
@@ -2857,7 +3025,11 @@ const APP_VERSION = (() => {
       const inSession = added.has(item.name);
       const picked = state.pickSelection.some(x => x.name === item.name);
       const eq = EQUIPMENT_LABEL[item.equipment] || '';
+      const fav = item.id && isFavoriteEx(item.id);
       return `<div class="pick-item${inSession ? ' added' : picked ? ' on' : ''}">
+        ${item.id ? `<button class="pick-fav${fav?' on':''}" data-act="toggle-fav" data-exid="${esc(item.id)}" aria-label="${esc(item.name)} 즐겨찾기 ${fav?'해제':'추가'}">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="${fav?'currentColor':'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        </button>` : ''}
         <button class="pick-item-name" data-act="toggle-pick" data-part="${partId}" data-name="${esc(item.name)}" data-exid="${esc(item.id||'')}" ${inSession?'disabled':''}>
           <span>${esc(item.name)}</span>
           ${item.nameEn ? `<span class="pick-item-en">${esc(item.nameEn)}</span>` : ''}
@@ -2933,7 +3105,9 @@ const APP_VERSION = (() => {
     const [y, m] = mKey.split('-').map(Number);
     const first = new Date(y, m - 1, 1);
     const daysInMonth = new Date(y, m, 0).getDate();
-    const lead = first.getDay();               /* 0=일 */
+    /* 설정의 주 시작 요일을 따릅니다 — 월요일 시작이면 화요일이 1일일 때
+       빈 칸이 1개(월요일 자리), 일요일 시작이면 2개(일·월 자리). */
+    const lead = (first.getDay() - weekdayStartIdx() + 7) % 7;
     const today = todayISO();
 
     const byDate = new Map(state.sessions.map(s => [s.date, s]));
@@ -2971,8 +3145,10 @@ const APP_VERSION = (() => {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
           </button>
         </div>
-        <div class="cal-dow">${['일','월','화','수','목','금','토'].map((w, i) =>
-          `<span class="${i === 0 ? 'sun' : i === 6 ? 'sat' : ''}">${w}</span>`).join('')}</div>
+        <div class="cal-dow">${weekdayLabelsKR().map((w, i) => {
+          const real = (weekdayStartIdx() + i) % 7;
+          return `<span class="${real === 0 ? 'sun' : real === 6 ? 'sat' : ''}">${w}</span>`;
+        }).join('')}</div>
         <div class="cal-grid">${cells}</div>
         <div class="cal-foot">
           <span><strong>${monthSessions.length}</strong>일 운동</span>
@@ -2996,12 +3172,9 @@ const APP_VERSION = (() => {
 
   function statsRange() { return state.statsRange === 'month' ? 'month' : 'week'; }
 
-  /* 월요일 시작 주의 첫날 */
+  /* 설정의 주 시작 요일(월/일) 기준 그 주의 첫날 */
   function weekStart(iso) {
-    const d = new Date(iso + 'T00:00:00');
-    const dow = (d.getDay() + 6) % 7;
-    d.setDate(d.getDate() - dow);
-    return isoLocal(d);
+    return isoLocal(weekStartOf(new Date(iso + 'T00:00:00')));
   }
 
   function statsBuckets() {
@@ -3132,14 +3305,20 @@ const APP_VERSION = (() => {
           무게를 곱해야 힘든 날과 가벼운 날이 구분됩니다. 한 종류라 범례는
           필요 없습니다 — 제목이 곧 이름입니다. */
     const maxVol = Math.max(...rows.map(r => r.volume), 1);
-    const fmtVol = v => v >= 10000 ? `${(v / 1000).toFixed(1)}t` : fmtNum(v);
+    /* v 는 항상 kg 기준 볼륨입니다 — 표시 직전에 지금 단위로 바꿉니다.
+       'kg' 일 때만 1000kg 단위 't' 로 줄여 씁니다. lb 는 그런 관용 단위가
+       없어 그냥 큰 수(콤마 포함)로 보여줍니다. */
+    const fmtVol = v => {
+      const dv = Math.round(toDisplayWeight(v));
+      return (unitWeight() === 'kg' && dv >= 10000) ? `${(dv / 1000).toFixed(1)}t` : fmtNum(dv);
+    };
     const volBars = rows.map((r, i) => {
       const x = PAD_L + slot * i + (slot - bw) / 2;
       const h = r.volume ? Math.max(3, (r.volume / maxVol) * plotH) : 0;
       const y = PAD_T + plotH - h;
       return bar(x, y, bw, h, 'var(--vol-color)', 4)
         + (r.volume ? `<text x="${x + bw / 2}" y="${y - 4}" class="ch-val">${fmtVol(r.volume)}</text>` : '')
-        + `<title>${r.label} · ${fmtNum(r.volume)}kg</title>`;
+        + `<title>${r.label} · ${fmtNum(Math.round(toDisplayWeight(r.volume)))}${weightUnitLabel()}</title>`;
     }).join('');
 
     const totKm = rows.reduce((a, r) => a + r.km, 0);
@@ -3187,28 +3366,37 @@ const APP_VERSION = (() => {
      80kg 대의 1kg 변화를 0 기준 축에 얹으면 아무 변화도 없어 보입니다. */
   async function handleAddWeight() {
     const last = state.metrics[state.metrics.length - 1];
-    const cur = last ? last.weightKg : Number(state.profile?.weightKg) || '';
+    const curKg = last ? last.weightKg : Number(state.profile?.weightKg) || '';
+    const cur = curKg ? toDisplayWeight(curKg) : '';
     const v = await promptText({
       title: '몸무게 기록',
       message: '오늘 몸무게를 적어 주세요.',
       value: cur ? String(cur) : '',
-      placeholder: 'kg',
+      placeholder: weightUnitLabel(),
       confirmText: '기록',
     });
     if (!v) return;
-    const kg = Number(String(v).replace(/[^0-9.]/g, ''));
-    if (!Number.isFinite(kg) || kg < 20 || kg > 300) { toast('20~300 사이로 적어 주세요'); return; }
+    /* 입력은 지금 단위(kg 또는 lb) 그대로 받고, 저장 직전에만 kg 로
+       바꿉니다 — state.metrics 는 언제나 kg 입니다. */
+    const disp = Number(String(v).replace(/[^0-9.]/g, ''));
+    const kg = fromDisplayWeight(disp);
+    if (!Number.isFinite(kg) || kg < 20 || kg > 300) {
+      toast(`${Math.round(toDisplayWeight(20))}~${Math.round(toDisplayWeight(300))}${weightUnitLabel()} 사이로 적어 주세요`);
+      return;
+    }
     const row = { date: todayISO(), weightKg: Math.round(kg * 10) / 10 };
     state.metrics = state.metrics.filter(m => m.date !== row.date).concat(row)
       .sort((a, b) => a.date.localeCompare(b.date));
     await WorkoutDB.putMetric(row);
     cloudSync(() => Cloud.saveMetrics(state.metrics));
     render();
-    toast(`${row.weightKg}kg 기록했습니다`);
+    toast(`${toDisplayWeight(row.weightKg)}${weightUnitLabel()} 기록했습니다`);
   }
 
   function renderWeightCard() {
-    const rows = state.metrics.slice(-30);
+    /* state.metrics 는 항상 kg 입니다 — 그리기용으로 지금 단위 변환값을
+       따로 붙인 사본을 씁니다. 원본은 건드리지 않습니다. */
+    const rows = state.metrics.slice(-30).map(r => ({ ...r, dv: toDisplayWeight(r.weightKg) }));
     if (!rows.length) {
       return `<div class="stats-card">
         <div class="stats-head"><div class="sec-title">몸무게</div></div>
@@ -3218,21 +3406,21 @@ const APP_VERSION = (() => {
     }
     const W = 320, H = 108, PAD_L = 34, PAD_B = 18, PAD_T = 10;
     const plotH = H - PAD_B - PAD_T;
-    const vals = rows.map(r => r.weightKg);
+    const vals = rows.map(r => r.dv);
     let lo = Math.min(...vals), hi = Math.max(...vals);
     if (hi - lo < 2) { const mid = (hi + lo) / 2; lo = mid - 1; hi = mid + 1; }
     const pad = (hi - lo) * 0.15; lo -= pad; hi += pad;
     const x = i => PAD_L + (rows.length === 1 ? (W - PAD_L) / 2 : (i / (rows.length - 1)) * (W - PAD_L - 6));
     const y = v => PAD_T + plotH - ((v - lo) / (hi - lo)) * plotH;
-    const line = rows.map((r, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(r.weightKg).toFixed(1)}`).join(' ');
+    const line = rows.map((r, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(r.dv).toFixed(1)}`).join(' ');
     const area = `${line} L${x(rows.length - 1).toFixed(1)} ${PAD_T + plotH} L${x(0).toFixed(1)} ${PAD_T + plotH} Z`;
-    const dots = rows.map((r, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(r.weightKg).toFixed(1)}" r="${i === rows.length - 1 ? 4 : 2.5}"
-      fill="var(--wt-color)"><title>${r.date} · ${r.weightKg}kg</title></circle>`).join('');
+    const dots = rows.map((r, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(r.dv).toFixed(1)}" r="${i === rows.length - 1 ? 4 : 2.5}"
+      fill="var(--wt-color)"><title>${r.date} · ${r.dv}${weightUnitLabel()}</title></circle>`).join('');
 
     const first = rows[0], last = rows[rows.length - 1];
-    const diff = Math.round((last.weightKg - first.weightKg) * 10) / 10;
-    const trend = diff > 0.1 ? `<span class="pa-up">+${diff}kg</span>`
-                : diff < -0.1 ? `<span class="pa-down">${diff}kg</span>`
+    const diff = Math.round((last.dv - first.dv) * 10) / 10;
+    const trend = diff > 0.1 ? `<span class="pa-up">+${diff}${weightUnitLabel()}</span>`
+                : diff < -0.1 ? `<span class="pa-down">${diff}${weightUnitLabel()}</span>`
                 : `<span class="pa-flat">변화 없음</span>`;
 
     return `<div class="stats-card">
@@ -3240,7 +3428,7 @@ const APP_VERSION = (() => {
         <div class="sec-title">몸무게</div>
         <button class="stats-tab on" data-act="add-weight">+ 기록</button>
       </div>
-      <div class="wt-now"><b>${last.weightKg}</b><span>kg</span> ${trend}
+      <div class="wt-now"><b>${last.dv}</b><span>${weightUnitLabel()}</span> ${trend}
         <em>${esc(shortDate(first.date))} → ${esc(shortDate(last.date))}</em></div>
       <svg class="ch" viewBox="0 0 ${W} ${H}" role="img" aria-label="몸무게 추이">
         <text x="${PAD_L - 6}" y="${PAD_T + 4}" class="ch-axis" text-anchor="end">${hi.toFixed(1)}</text>
@@ -3282,7 +3470,7 @@ const APP_VERSION = (() => {
           ${arrow}
         </div>
         <div class="pa-bar"><span style="width:${width}%;background:${part.color}"></span></div>
-        <div class="pa-meta">주 ${c.setsPerWeek.toFixed(1)}세트 · ${fmtNum(Math.round(c.volPerWeek))}kg${c.maxKg ? ` · 최고 ${c.maxKg}kg` : ''}</div>
+        <div class="pa-meta">주 ${c.setsPerWeek.toFixed(1)}세트 · ${fmtNum(Math.round(toDisplayWeight(c.volPerWeek)))}${weightUnitLabel()}${c.maxKg ? ` · 최고 ${toDisplayWeight(c.maxKg)}${weightUnitLabel()}` : ''}</div>
       </div>`;
     }).join('');
 
@@ -3328,7 +3516,7 @@ const APP_VERSION = (() => {
       <div class="ch-stall-head">무게가 오래 그대로예요</div>
       ${stalled.map(x => `<div class="ch-stall">
         <span class="ch-stall-name">${esc(x.name)}</span>
-        <span class="ch-stall-kg">${x.kg}kg</span>
+        <span class="ch-stall-kg">${toDisplayWeight(x.kg)}${weightUnitLabel()}</span>
         <span class="ch-stall-wk">${x.weeks}주째</span>
       </div>`).join('')}
       <p class="ch-note">이 정도 기간이면 무게를 조금 올리거나 횟수를 늘려볼 때입니다.</p>` : '';
@@ -3353,7 +3541,7 @@ const APP_VERSION = (() => {
       return `<div class="pr-row">
         <span class="pr-dot" style="background:${part ? part.color : 'var(--muted)'}"></span>
         <span class="pr-name">${esc(r.name)}</span>
-        <span class="pr-kg">${r.kg}<i>kg</i> <s>×${r.reps}</s></span>
+        <span class="pr-kg">${toDisplayWeight(r.kg)}<i>${weightUnitLabel()}</i> <s>×${r.reps}</s></span>
         <span class="pr-date">${esc(shortDate(r.date))}</span>
       </div>`;
     }).join('');
@@ -3445,8 +3633,8 @@ const APP_VERSION = (() => {
     /* 만 나이로 통일합니다. 예전에는 여기만 +1(세는나이)이라, 출생연도를
        고르는 화면은 "만 36세" 인데 바로 아래 설정 줄은 "37세" 였습니다. */
     if (p.birthYear) bits.push(`만 ${new Date().getFullYear() - Number(p.birthYear)}세`);
-    if (p.heightCm) bits.push(`${p.heightCm}cm`);
-    if (p.weightKg) bits.push(`${p.weightKg}kg`);
+    if (p.heightCm) bits.push(`${toDisplayHeight(p.heightCm)}${heightUnitLabel()}`);
+    if (p.weightKg) bits.push(`${toDisplayWeight(p.weightKg)}${weightUnitLabel()}`);
 
     /* One identity row instead of an avatar card followed by a 프로필 row that
        repeated the same person underneath it. The avatar, the name, the handle
@@ -3521,7 +3709,95 @@ const APP_VERSION = (() => {
               ${REST_PRESETS.map(sec => `<button class="preset-chip${restDuration()===sec?' on':''}" data-act="set-rest-dur" data-val="${sec}">${sec}초</button>`).join('')}
             </div>
           </div>` : ''}
+          <button class="settings-item" data-act="toggle-haptics" role="switch" aria-checked="${hapticsOn()}">
+            <div class="settings-item-icon${hapticsOn() ? ' accent' : ''}">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+            </div>
+            <div class="settings-item-text">
+              <div class="settings-item-title">진동</div>
+              <div class="settings-item-sub">휴식 종료·개인 기록 때 짧게 울립니다</div>
+            </div>
+            <span class="switch${hapticsOn() ? ' on' : ''}" aria-hidden="true"><i></i></span>
+          </button>
+          <button class="settings-item" data-act="toggle-rest-sound" role="switch" aria-checked="${restSoundOn()}">
+            <div class="settings-item-icon${restSoundOn() ? ' accent' : ''}">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
+            </div>
+            <div class="settings-item-text">
+              <div class="settings-item-title">휴식 종료 소리</div>
+              <div class="settings-item-sub">꺼두면 진동으로만 알립니다</div>
+            </div>
+            <span class="switch${restSoundOn() ? ' on' : ''}" aria-hidden="true"><i></i></span>
+          </button>
+          <button class="settings-item" data-act="toggle-reminder" role="switch" aria-checked="${reminderOn()}">
+            <div class="settings-item-icon${reminderOn() ? ' accent' : ''}">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            </div>
+            <div class="settings-item-text">
+              <div class="settings-item-title">오늘 운동 리마인더</div>
+              <div class="settings-item-sub">앱을 서버 없이 만들어서, 정해진 시각이 지났는데 앱을 열고 있고 오늘 기록이 없을 때만 알려드릴 수 있어요 — 폰이 꺼져 있거나 앱을 아예 안 연 날은 못 울립니다</div>
+            </div>
+            <span class="switch${reminderOn() ? ' on' : ''}" aria-hidden="true"><i></i></span>
+          </button>
+          ${reminderOn() ? `
+          <div class="settings-item settings-block">
+            <div class="settings-item-text">
+              <div class="settings-item-title">알려줄 시각</div>
+            </div>
+            <input class="reminder-time" type="time" data-act="set-reminder-time" value="${esc(reminderTime())}">
+          </div>` : ''}
+        </div>
 
+        <div class="settings-label">개인화</div>
+        <div class="settings-group">
+          <div class="settings-item settings-block">
+            <div class="settings-item-text">
+              <div class="settings-item-title">시작 탭</div>
+              <div class="settings-item-sub">앱을 열면 처음 보일 화면</div>
+            </div>
+            <div class="presets-scroll">
+              ${[['home','홈'],['workout','기록'],['history','히스토리'],['settings','설정']]
+                .map(([v,l]) => `<button class="preset-chip${startTab()===v?' on':''}" data-act="set-start-tab" data-val="${v}">${l}</button>`).join('')}
+            </div>
+          </div>
+          <div class="settings-item settings-block">
+            <div class="settings-item-text">
+              <div class="settings-item-title">주 시작 요일</div>
+              <div class="settings-item-sub">히스토리 달력과 이번 주 통계에 적용됩니다</div>
+            </div>
+            <div class="presets-scroll">
+              <button class="preset-chip${weekStartsMon()?' on':''}" data-act="set-week-start" data-val="mon">월요일</button>
+              <button class="preset-chip${!weekStartsMon()?' on':''}" data-act="set-week-start" data-val="sun">일요일</button>
+            </div>
+          </div>
+          <div class="settings-item settings-block">
+            <div class="settings-item-text">
+              <div class="settings-item-title">무게 단위</div>
+            </div>
+            <div class="presets-scroll">
+              <button class="preset-chip${unitWeight()==='kg'?' on':''}" data-act="set-unit-weight" data-val="kg">kg</button>
+              <button class="preset-chip${unitWeight()==='lb'?' on':''}" data-act="set-unit-weight" data-val="lb">lb</button>
+            </div>
+          </div>
+          <div class="settings-item settings-block">
+            <div class="settings-item-text">
+              <div class="settings-item-title">키 단위</div>
+            </div>
+            <div class="presets-scroll">
+              <button class="preset-chip${unitHeight()==='cm'?' on':''}" data-act="set-unit-height" data-val="cm">cm</button>
+              <button class="preset-chip${unitHeight()==='in'?' on':''}" data-act="set-unit-height" data-val="in">in</button>
+            </div>
+          </div>
+          <div class="settings-item settings-block">
+            <div class="settings-item-text">
+              <div class="settings-item-title">글씨 크기</div>
+              <div class="settings-item-sub">화면 전체가 함께 커집니다</div>
+            </div>
+            <div class="presets-scroll">
+              ${[[0.92,'작게'],[1,'보통'],[1.08,'크게'],[1.18,'아주 크게']]
+                .map(([v,l]) => `<button class="preset-chip${fontScale()===v?' on':''}" data-act="set-font-scale" data-val="${v}">${l}</button>`).join('')}
+            </div>
+          </div>
         </div>
 
         <p class="settings-note">${state.user
@@ -3685,11 +3961,16 @@ const APP_VERSION = (() => {
       state.exerciseInfoId = id;
       render(); return;
     }
+    if (act === 'toggle-fav') {
+      toggleFavoriteEx(btn.dataset.exid);
+      render(); return;
+    }
     if (act === 'open-weight') {
       const ex = state.session.exercises.find(x=>x.id===btn.dataset.ex);
       const set = ex?.sets.find(s=>s.id===btn.dataset.set);
       if (!set) return;
-      state.weightPicker = newPicker(btn.dataset.ex, btn.dataset.set, set.kg);
+      /* 저장은 kg, 숫자판은 지금 단위 — 열 때 변환해서 보여줍니다. */
+      state.weightPicker = newPicker(btn.dataset.ex, btn.dataset.set, toDisplayWeight(set.kg));
       render(); return;
     }
     if (act === 'open-reps') {
@@ -3763,10 +4044,11 @@ const APP_VERSION = (() => {
     if (act === 'confirm-weight') {
       if (!state.weightPicker) return;
       const { exId, setId } = state.weightPicker;
+      /* 숫자판 값은 지금 단위 기준이라, 저장 직전에 kg 로 바꿉니다. */
       const value = pickerValue(state.weightPicker);
       const ex = state.session.exercises.find(x=>x.id===exId);
       const set = ex?.sets.find(s=>s.id===setId);
-      if (set) { set.kg = value; await persist(); }
+      if (set) { set.kg = fromDisplayWeight(value); await persist(); }
       state.weightPicker = null;
       render(); return;
     }
@@ -3973,7 +4255,10 @@ const APP_VERSION = (() => {
       state.signup = {
         ...state.signup,
         name: p.name || '', gender: p.gender || '',
-        birthYear: p.birthYear || '', heightCm: p.heightCm || '', weightKg: p.weightKg || '',
+        birthYear: p.birthYear || '',
+        /* 저장된 값은 항상 cm·kg 이고, 폼에는 지금 선택된 단위로 채웁니다. */
+        heightCm: p.heightCm ? toDisplayHeight(p.heightCm) : '',
+        weightKg: p.weightKg ? toDisplayWeight(p.weightKg) : '',
       };
       state.profileEditing = true;
       render(); return;
@@ -4001,6 +4286,22 @@ const APP_VERSION = (() => {
       render();
       return;
     }
+    if (act === 'toggle-haptics') { setHapticsOn(!hapticsOn()); render(); return; }
+    if (act === 'toggle-rest-sound') { setRestSoundOn(!restSoundOn()); render(); return; }
+    if (act === 'toggle-reminder') {
+      const on = !reminderOn();
+      setReminderOn(on);
+      /* 껐다 켜면 오늘치 '이미 보여줬음' 기록을 지워, 다시 켠 그날 저녁에도
+         조건이 맞으면 정상적으로 다시 알려줍니다. */
+      if (on) { try { localStorage.removeItem('fitlog-reminder-shown'); } catch (_) {} }
+      render();
+      return;
+    }
+    if (act === 'set-start-tab') { setStartTab(btn.dataset.val); render(); return; }
+    if (act === 'set-week-start') { setWeekStartsMon(btn.dataset.val === 'mon'); render(); return; }
+    if (act === 'set-unit-weight') { setUnitWeight(btn.dataset.val); render(); return; }
+    if (act === 'set-unit-height') { setUnitHeight(btn.dataset.val); render(); return; }
+    if (act === 'set-font-scale') { setFontScale(Number(btn.dataset.val)); applyFontScale(); render(); return; }
   }
 
   /* ── Input handler ───────────────────────── */
@@ -4050,6 +4351,12 @@ const APP_VERSION = (() => {
       if (!await confirmLeavePast()) { render(); return; }
       await persist();
       await loadDay(t.value);
+    }
+    if (t.dataset.act === 'set-reminder-time' && t.value) {
+      setReminderTime(t.value);
+      /* 시각을 바꾸면 오늘치 '이미 보여줬음' 표시도 지워, 새 시각 기준으로
+         다시 판단하게 합니다. */
+      try { localStorage.removeItem('fitlog-reminder-shown'); } catch (_) {}
     }
   }
 
@@ -4161,11 +4468,18 @@ const APP_VERSION = (() => {
     state.authPassword = '';
   }
 
+  /* 폼에 적힌 키·몸무게는 지금 선택된 단위(예: in·lb) 기준입니다 — 화면에
+     보여주는 값 그대로를 사용자가 typing 합니다. 실제로 저장·전송하는
+     값은 항상 cm·kg 이어야 하므로, 폼을 빠져나가는 이 지점에서만
+     변환합니다. 그래야 단위를 몇 번 바꿔도 기록 자체(서버에 쌓이는 값)는
+     흔들리지 않습니다. */
   function collectProfile() {
     const s = state.signup;
     return {
       name: s.name, gender: s.gender,
-      birthYear: s.birthYear, heightCm: s.heightCm, weightKg: s.weightKg,
+      birthYear: s.birthYear,
+      heightCm: fromDisplayHeight(s.heightCm),
+      weightKg: fromDisplayWeight(s.weightKg),
     };
   }
 
@@ -4310,15 +4624,21 @@ const APP_VERSION = (() => {
     if (!s.birthYear) return '출생연도를 선택해 주세요.';
     if (!Number.isFinite(year) || year < 1900 || year > thisYear) return '출생연도가 올바르지 않습니다.';
 
-    const cm = Number(s.heightCm);
+    /* 폼 값은 지금 단위 기준이라, 진짜 범위(cm·kg)로 바꾼 뒤에 검사합니다.
+       메시지에 적는 숫자만 지금 단위에 맞게 다시 보여줍니다. */
     if (!String(s.heightCm || '').trim()) return '키를 입력해 주세요.';
-    if (!Number.isFinite(cm) || cm < 100 || cm > 250) return '키는 100~250cm 사이로 입력해 주세요.';
+    const cm = fromDisplayHeight(s.heightCm);
+    if (!Number.isFinite(cm) || cm < 100 || cm > 250) {
+      return `키는 ${Math.round(toDisplayHeight(100))}~${Math.round(toDisplayHeight(250))}${heightUnitLabel()} 사이로 입력해 주세요.`;
+    }
 
-    const kg = Number(s.weightKg);
     if (!String(s.weightKg || '').trim()) return '몸무게를 입력해 주세요.';
+    const kg = fromDisplayWeight(s.weightKg);
     /* Strictly above 20, matching sanitizeProfile — a value it would drop must
        not be accepted here, or the field would look saved and come back empty. */
-    if (!Number.isFinite(kg) || kg <= 20 || kg > 300) return '몸무게는 21~300kg 사이로 입력해 주세요.';
+    if (!Number.isFinite(kg) || kg <= 20 || kg > 300) {
+      return `몸무게는 ${Math.round(toDisplayWeight(21))}~${Math.round(toDisplayWeight(300))}${weightUnitLabel()} 사이로 입력해 주세요.`;
+    }
 
     return '';
   }
@@ -4821,10 +5141,10 @@ const APP_VERSION = (() => {
 
   function toastPR(ex, pr) {
     if (!pr) return;
-    if (navigator.vibrate) { try { navigator.vibrate([25, 45, 25]); } catch (_) {} }
+    vibrate([25, 45, 25]);
     toast(pr.type === 'kg'
-      ? `개인 기록! ${ex.name} ${pr.kg}kg (이전 ${pr.prev}kg)`
-      : `개인 기록! ${ex.name} ${pr.kg}kg × ${pr.reps} — 추정 1RM ${Math.round(pr.orm)}kg`);
+      ? `개인 기록! ${ex.name} ${toDisplayWeight(pr.kg)}${weightUnitLabel()} (이전 ${toDisplayWeight(pr.prev)}${weightUnitLabel()})`
+      : `개인 기록! ${ex.name} ${toDisplayWeight(pr.kg)}${weightUnitLabel()} × ${pr.reps} — 추정 1RM ${Math.round(toDisplayWeight(pr.orm))}${weightUnitLabel()}`);
   }
 
   async function handleToggleDone(exId, setId) {
@@ -5099,6 +5419,11 @@ const APP_VERSION = (() => {
     if (user && !knownSetUp(user.uid)) {
       await loadProfileThenMaybeOnboard(user, 2500);
     }
+
+    /* 시작 탭은 진짜 새로 들어올 때만 적용합니다 — 계정을 바꾸는 것도
+       아니고 그냥 다시 그려지는 매 render() 마다 사용자가 옮겨간 탭을
+       도로 홈으로 되돌리면 안 되니까요. */
+    if (arrivedFromLogin) state.tab = startTab();
 
     state.authReady = true;
     render();
@@ -5719,6 +6044,7 @@ const APP_VERSION = (() => {
 
   async function init() {
     markDisplayMode();
+    applyFontScale();
     render();
     startRestTicker();
     /* 앱을 껐다 켜도 쉬던 중이었다면 남은 시간이 이어집니다. */
