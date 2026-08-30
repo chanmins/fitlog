@@ -3145,15 +3145,17 @@ const APP_VERSION = (() => {
     const totKm = rows.reduce((a, r) => a + r.km, 0);
     const totSets = rows.reduce((a, r) => a + r.total, 0);
     const totDays = rows.reduce((a, r) => a + r.days, 0);
-    const totVol = rows.reduce((a, r) => a + r.volume, 0);
 
+    /* 요약 줄에서는 총 볼륨을 뺐습니다 — 아래 "총 볼륨" 그래프와 같은
+       숫자가 중복으로 두 번 나오고 있었습니다. 세트 수만으로는 가벼운
+       날/무거운 날이 안 구분된다는 총 볼륨 자체의 쓸모는 그대로라
+       그래프는 남깁니다. */
     return `<div class="stats-card">
       <div class="stats-head"><div class="sec-title">운동량 추이</div>${toggle}</div>
 
       <div class="stats-sum">
         <div><b>${totDays}</b><span>운동일</span></div>
         <div><b>${totSets}</b><span>세트</span></div>
-        <div><b>${fmtVol(totVol)}</b><span>총 볼륨</span></div>
         <div><b>${totKm % 1 ? totKm.toFixed(1) : totKm}</b><span>km</span></div>
       </div>
 
@@ -3568,7 +3570,7 @@ const APP_VERSION = (() => {
              directly under import, which is precisely where a mis-tap lands. -->
         <details class="settings-adv danger-adv">
           <summary class="settings-adv-summary danger-label">
-            <span>위험 구역</span>
+            <span>계정 및 데이터 관리</span>
             <svg class="settings-adv-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
           </summary>
           <div class="settings-adv-body">
