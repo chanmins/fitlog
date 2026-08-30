@@ -1,4 +1,20 @@
 /* FITLOG — Main Application */
+/* index.html 의 '빈 화면 복구' 가 이 표시를 봅니다. 이 줄이 실행됐다는 건
+   스크립트가 내려받아져 돌기 시작했다는 뜻이고, 그러면 화면이 잠깐 비어
+   있어도 그건 아직 그리는 중이지 고장이 아닙니다. 맨 위에 둡니다 — 아래에서
+   무슨 오류가 나든 '받아지긴 했다' 는 사실은 남아야 합니다. */
+try { window.__fitlogBooted = true; } catch (_) {}
+/* 버전은 이 파일을 부르는 <script src="./app.js?v=NN"> 에서 그대로 읽습니다.
+   따로 상수를 두면 배포 번호와 화면에 뜨는 번호가 언젠가 어긋나고, 그러면
+   "무슨 버전 쓰세요?" 라고 물어봐야 소용이 없어집니다. 여기서 읽으면 캐시
+   번호를 올리는 순간 화면 표기도 같이 따라옵니다. */
+const APP_VERSION = (() => {
+  try {
+    const src = (document.currentScript && document.currentScript.src) || '';
+    const m = src.match(/[?&]v=([\w.-]+)/);
+    return m ? 'v' + m[1] : '';
+  } catch (_) { return ''; }
+})();
 (() => {
   /* ── Utilities ──────────────────────────── */
   const WEEKDAYS = ['일','월','화','수','목','금','토'];
@@ -73,6 +89,13 @@
     authReady: false,
     user: null,
     guest: false,
+    /* 기기 저장이 실패한 적이 있는지 — 같은 경고를 반복하지 않으려고 둡니다. */
+    saveBroken: false,
+    /* 피커에서 '나만의 운동 직접 추가' 칸에 적고 있는 이름 */
+    customName: '',
+    /* 인증을 확인할 수 없어(오프라인) 이 기기 기록만 열어 준 상태.
+       클라우드에는 아무것도 쓰지 않습니다. */
+    offline: false,
     authMode: 'signin',       /* 'signin' | 'signup' */
     authId: '',               /* 아이디 (or email) typed on the sign-in screen */
     authPassword: '',
@@ -185,9 +208,16 @@
              completed: false, completedAt: 0 };
   }
   function normalizeSession(raw) {
+    /* 편집할 세션은 여기서 한 번 고쳐 둡니다 — 운동은 있는데 부위 칩이 빠진
+       기록이면 칩을 도로 채워, 칩과 목록이 서로 다른 말을 하지 않게 합니다.
+       (보여주기만 하는 다른 날 기록은 sessionPartIds 가 같은 일을 합니다.) */
+    const parts = Array.isArray(raw.parts) ? raw.parts.slice() : [];
+    for (const ex of Array.isArray(raw.exercises) ? raw.exercises : []) {
+      if (ex && ex.part && !parts.includes(ex.part)) parts.push(ex.part);
+    }
     return {
       date: raw.date,
-      parts: Array.isArray(raw.parts) ? raw.parts : [],
+      parts,
       notes: raw.notes || '',
       exercises: Array.isArray(raw.exercises) ? raw.exercises : [],
       run: { km: raw.run?.km ?? '', minutes: raw.run?.minutes ?? '', notes: raw.run?.notes ?? '' },
@@ -206,8 +236,20 @@
     const want = new Set(ids || []);
     return PARTS.filter(p => want.has(p.id));
   }
+  /* 그날 실제로 있는 부위 = 고른 부위 칩 + 기록된 운동의 부위.
+     둘을 합치는 이유: 예전 버전이나 가져오기(import)로 들어온 기록에는
+     parts 가 비어 있는데 운동은 들어 있는 경우가 있습니다. 칩만 보고 그리면
+     그 운동들이 화면에서 통째로 사라져 — 세트 수는 15 라고 나오는데 정작
+     목록에는 아무것도 없는 — 기록을 잃은 것처럼 보입니다. 운동이 있다는 건
+     그 부위를 했다는 뜻이므로, 운동 쪽을 사실로 봅니다. */
+  function sessionPartIds(s) {
+    const ids = new Set(Array.isArray(s?.parts) ? s.parts : []);
+    for (const ex of s?.exercises || []) if (ex && ex.part) ids.add(ex.part);
+    if (hasRunData(s?.run)) ids.add('run');
+    return [...ids];
+  }
   function sessionSummary(s) {
-    return orderedParts(s.parts).map(p => p.label).join(', ');
+    return orderedParts(sessionPartIds(s)).map(p => p.label).join(', ');
   }
   /* A stretch is held, not lifted: there is no weight, and the number that
      matters is seconds. The library marks these with hold:true and the set row
@@ -441,18 +483,27 @@
   }
 
   /* 최근 n주 / 그 직전 n주의 부위별 세트·볼륨·최대중량 */
+  /* 두 창은 반드시 같은 길이여야 합니다.
+     예전에는 이번 창을 '3주 전 월요일부터 오늘까지' 로 잡아 놓고 4주로
+     나눴습니다. 그러면 월요일에는 22일치를 4주로 나눠 실제보다 21% 낮게
+     나오고, 직전 창은 꼬박 28일이라 그대로 나옵니다. 매주 목요일에만 운동
+     하는 사람이 월·화·수에는 "주 3.8세트 · 부족", "볼륨 25% 감소" 를 보게
+     되고 목요일이 되면 멀쩡해집니다 — 매주 반복됩니다.
+     그래서 오늘부터 거꾸로 센 28일과, 그 앞의 28일로 잡습니다. */
   function partWindows(weeks = ANALYSIS_WEEKS) {
-    const now = weekStartDate(new Date(todayISO() + 'T00:00:00'));
-    const curFrom = new Date(now); curFrom.setDate(curFrom.getDate() - (weeks - 1) * 7);
-    const prevFrom = new Date(curFrom); prevFrom.setDate(prevFrom.getDate() - weeks * 7);
+    const today = new Date(todayISO() + 'T00:00:00');
+    const days = weeks * 7;
+    const curFrom = new Date(today); curFrom.setDate(curFrom.getDate() - (days - 1));
+    const prevFrom = new Date(curFrom); prevFrom.setDate(prevFrom.getDate() - days);
     const iso = isoLocal;
     const blank = () => ({ sets: 0, volume: 0, maxKg: 0, days: new Set() });
     const cur = {}, prev = {};
     for (const part of PARTS) { cur[part.id] = blank(); prev[part.id] = blank(); }
 
+    const curTo = iso(today);
     for (const s of state.sessions) {
-      const inCur = s.date >= iso(curFrom);
-      const inPrev = !inCur && s.date >= iso(prevFrom) && s.date < iso(curFrom);
+      const inCur = s.date >= iso(curFrom) && s.date <= curTo;
+      const inPrev = s.date >= iso(prevFrom) && s.date < iso(curFrom);
       if (!inCur && !inPrev) continue;
       const bucket = inCur ? cur : prev;
       for (const ex of s.exercises || []) {
@@ -476,6 +527,11 @@
   function volumeVerdict(setsPerWeek) {
     if (setsPerWeek <= 0) return { key: 'none', label: '안 함', cls: 'bad' };
     if (setsPerWeek < VOL_MIN) return { key: 'low', label: '부족', cls: 'bad' };
+    /* 4~5 사이는 '자극은 되지만 권장 구간(5~10)에는 못 미치는' 자리입니다.
+       예전에는 이 구간을 그냥 '적정' 이라 했는데, 바로 옆의 ⓘ 안내는
+       "5~10세트 — 적정 / 4세트 미만 — 부족" 이라 4.5세트를 설명하지 못했습니다.
+       화면과 기준이 다른 말을 하면 둘 다 못 믿게 됩니다. */
+    if (setsPerWeek < VOL_GOOD_LO) return { key: 'ok', label: '조금 부족', cls: 'ok' };
     if (setsPerWeek <= VOL_GOOD_HI) return { key: 'good', label: '적정', cls: 'good' };
     if (setsPerWeek <= VOL_HIGH) return { key: 'plenty', label: '충분', cls: 'ok' };
     return { key: 'over', label: '많음', cls: 'ok' };
@@ -586,21 +642,35 @@
   }
 
   /* ── Chart helpers ───────────────────────── */
+  /* 이 운동의 '최근' 10회. 예전에는 날짜 오름차순으로 훑다가 10개에서 멈춰
+     가장 오래된 10회를 그렸습니다 — 1년 동안 60kg → 100kg 을 올린 사람이
+     작년 첫 열 번(60~68kg)을 보면서 'PR 68kg' 이라는 글자를 읽게 됩니다.
+     그래프도 열 번째 기록 이후로 영원히 멈춰 있었습니다.
+     완료한 세트만 셉니다 — 적어만 두고 하지 않은 200kg 이 최고 기록으로
+     찍히면 안 됩니다(개인 기록 카드는 이미 완료한 세트만 봅니다). */
   function renderExerciseTrend(exName) {
-    const history = [];
-    const sorted = [...state.sessions].sort((a,b) => a.date < b.date ? -1 : 1);
+    const all = [];
+    const sorted = [...state.sessions].sort((a, b) => a.date < b.date ? -1 : 1);
     for (const s of sorted) {
       const ex = (s.exercises||[]).find(e => e.name === exName);
       if (!ex) continue;
-      const working = (ex.sets||[]).filter(st => !st.warmup);
+      /* setScore 와 같은 기준을 씁니다 — 무게와 횟수가 둘 다 있는 완료 세트만.
+         예전에는 횟수를 안 보고 무게만 봐서, 무게만 적고 횟수를 비워 둔 세트가
+         이 그래프에서는 최고 기록으로 잡혔습니다. 그러면 같은 운동에 대해
+         ⓘ 화면은 "PR 120kg", 히스토리의 개인 기록 카드는 "95kg" 이라고
+         서로 다른 말을 합니다. */
+      const working = (ex.sets||[]).filter(st => st.done && setScore(st));
       const maxKg = Math.max(...working.map(st=>Number(st.kg)||0), 0);
-      if (maxKg > 0) history.push({ date: shortDate(s.date), kg: maxKg });
-      if (history.length >= 10) break;
+      if (maxKg > 0) all.push({ date: shortDate(s.date), kg: maxKg });
     }
+    const history = all.slice(-10);
     if (history.length < 2) return '';
-    const pr = Math.max(...history.map(p=>p.kg));
+    /* 'PR' 은 전체 기록 기준입니다. 그래프에 보이는 10회 중 최고를 PR 이라고
+       하면, 최고 기록이 11회 전이었을 때 실제보다 낮은 숫자가 PR 로 뜹니다. */
+    const prAll = Math.max(...all.map(p => p.kg));
+    const maxKg = Math.max(...history.map(p=>p.kg));
     const minKg = Math.min(...history.map(p=>p.kg));
-    const range = pr - minKg || 1;
+    const range = maxKg - minKg || 1;
     const n = history.length;
     const coords = history.map((p, i) => ({
       x: (i/(n-1))*86+7, y: 36-((p.kg-minKg)/range)*28,
@@ -619,7 +689,7 @@
     return `<div class="trend-card">
       <div class="trend-header">
         <span class="trend-title">최고 무게 추이</span>
-        <span class="trend-pr">PR <strong>${pr}kg</strong></span>
+        <span class="trend-pr">PR <strong>${prAll}kg</strong></span>
       </div>
       <svg viewBox="0 0 100 46" class="trend-svg" overflow="visible">
         <defs><linearGradient id="tgrad" x1="0" y1="0" x2="0" y2="1">
@@ -695,7 +765,23 @@
       return;
     }
     s.updatedAt = Date.now();
-    await WorkoutDB.putSession(clone(s));
+    /* 저장이 실패하면 반드시 말해 줍니다.
+       예전에는 실패가 조용히 지나갔습니다. 저장 공간이 꽉 찬 폰에서는 그때
+       부터 기록한 세트가 전부 화면에만 존재하는데, 화면 아래 안내는 여전히
+       "입력하는 즉시 저장되니 도중에 나가도 사라지지 않아요" 라고 말합니다.
+       사용자는 90분을 채우고 앱을 닫은 뒤에야 알게 됩니다. */
+    try {
+      await WorkoutDB.putSession(clone(s));
+      state.saveBroken = false;
+    } catch (err) {
+      console.warn('save failed', err);
+      /* 매번 띄우면 세트를 누를 때마다 토스트가 뜹니다 — 한 번만 알립니다. */
+      if (!state.saveBroken) {
+        state.saveBroken = true;
+        toast('저장에 실패했습니다 — 기기 저장 공간을 확인해 주세요');
+      }
+      throw err;
+    }
     const idx = state.sessions.findIndex(x => x.date === s.date);
     const copy = clone(s);
     if (idx >= 0) state.sessions[idx] = copy; else state.sessions.push(copy);
@@ -811,6 +897,7 @@
         `최근 ${ANALYSIS_WEEKS}주를 평균 내어 주당 세트 수로 봅니다.`,
         '',
         `· ${VOL_MIN}세트 미만 — 부족`,
+        `· ${VOL_MIN}~${VOL_GOOD_LO}세트 — 조금 부족`,
         `· ${VOL_GOOD_LO}~${VOL_GOOD_HI}세트 — 적정`,
         `· ~${VOL_HIGH}세트 — 충분`,
         `· ${VOL_HIGH}세트 초과 — 많음`,
@@ -1052,11 +1139,13 @@
     } catch (_) {}
   }
 
-  function startRestTimer(seconds, label) {
+  function startRestTimer(seconds, label, setId) {
     /* Checked here rather than at each call site so nothing can start the timer
        behind the setting's back. */
     if (!restTimerOn()) return;
-    state.restTimer = { endsAt: Date.now() + seconds * 1000, duration: seconds, label: label || '', chimed: false };
+    /* setId 를 함께 둡니다 — 어느 세트가 시작한 휴식인지 알아야, 다른 세트의
+       체크를 푸는 것만으로 돌아가던 휴식이 사라지지 않습니다. */
+    state.restTimer = { endsAt: Date.now() + seconds * 1000, duration: seconds, label: label || '', setId: setId || '', chimed: false };
     saveRestTimer();
     renderRestTimerBar();
     /* Ask once, lazily, only when the feature is actually used — so a background
@@ -1084,9 +1173,16 @@
   }
 
   function adjustRestTimer(deltaSec) {
-    if (!state.restTimer) return;
-    state.restTimer.endsAt += deltaSec * 1000;
-    state.restTimer.duration = Math.max(5, state.restTimer.duration + deltaSec);
+    const rt = state.restTimer;
+    if (!rt) return;
+    /* 이미 끝난 타이머에 +15 를 누르면 '지금부터 15초' 여야 합니다.
+       예전에는 지나간 endsAt 에 그냥 더해서, 2분 전에 끝난 휴식에 15초를
+       더해 봐야 여전히 과거였습니다 — 화면은 "완료!" 그대로고 버튼이 죽은
+       것처럼 보였습니다. */
+    const base = Math.max(rt.endsAt, Date.now());
+    rt.endsAt = base + deltaSec * 1000;
+    rt.duration = Math.max(5, rt.duration + deltaSec);
+    if (rt.endsAt > Date.now()) rt.chimed = false;   // 다시 재는 중이면 종료 알림도 다시
     saveRestTimer();
     renderRestTimerBar();
     pushRestNotification();
@@ -1145,6 +1241,12 @@
       document.body.appendChild(el);
       document.body.classList.add('has-rest-timer');
     }
+    /* 초당 네 번 도는 타이머가 매번 innerHTML 을 새로 쓰면, 표시가 바뀌지
+       않는 동안에도 SVG 링까지 통째로 다시 만들고 버튼의 눌림 상태가 계속
+       날아갑니다. 끝난 뒤에는 화면이 더 바뀔 것도 없으므로 한 번만 그립니다. */
+    const stamp = `${remaining}|${rt.label}`;
+    if (el.dataset.stamp === stamp) return;
+    el.dataset.stamp = stamp;
     el.innerHTML = html;
   }
 
@@ -1180,6 +1282,11 @@
        has to dismiss it — otherwise the tab switches behind a screen that is
        still covering it. */
     state.summaryDate = null;
+    /* 루틴 만들기 화면도 함께 닫습니다. 이 화면은 시트가 아니라 전체 화면
+       (position:fixed) 이라 closeAllSheets 가 건드리지 않았고, 그래서 하단
+       탭을 눌러도 밑에서 화면만 바뀌고 위는 그대로였습니다 — 사용자에게는
+       탭이 그냥 안 눌리는 것으로 보입니다. */
+    state.routineEdit = null;
     closeAllSheets();
     if (tab === 'workout' && !state.session) {
       state.session = normalizeSession(await WorkoutDB.getSession(state.date) || emptySession(state.date));
@@ -1189,6 +1296,7 @@
   function closeAllSheets() {
     state.pickerPart = null;
     state.pickSelection = [];
+    state.customName = '';
     state.routineSheet = false;
     /* routineEdit 는 시트가 아니라 화면이므로 여기서 닫지 않습니다 —
        운동을 고르고 나면 만들던 자리로 돌아와야 합니다. */
@@ -1251,11 +1359,26 @@
     state.pastDirty = false;
   }
 
-  /* Reverts and leaves edit mode. Used when navigating away from the day. */
+  /* Reverts and leaves edit mode. Used when navigating away from the day.
+
+     날짜도 오늘로 되돌립니다. 예전에는 editingPast 만 끄고 state.session 과
+     state.date 는 그 과거 날짜에 그대로 두었습니다. goTab 은 세션이 있으면
+     다시 읽지 않으므로, 홈으로 나갔다가 기록 탭으로 돌아오면 같은 과거 날짜가
+     그대로 떠 있는데 저장/취소 바만 사라진 상태가 됩니다. 그때부터는
+
+       · 고치는 족족 디스크와 클라우드에 바로 써지고(되돌릴 수 없습니다)
+       · 세트를 체크하면 12일 전 세트에 '오늘' 시각이 찍혀 그날의 운동 시간·
+         휴식 계산이 영구히 망가지고, 휴식 타이머까지 올라오고
+       · 부위 칩을 끄면 그 날 기록이 통째로 삭제될 수도 있습니다.
+
+     화면은 편집 중일 때와 바 하나 차이라 사용자가 알아차릴 방법이 없습니다.
+     그래서 '떠난다' 는 말 그대로 그 날에서 나옵니다. */
   function discardPastEdit() {
     revertPastEdit();
     state.editingPast = false;
     state.pastBaseline = null;
+    state.date = todayISO();
+    state.session = null;      // 다음에 기록 탭을 열 때 오늘 것으로 다시 읽습니다
   }
 
   async function savePastEdit() {
@@ -1292,7 +1415,11 @@
   /* ── Render Root ──────────────────────────── */
   function render() {
     if (!state.authReady) { appEl.innerHTML = renderSplash(); return; }
-    if (!state.user && !state.guest) {
+    /* state.offline: 인증을 확인할 수 없어(네트워크 없음) 이 기기에 마지막으로
+       들어왔던 계정의 기록만 열어 준 상태입니다. 로그인한 것도 게스트도
+       아니지만, 로그인 화면을 띄우면 안 됩니다 — 신호가 없어서 로그인이
+       불가능한 상황이 바로 여기이기 때문입니다. */
+    if (!state.user && !state.guest && !state.offline) {
       appEl.innerHTML = (state.authMode === 'signup' ? renderSignup()
                       : state.authMode === 'reset'  ? renderReset()
                       : renderLogin())
@@ -1315,8 +1442,10 @@
     if (state.yearPicker)     html += renderYearPickerSheet();
     if (state.weightPicker)   html += renderWeightPickerSheet();
     if (state.repsPicker)     html += renderRepsPickerSheet();
-    if (state.exerciseInfoId) html += renderExerciseInfoSheet(state.exerciseInfoId);
     if (state.pickerPart)     html += renderExercisePickerSheet(state.pickerPart);
+    /* 정보 시트는 피커보다 뒤에 그립니다 — 운동을 고르는 도중에 "이게 무슨
+       동작이지?" 하고 열었을 때 피커 밑에 깔리면 아무것도 안 보입니다. */
+    if (state.exerciseInfoId) html += renderExerciseInfoSheet(state.exerciseInfoId);
     if (state.routineSheet)   html += renderRoutineSheet();
     if (state.routineEdit)    html += renderRoutineEditor();
 
@@ -2025,7 +2154,7 @@
       <div class="balance-bars">${bars}</div>
       <div class="balance-tip">
         <div class="balance-tip-text">
-          <strong>${esc(names)}</strong>가 부족해요 — ${esc(why)}.
+          <strong>${esc(names)}</strong>${josa(names, '이', '가')} 부족해요 — ${esc(why)}.
         </div>
         <button class="balance-go" data-act="start-part" data-part="${esc(primary.part.id)}">
           ${esc(primary.part.label)} 시작
@@ -2085,7 +2214,7 @@
 
     let todayBlock;
     if (todaySess) {
-      const parts = (todaySess.parts||[]).map(id=>{
+      const parts = sessionPartIds(todaySess).map(id=>{
         const p = PARTS.find(x=>x.id===id);
         return p ? `<span class="muscle-tag" style="background:color-mix(in srgb,${p.color} 16%,var(--surface-2));color:${p.color}">${p.label}</span>` : '';
       }).join('');
@@ -2098,7 +2227,7 @@
       const finished = !!todaySess.completed;
       const names = (todaySess.exercises || []).map(e => e.name);
       const preview = names.slice(0, 3).join(' · ') + (names.length > 3 ? ` 외 ${names.length - 3}개` : '');
-      todayBlock = `<button class="today-card${finished ? ' done' : ''}" data-act="open-summary" data-date="${todaySess.date}">
+      todayBlock = `<button class="today-card${finished ? ' done' : ''}" data-act="open-summary" data-date="${esc(todaySess.date)}">
         <div class="today-card-top">
           <div class="badge-done${finished ? '' : ' progress'}">
             ${finished
@@ -2110,7 +2239,7 @@
         <div class="today-card-parts">${parts || '<span class="sec-sub">부위 미선택</span>'}</div>
         ${preview ? `<div class="today-card-ex">${esc(preview)}</div>` : ''}
         <div class="today-card-stats">
-          <span><b>${todaySess.exercises.length}</b>개 운동</span>
+          <span><b>${(todaySess.exercises || []).length}</b>개 운동</span>
           <span><b>${tStats.done}</b>세트 완료</span>
           ${Number.isFinite(tRun) && tRun ? `<span><b>${tRun}</b>km</span>` : ''}
         </div>
@@ -2128,18 +2257,22 @@
       </div>`;
     }
 
-    const recent = state.sessions.slice(0, 8);
+  /* 홈에는 최근 5개까지만. 전체는 히스토리 탭에 달력과 함께 있고, 홈에서
+     같은 목록을 길게 늘어놓으면 아래쪽 카드들이 스크롤 저편으로 밀립니다. */
+    const RECENT_ON_HOME = 5;
+    const recent = state.sessions.slice(0, RECENT_ON_HOME);
     const recentHtml = recent.length ? `
       <div class="sec-head"><div class="sec-title">최근 기록</div></div>
       <div class="recent-list">${recent.map(s => {
         const [, m, d] = s.date.split('-').map(Number);
-        const dots = (s.parts||[]).map(id=>{
+        const dots = sessionPartIds(s).map(id=>{
           const p = PARTS.find(x=>x.id===id);
           return p ? `<span class="pdot" style="background:${p.color}"></span>` : '';
         }).join('');
         const sets = (s.exercises||[]).reduce((a,ex)=>a+(ex.sets||[]).filter(st=>st.done).length,0);
-        const metaVol = sets ? `${sets}세트 · ` : '';
-        return `<button class="recent-row" data-act="open-day" data-date="${s.date}">
+        /* 점이 없는데 '15세트 · ' 로 끝나면 뒤에 뭔가 잘린 것처럼 보입니다. */
+        const metaVol = sets ? (dots ? `${sets}세트 · ` : `${sets}세트`) : '';
+        return `<button class="recent-row" data-act="open-day" data-date="${esc(s.date)}">
           <div class="recent-daybox">
             <div class="recent-day-d">${d}</div>
             <div class="recent-day-m">${m}월</div>
@@ -2150,7 +2283,11 @@
           </div>
           <svg class="recent-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
         </button>`;
-      }).join('')}</div>` : '';
+      }).join('')}</div>
+      ${state.sessions.length > RECENT_ON_HOME
+        ? `<button class="btn-ghost recent-more" data-act="go-tab" data-tab="history">
+             기록 ${state.sessions.length}개 전체 보기
+           </button>` : ''}` : '';
 
     const hour = td.getHours();
     const greet = hour < 5 ? '늦은 밤이네요' : hour < 12 ? '좋은 아침이에요' : hour < 18 ? '좋은 오후예요' : '좋은 저녁이에요';
@@ -2225,9 +2362,10 @@
       </div>`;
     }
 
+    const shown = sessionPartIds(s);
     for (const part of PARTS) {
       if (part.kind !== 'weight') continue;
-      if (!s.parts.includes(part.id)) continue;
+      if (!shown.includes(part.id)) continue;
       const exercises = s.exercises.filter(e => e.part === part.id);
       blocks += `<div class="sec-head">
         <div class="sec-title" style="color:${part.color}">${part.label}</div>
@@ -2243,7 +2381,7 @@
       }
     }
 
-    if (!s.parts.length) {
+    if (!shown.length) {
       blocks = `<div class="pick-prompt">
         <div class="pick-prompt-icon">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6.5 6.5h11M6.5 17.5h11M4 9.5v5M20 9.5v5M9 12h6"/></svg>
@@ -2266,9 +2404,9 @@
             <div class="sum-val">${stats.done}<span>/${stats.total}</span></div>
             <div class="sum-lbl">완료 세트</div>
           </div>
-          ${s.exercises.length ? `
+          ${(s.exercises || []).length ? `
           <div class="sum-item">
-            <div class="sum-val">${s.exercises.length}<span>개</span></div>
+            <div class="sum-val">${(s.exercises || []).length}<span>개</span></div>
             <div class="sum-lbl">운동</div>
           </div>` : ''}
           ${hasRunData(s.run) ? `
@@ -2310,7 +2448,7 @@
           <span>${esc(relDayLabel(s.date))} 운동을 마쳤습니다</span>
         </div>
         <div class="finish-actions">
-          <button class="btn-ghost" data-act="open-summary" data-date="${s.date}">기록 보기</button>
+          <button class="btn-ghost" data-act="open-summary" data-date="${esc(s.date)}">기록 보기</button>
           <button class="btn-ghost" data-act="reopen-day">다시 열기</button>
         </div>
       </div>` : `
@@ -2339,7 +2477,7 @@
           <label class="day-nav-mid">
             <div class="day-nav-date">${esc(longDate(s.date))}</div>
             <div class="day-nav-rel">${esc(relDayLabel(s.date))}</div>
-            <input type="date" data-act="change-date" value="${s.date}" max="${todayISO()}" aria-label="날짜 선택">
+            <input type="date" data-act="change-date" value="${esc(s.date)}" max="${todayISO()}" aria-label="날짜 선택">
           </label>
           <button class="day-nav-arrow" data-act="shift-day" data-delta="1" aria-label="다음 날"${isToday?' disabled':''}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
@@ -2446,11 +2584,11 @@
             ${done ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>운동 완료`
                    : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>진행 중`}
           </div>
-          <div class="dsum-parts">${orderedParts(s.parts).map(p =>
+          <div class="dsum-parts">${orderedParts(sessionPartIds(s)).map(p =>
             `<span class="muscle-tag" style="background:color-mix(in srgb,${p.color} 16%,var(--surface-2));color:${p.color}">${p.label}</span>`
           ).join('')}</div>
           <div class="dsum-stats">
-            <div><b>${s.exercises.length}</b><span>운동</span></div>
+            <div><b>${(s.exercises || []).length}</b><span>운동</span></div>
             <div><b>${stats.done}</b><span>완료 세트</span></div>
             ${hasRunData(s.run) && Number.isFinite(runKm) && runKm ? `<div><b>${runKm}</b><span>km</span></div>` : ''}
             ${(() => {
@@ -2464,7 +2602,7 @@
           const t = sessionTiming(s);
           return t && t.rest ? `<p class="dsum-timing">세트 사이 보통 ${esc(fmtDur(t.rest))} 쉬었어요</p>` : '';
         })()}
-        <button class="btn-ghost dsum-edit" data-act="edit-day" data-date="${s.date}">
+        <button class="btn-ghost dsum-edit" data-act="edit-day" data-date="${esc(s.date)}">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4v16h16v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
           이 날 기록 편집하기
         </button>`;
@@ -2679,7 +2817,7 @@
             <div class="info-name">${esc(libEx.name)}</div>
             ${libEx.nameEn ? `<div class="info-name-en">${esc(libEx.nameEn)}</div>` : ''}
           </div>
-          <button class="sheet-x" data-act="close-sheet" aria-label="닫기">
+          <button class="sheet-x" data-act="close-info" aria-label="닫기">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
@@ -2725,6 +2863,9 @@
           ${item.nameEn ? `<span class="pick-item-en">${esc(item.nameEn)}</span>` : ''}
         </button>
         ${eq ? `<span class="pick-item-eq">${esc(eq)}</span>` : ''}
+        ${item.id ? `<button class="pick-info" data-act="show-ex-info" data-exid="${esc(item.id)}" aria-label="${esc(item.name)} 설명 보기">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        </button>` : ''}
         ${inSession ? `<span class="pick-added-tag">추가됨</span><button class="custom-del" data-act="quick-del-ex" data-name="${esc(item.name)}" data-part="${partId}">빼기</button>` : ''}
         ${item.custom && !inSession ? `<button class="custom-del" data-act="del-custom" data-id="${esc(item.id)}">삭제</button>` : ''}
         ${inSession ? '' : `<div class="pick-check${picked?' on':''}">${picked ? CHECK_SVG : ''}</div>`}
@@ -2754,7 +2895,8 @@
         </div>
         <div class="pick-list">${buildPickItems(partId)}</div>
         <div class="custom-add-row">
-          <input id="custom-name" placeholder="나만의 운동 직접 추가">
+          <input id="custom-name" placeholder="나만의 운동 직접 추가"
+                 data-act="custom-name" value="${esc(state.customName)}">
           <button class="btn-add-sm" data-act="add-custom" data-part="${partId}">추가</button>
         </div>
         <div class="picker-footer">
@@ -2792,12 +2934,12 @@
       const s = byDate.get(iso);
       const isToday = iso === today;
       const future = iso > today;
-      const dots = s ? (s.parts || []).slice(0, 4).map(id => {
+      const dots = s ? sessionPartIds(s).slice(0, 4).map(id => {
         const p = PARTS.find(x => x.id === id);
         return p ? `<span class="cal-dot" style="background:${p.color}"></span>` : '';
       }).join('') : '';
       cells += `<button class="cal-cell${s ? ' done' : ''}${isToday ? ' today' : ''}${future ? ' future' : ''}"
-        data-act="open-day" data-date="${iso}"${future ? ' disabled' : ''}>
+        data-act="open-day" data-date="${esc(iso)}"${future ? ' disabled' : ''}>
         <span class="cal-num">${d}</span>
         <span class="cal-dots">${dots}</span>
       </button>`;
@@ -3258,7 +3400,7 @@
         if ((s.exercises || []).length) meta.push(`${s.exercises.length}개 운동`);
         if (sets) meta.push(`${sets}세트`);
         if (hasRunData(s.run)) meta.push(`러닝 ${s.run.km || '-'}km`);
-        body += `<button class="recent-row" data-act="open-day" data-date="${s.date}">
+        body += `<button class="recent-row" data-act="open-day" data-date="${esc(s.date)}">
           <div class="recent-daybox">
             <div class="recent-day-d">${d}</div>
             <div class="recent-day-m">${m}월</div>
@@ -3288,7 +3430,9 @@
     const p = state.profile || {};
     const bits = [];
     if (p.gender) bits.push({ male: '남성', female: '여성' }[p.gender]);
-    if (p.birthYear) bits.push(`${new Date().getFullYear() - Number(p.birthYear) + 1}세`);
+    /* 만 나이로 통일합니다. 예전에는 여기만 +1(세는나이)이라, 출생연도를
+       고르는 화면은 "만 36세" 인데 바로 아래 설정 줄은 "37세" 였습니다. */
+    if (p.birthYear) bits.push(`만 ${new Date().getFullYear() - Number(p.birthYear)}세`);
     if (p.heightCm) bits.push(`${p.heightCm}cm`);
     if (p.weightKg) bits.push(`${p.weightKg}kg`);
 
@@ -3412,7 +3556,12 @@
              sitting a thumb's width from "백업 내보내기". Both are irreversible
              and both used to live inline next to routine items — the reset was
              directly under import, which is precisely where a mis-tap lands. -->
-        <div class="settings-label danger-label">위험 구역</div>
+        <details class="settings-adv danger-adv">
+          <summary class="settings-adv-summary danger-label">
+            <span>위험 구역</span>
+            <svg class="settings-adv-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </summary>
+          <div class="settings-adv-body">
         <div class="settings-group danger-zone">
           <button class="settings-item danger-item" data-act="clear-local-data">
             <div class="settings-item-icon danger">
@@ -3434,6 +3583,8 @@
             </div>
           </button>` : ''}
         </div>
+          </div>
+        </details>
 
         <!-- 운동 그림의 저작자 표기. CC BY-SA 4.0 은 저작자와 라이선스를
              밝히도록 요구하므로 화면 어딘가에 반드시 있어야 합니다. -->
@@ -3444,6 +3595,7 @@
              &middot; 크기 조정 외 변경 없음</p>
           <p>일부 그림은 <a href="https://github.com/yuhonas/free-exercise-db" target="_blank" rel="noopener">free-exercise-db</a>
              (퍼블릭 도메인) 및 직접 그린 그림입니다.</p>
+          ${APP_VERSION ? `<p class="app-version">FITLOG ${esc(APP_VERSION)}</p>` : ''}
         </div>
       </main>`;
   }
@@ -3559,7 +3711,11 @@
     if (act === 'close-year') { state.yearPicker = null; render(); return; }
 
     /* Sheet closers */
-    if (act === 'close-picker' || act === 'close-info' || act === 'close-sheet') { closeAllSheets(); render(); return; }
+    /* 정보 시트만 닫습니다. 피커에서 열었다면 고르던 목록과 선택이 그대로
+       남아 있어야 합니다 — 여기서 전부 닫으면 고르던 걸 처음부터 다시 해야
+       합니다. */
+    if (act === 'close-info') { state.exerciseInfoId = null; render(); return; }
+    if (act === 'close-picker' || act === 'close-sheet') { closeAllSheets(); render(); return; }
 
     /* Weight picker controls */
     if (act === 'numpad-w-digit') {
@@ -3630,12 +3786,17 @@
         /* Entering reps IS finishing the set — that is the last thing you do
            after racking the weight. Mark it done and start the rest countdown
            automatically instead of making the user hunt for a second button.
-           The ✓ stays tappable to undo or to tick a set off by hand. */
-        if (value > 0 && !set.done) {
-          set.done = true;
-          startRestTimer(restDurationFor(set), ex ? ex.name : '');
-        }
+           The ✓ stays tappable to undo or to tick a set off by hand.
+
+           ✓ 를 누르는 길과 똑같은 markSetDone 을 씁니다 — 완료 시각과 개인
+           기록 판정이 한쪽에만 빠지는 일이 다시 생기지 않게. */
+        let pr = null;
+        if (value > 0 && !set.done) pr = markSetDone(ex, set, true);
         await persist();
+        state.repsPicker = null;
+        render();
+        toastPR(ex, pr);
+        return;
       }
       state.repsPicker = null;
       render(); return;
@@ -3669,32 +3830,48 @@
       await persist(); render(); return;
     }
     if (act === 'add-custom') {
+      /* DOM 을 먼저 봅니다 — 자동완성이나 붙여넣기는 input 이벤트를 안 내는
+         경우가 있어, state 만 믿으면 방금 붙여넣은 이름을 놓칩니다. */
       const input = document.getElementById('custom-name');
-      if (input && input.value.trim()) {
-        await handleAddCustom(btn.dataset.part, input.value.trim());
-      }
+      const name = ((input ? input.value : state.customName) || '').trim();
+      if (!name) { toast('운동 이름을 적어 주세요'); return; }
+      state.customName = '';
+      await handleAddCustom(btn.dataset.part, name);
       return;
     }
     if (act === 'del-ex') { await handleDeleteEx(btn.dataset.ex); return; }
     if (act === 'add-set') { await handleAddSet(btn.dataset.ex); return; }
     if (act === 'del-set') { await handleDeleteSet(btn.dataset.ex, btn.dataset.set); return; }
     if (act === 'shift-day') {
+      /* 기준 날짜를 물어보기 '전에' 붙잡아 둡니다. confirmLeavePast 가
+         '나가기' 로 끝나면 discardPastEdit 이 세션을 비우므로(그 날에서 실제로
+         나오기 위해서입니다), 그 뒤에 state.session.date 를 읽으면 널 참조로
+         터집니다. */
+      const from = (state.session && state.session.date) || state.date;
       if (!await confirmLeavePast()) return;
       await persist();
-      await loadDay(shiftDate(state.session.date, Number(btn.dataset.delta)));
+      await loadDay(shiftDate(from, Number(btn.dataset.delta)));
       return;
     }
     if (act === 'toggle-done') { await handleToggleDone(btn.dataset.ex, btn.dataset.set); return; }
     if (act === 'open-summary') { state.summaryDate = btn.dataset.date; render(); return; }
     if (act === 'close-summary') { state.summaryDate = null; render(); return; }
     if (act === 'edit-day') {
+      /* 다른 날을 고치던 중이었다면 먼저 물어봅니다. 여기만 빠져 있어서,
+         8월 20일을 고치다가 '기록 보기' → '이 날 기록 편집하기' 로 돌아오면
+         고치던 내용이 아무 말 없이 사라졌습니다(loadDay 가 디스크에서 다시
+         읽어 옵니다). 나머지 출구는 전부 물어보고 있었습니다. */
+      if (!await confirmLeavePast()) return;
       state.summaryDate = null;
       await loadDay(btn.dataset.date);
       return;
     }
     if (act === 'save-past') { await savePastEdit(); return; }
     if (act === 'cancel-past') {
-      if (!state.pastDirty) { state.editingPast = false; state.pastBaseline = null; await goTab('history'); return; }
+      /* 고친 게 없으면 그냥 나갑니다. discardPastEdit 을 써서 날짜까지 오늘로
+         되돌립니다 — 여기서 editingPast 만 끄면 위와 똑같이 '바 없는 과거
+         날짜' 상태가 남습니다. */
+      if (!state.pastDirty) { discardPastEdit(); await goTab('history'); return; }
       if (!await ask({ title: '변경을 되돌릴까요?',
                        body: '마지막으로 저장한 상태로 돌아갑니다.',
                        confirmText: '되돌리기', danger: true })) return;
@@ -3804,7 +3981,11 @@
       const on = !restTimerOn();
       setRestTimerOn(on);
       /* Turning it off mid-rest should clear what is already on screen. */
-      if (!on && state.restTimer) { state.restTimer = null; renderRestTimerBar(); }
+      /* cancelRestTimer() 를 씁니다. 예전에는 state 만 비워서, 트레이에 뜬
+       "휴식 중 · 1:00 남음" 알림이 영영 안 지워지고(그걸 지울 코드가 state 를
+       필요로 하는데 이미 비었습니다), localStorage 에 남은 기록 때문에 설정을
+       다시 켜면 취소한 휴식이 되살아났습니다. */
+    if (!on && state.restTimer) cancelRestTimer();
       render();
       return;
     }
@@ -3813,6 +3994,13 @@
   /* ── Input handler ───────────────────────── */
   async function onInput(e) {
     const t = e.target;
+    /* 직접 추가할 운동 이름을 state 에 담아 둡니다. 예전에는 이 칸만 state 에
+       연결돼 있지 않아서(바로 옆 검색 칸은 연결돼 있습니다), 다시 그리는 일이
+       한 번이라도 생기면 — 다른 운동의 ⓘ 를 열어 보거나, 나만의 운동 하나를
+       지우거나, 백그라운드 동기화가 끝나기만 해도 — 적던 이름이 사라졌습니다.
+       다시 그리지는 않습니다: 여기서 render 하면 글자를 칠 때마다 포커스가
+       날아가고 한글 조합이 끊깁니다. */
+    if (t.dataset.act === 'custom-name') { state.customName = t.value; return; }
     /* Signup fields write straight to state and deliberately do NOT re-render:
        replacing the DOM mid-keystroke would drop focus and, on phones, dismiss
        the keyboard. Feedback is painted into the existing nodes instead. */
@@ -3988,6 +4176,13 @@
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) return '이메일 형식이 올바르지 않습니다.';
       return '';
     }
+    /* 3단계(신체 정보)도 구글 가입과 같은 기준으로 봅니다.
+       예전에는 여기서 아무것도 검사하지 않고 통과시킨 뒤 '설정 완료' 로
+       표시해 버려서, 비밀번호로 가입한 사람은 프로필이 통째로 비어 있어도
+       그냥 들어왔습니다. 구글로 가입한 사람은 같은 항목을 전부 채워야만
+       들어올 수 있는데요. 같은 앱에서 들어온 문에 따라 다른 데이터가 쌓이면
+       분석 화면이 누구에게는 되고 누구에게는 안 됩니다. */
+    if (state.signupStep === 3) return onboardingMissing();
     return '';
   }
 
@@ -4023,9 +4218,13 @@
     state.signingUp = true;
     render();
     try {
-      const user = await Cloud.signUpUsername({
+      /* 감싸지 않으면 파이어스토어가 응답 없이 멈출 때 authBusy 와 signingUp
+         이 둘 다 켜진 채로 굳습니다. signingUp 이 켜져 있으면 인증 리스너까지
+         죽어서(방금 만든 계정에 반응하지 않게 하려는 장치입니다) 그 뒤로는
+         어떤 로그인도 앱에 반영되지 않습니다. */
+      const user = await withTimeout(Cloud.signUpUsername({
         username: id, password: s.password, email: s.email, profile: prof,
-      });
+      }), 25000, '회원가입');
       /* The gate keys off this flag, so record the answer now: the next login
          skips the profile read entirely instead of waiting on it. */
       if (user && user.uid) { markSetUp(user.uid); rememberUsername(user.uid, id); }
@@ -4059,6 +4258,14 @@
 
   async function handleSaveProfile() {
     if (state.authBusy) return;
+    /* 온보딩과 같은 검사를 여기서도 합니다. 예전에는 검사가 없어서, 키를
+       175 에서 17 로 잘못 고치고 저장하면 sanitizeProfile 이 범위 밖이라며
+       조용히 빼 버리는데 화면에는 "프로필을 저장했습니다" 가 떴습니다.
+       설정의 키 표기는 사라지고(지워진 것처럼 보임), 서버에는 175 가 그대로
+       남아 다음에 앱을 켜면 되살아납니다 — 저장한 것도 아니고 안 한 것도
+       아닌 상태입니다. 받을 수 없는 값이면 받지 않았다고 말합니다. */
+    const bad = onboardingMissing();
+    if (bad) { toast(bad); return; }
     state.authBusy = true;
     render();
     try {
@@ -4069,9 +4276,11 @@
       toast('프로필을 저장했습니다');
     } catch (err) {
       state.authBusy = false;
-      state.profileEditing = false;
+      /* 시트를 닫지 않습니다. 닫으면 방금 적은 이름·성별·출생연도·키·몸무게를
+         전부 다시 입력해야 하는데, 실패 이유는 대개 잠깐의 네트워크 문제라
+         한 번 더 누르면 되는 일입니다. */
       render();
-      toast('프로필 저장에 실패했습니다');
+      toast('프로필 저장에 실패했습니다 — 잠시 후 다시 눌러 주세요');
       console.warn('profile save failed', err);
     }
   }
@@ -4119,8 +4328,14 @@
     state.authError = '';
     render();
     try {
-      await Cloud.claimUsername(id);
-      await Cloud.saveProfile(collectProfile());
+      /* withTimeout 으로 감쌉니다. 파이어스토어는 닿지 않을 때 '거부' 가 아니라
+         '영영 응답 없음' 으로 멈추는 경우가 있어서, 감싸지 않으면 authBusy 가
+         true 인 채로 굳습니다. 그런데 이 화면에는 로그아웃도, 뒤로도, 다른
+         버튼도 없습니다 — 앱이 통째로 잠겨 새로고침(설치형 PWA 라면 강제
+         종료) 말고는 길이 없어집니다. 이 파일의 다른 클라우드 호출은 전부
+         감싸져 있는데 여기만 빠져 있었습니다. */
+      await withTimeout(Cloud.claimUsername(id), 12000, '아이디 저장');
+      await withTimeout(Cloud.saveProfile(collectProfile()), 12000, '프로필 저장');
 
       /* Read it back before believing it.
 
@@ -4130,7 +4345,7 @@
          an account ends up looking finished on this device while every other
          device — and this one after a cache clear — keeps asking again. So the
          cache is only written once the server has confirmed the value. */
-      const saved = await Cloud.loadProfile(state.user ? state.user.uid : null);
+      const saved = await withTimeout(Cloud.loadProfile(state.user ? state.user.uid : null), 12000, '확인');
       if (!saved || !saved.username) {
         const e = new Error('username did not persist');
         e.code = 'fitlog/claim-unverified';
@@ -4184,13 +4399,29 @@
     if (!s) return;
     s.completed = true;
     s.completedAt = Date.now();
-    await persist();
+    /* 과거 기록에서는 persist() 가 일부러 저장을 미룹니다(pastDirty 만 세우고
+       돌아갑니다). 그대로 두면 '마치기' 가 아무것도 쓰지 않은 채 디스크에서
+       기록을 다시 읽어 오고, 요약 화면은 방금 추가한 운동도 없고 배지도
+       "진행 중" 인 옛 기록을 보여 줍니다. 그러면서 토스트만 저장했다고
+       말합니다. 마치기는 명시적인 확정이므로 여기서는 실제로 씁니다. */
+    if (state.editingPast) {
+      /* 붙잡아 두던 걸 잠깐 풀고 평소와 똑같은 저장 경로를 태웁니다. 그러면
+         클라우드 동기화까지 다른 저장과 동일하게 지나갑니다. 저장 바는
+         깨끗해진 상태로 되돌려 놓습니다. */
+      state.editingPast = false;
+      await persist();
+      state.pastDirty = false;
+      state.pastBaseline = JSON.stringify(state.session);
+      state.editingPast = true;
+    } else {
+      await persist();
+    }
     /* persist() is queued; state.sessions is what the summary reads from, so
        refresh it here rather than racing the write. */
     state.sessions = await WorkoutDB.getAllSessions();
     state.summaryDate = s.date;
     render();
-    toast('오늘 운동을 저장했습니다');
+    toast(`${relDayLabel(s.date)} 운동을 저장했습니다`);
   }
 
   async function handleStartPart(partId) {
@@ -4467,7 +4698,7 @@
       <div class="routine-row">
         <button class="routine-main" data-act="apply-routine" data-id="${esc(r.id)}">
           <div class="routine-name">${esc(r.name)}</div>
-          <div class="routine-sub">${esc(routineParts(r).map(p => p.label).join(', ') || '빈 루틴')} · ${r.exercises.length}개 운동</div>
+          <div class="routine-sub">${esc(routineParts(r).map(p => p.label).join(', ') || '빈 루틴')} · ${(r.exercises || []).length}개 운동</div>
         </button>
         <button class="rt-edit" data-act="edit-routine" data-id="${esc(r.id)}" aria-label="수정">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4v16h16v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
@@ -4537,38 +4768,60 @@
     await persist(); render();
   }
 
+  /* ── 세트 완료 처리는 여기 한 곳에서만 ──────────────────────────────────
+     세트를 끝내는 길이 두 개입니다: ✓ 를 직접 누르는 길, 그리고 횟수를 입력
+     하는 길(횟수를 적는 게 곧 세트를 끝낸다는 뜻이라 자동으로 완료됩니다).
+     예전에는 두 길이 각자 코드를 갖고 있었고, 횟수 입력 쪽에 완료 시각과
+     기록 판정이 빠져 있었습니다. 그래서 횟수를 적어 기록하는 사람에게는
+     운동 시간·세트 사이 휴식이 영영 안 나오고(지나간 시간은 되돌려 적을 수
+     없습니다), 개인 기록 알림도 뜨지 않았습니다.
+
+     PR 판정을 저장 '전에' 하는 이유: 저장하고 나면 방금 그 세트도 과거
+     기록에 섞여, 자기 자신과 비교해 늘 "기록 아님" 이 됩니다. */
+  function markSetDone(ex, set, done) {
+    set.done = done;
+    /* 과거 기록을 고치는 중이면 '지금' 과 아무 상관이 없습니다.
+       - 완료 시각에 오늘 시각을 찍으면 12일 전 세트가 오늘 한 것처럼 되어,
+         그 날의 운동 시간·세트 사이 휴식 계산이 통째로 망가집니다.
+       - 소파에 앉아 지난주 기록을 채워 넣는데 90초 휴식 타이머가 올라오고
+         "휴식 중" 알림이 울릴 이유도 없습니다. */
+    if (done) {
+      if (!state.editingPast) {
+        /* 완료 시각. 운동에 실제로 몇 분을 썼는지·세트 사이를 얼마나 쉬었는지는
+           이 값이 없으면 나중에 어떤 방법으로도 알아낼 수 없습니다. */
+        set.doneAt = Date.now();
+        startRestTimer(restDurationFor(set), ex?.name || '', set.id);
+      }
+      const pr = checkPR(ex, set, state.session.date);
+      set.pr = !!pr;
+      return pr;
+    }
+    delete set.doneAt;
+    delete set.pr;
+    /* 지금 돌아가는 휴식이 '이 세트' 가 시작한 것일 때만 끕니다.
+       예전에는 무조건 껐습니다 — 3세트를 끝내 90초를 재는 중에 1세트를
+       잘못 체크한 걸 발견해 풀면, 돌아가던 휴식이 같이 사라졌습니다. */
+    if (state.restTimer && (!state.restTimer.setId || state.restTimer.setId === set.id)) {
+      cancelRestTimer();
+    }
+    return null;
+  }
+
+  function toastPR(ex, pr) {
+    if (!pr) return;
+    if (navigator.vibrate) { try { navigator.vibrate([25, 45, 25]); } catch (_) {} }
+    toast(pr.type === 'kg'
+      ? `개인 기록! ${ex.name} ${pr.kg}kg (이전 ${pr.prev}kg)`
+      : `개인 기록! ${ex.name} ${pr.kg}kg × ${pr.reps} — 추정 1RM ${Math.round(pr.orm)}kg`);
+  }
+
   async function handleToggleDone(exId, setId) {
     const ex = state.session.exercises.find(e=>e.id===exId);
     const set = ex?.sets.find(s=>s.id===setId);
     if (!set) return;
-    set.done = !set.done;
-    /* 완료 시각을 남깁니다. 지금 화면에 쓰는 곳은 없지만, 운동에 실제로
-       몇 분을 썼는지·세트 사이를 얼마나 쉬었는지는 이 값이 없으면 나중에
-       어떤 방법으로도 알아낼 수 없습니다. 지나간 시간은 되돌려 기록할 수
-       없으므로 지금부터 쌓아 둡니다. 체크를 풀면 지웁니다. */
-    if (set.done) set.doneAt = Date.now(); else delete set.doneAt;
-    /* Only kick off rest when a set is completed, not when un-checking it. */
-    if (set.done) startRestTimer(restDurationFor(set), ex?.name || '');
-    else cancelRestTimer();
-
-    /* 기록 판정은 저장 '전에' 합니다. 저장하고 나면 방금 그 세트도 과거
-       기록에 섞여 들어가, 자기 자신과 비교해 늘 "기록 아님" 이 됩니다. */
-    let pr = null;
-    if (set.done) {
-      pr = checkPR(ex, set, state.session.date);
-      set.pr = !!pr;
-    } else {
-      delete set.pr;
-    }
-
+    const pr = markSetDone(ex, set, !set.done);
     await persist(); render();
-
-    if (pr) {
-      if (navigator.vibrate) { try { navigator.vibrate([25, 45, 25]); } catch (_) {} }
-      toast(pr.type === 'kg'
-        ? `개인 기록! ${ex.name} ${pr.kg}kg (이전 ${pr.prev}kg)`
-        : `개인 기록! ${ex.name} ${pr.kg}kg × ${pr.reps} — 추정 1RM ${Math.round(pr.orm)}kg`);
-    }
+    toastPR(ex, pr);
   }
 
   async function handleToggleWarmup(exId, setId) {
@@ -4597,23 +4850,69 @@
     const blob = new Blob([JSON.stringify(payload,null,2)], { type:'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `fitlog-backup-${todayISO()}.json`; a.click();
-    URL.revokeObjectURL(url);
-    toast('파일을 저장했습니다');
+    a.href = url;
+    a.download = `fitlog-backup-${todayISO()}.json`;
+    /* 문서에 붙였다 뗍니다. 떠 있지 않은 <a> 의 click() 은 브라우저에 따라
+       무시되고, 특히 iOS 사파리에서 그렇습니다. 그리고 URL 회수를 다음
+       차례로 미룹니다 — 같은 순간에 회수하면 브라우저가 아직 읽지 않은
+       내려받기가 취소될 수 있습니다. */
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { try { document.body.removeChild(a); } catch (_) {} URL.revokeObjectURL(url); }, 2000);
+    /* 무엇이 들어갔는지 말해 줍니다. 예전에는 "파일을 저장했습니다" 뿐이라,
+       루틴과 몸무게가 빠져 있던 시절에도 똑같은 문구가 떴습니다. */
+    const bits = [`${payload.sessions.length}일치 기록`];
+    if (payload.customExercises.length) bits.push(`나만의 운동 ${payload.customExercises.length}개`);
+    if ((payload.routines || []).length) bits.push(`루틴 ${payload.routines.length}개`);
+    if ((payload.metrics || []).length) bits.push(`몸무게 ${payload.metrics.length}개`);
+    toast(`백업 저장 — ${bits.join(' · ')}`);
   }
 
   async function importJson(file) {
     let payload;
-    try { payload = JSON.parse(await file.text()); } catch { alert('JSON을 읽을 수 없습니다.'); return; }
+    try { payload = JSON.parse(await file.text()); } catch { toast('JSON을 읽을 수 없습니다'); return; }
+
+    /* 물어보기 '전에' 파일을 들여다봅니다.
+       예전에는 아무것도 확인하지 않고 "교체할까요?" 부터 띄웠습니다. 다른 앱의
+       파일을 잘못 골라도 그대로 진행돼 기존 기록이 전부 지워졌습니다. 지금은
+       몇 일치가 들어 있는지 세어서 그 숫자를 보여 주고, 셀 게 없으면 아예
+       묻지 않고 거절합니다 — 되돌릴 수 없는 일에 "정말요?" 만 두 번 묻는 건
+       확인이 아닙니다. */
+    const days = Array.isArray(payload?.sessions)
+      ? payload.sessions.filter(r => r && typeof r.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.date)).length
+      : 0;
+    const customs = Array.isArray(payload?.customExercises) ? payload.customExercises.length : 0;
+    if (!days && !customs) { toast('이 파일에는 불러올 기록이 없습니다'); return; }
+
+    const extra = [];
+    if (Array.isArray(payload?.routines) && payload.routines.length) extra.push(`루틴 ${payload.routines.length}개`);
+    if (Array.isArray(payload?.metrics) && payload.metrics.length) extra.push(`몸무게 ${payload.metrics.length}개`);
+    const have = state.sessions.length;
+
     if (!await ask({ title: '백업 파일로 교체할까요?',
-                     body: '지금 이 기기에 있는 기록이 백업 파일의 내용으로 바뀝니다.',
+                     body: `가져올 내용: ${days}일치 기록${customs ? ` · 나만의 운동 ${customs}개` : ''}`
+                         + (extra.length ? ` · ${extra.join(' · ')}` : '')
+                         + `\n지금 이 기기의 ${have}일치 기록이 이 내용으로 바뀝니다.`,
                      confirmText: '교체', danger: true })) return;
-    await WorkoutDB.importAll(payload);
+    try {
+      await WorkoutDB.importAll(payload);
+    } catch (err) {
+      /* 예전에는 여기서 던진 오류를 아무도 받지 않아, 사용자가 가져오기를
+         눌러도 화면에 아무 일도 일어나지 않았습니다. */
+      console.warn('import failed', err);
+      toast(err?.message || '가져오지 못했습니다');
+      return;
+    }
     state.sessions = await WorkoutDB.getAllSessions();
     state.customExercises = await WorkoutDB.getCustomExercises();
+    state.routines = await WorkoutDB.getRoutines();
+    state.metrics = await WorkoutDB.getMetrics();
     await cloudSync(() => Cloud.pushAll(state.sessions, state.customExercises));
+    cloudSync(() => Cloud.saveRoutines(state.routines));
+    cloudSync(() => Cloud.saveMetrics(state.metrics));
     state.tab = 'home';
-    render(); toast('가져왔습니다');
+    render(); toast(`${state.sessions.length}일치 기록을 가져왔습니다`);
   }
 
   importInput.addEventListener('change', async () => {
@@ -4625,21 +4924,28 @@
   function mergeByDate(localRows, cloudRows) {
     const map = new Map();
     for (const row of localRows || []) {
-      if (row && row.date) map.set(row.date, row);
+      if (row && typeof row.date === 'string') map.set(row.date, row);
     }
     for (const row of cloudRows || []) {
-      if (!row || !row.date) continue;
+      if (!row || typeof row.date !== 'string') continue;
       const prev = map.get(row.date);
-      if (!prev || (row.updatedAt || 0) >= (prev.updatedAt || 0)) map.set(row.date, row);
+      /* 같은 시각이면 이 기기 것을 남깁니다(> 이지 >= 가 아닙니다).
+         updatedAt 은 기기의 시계라 믿을 만한 심판이 아닙니다 — 시계가 조금
+         느린 폰은 방금 자기가 고친 내용이 늘 '더 오래된 것' 으로 판정돼,
+         동기화할 때마다 자기 편집을 클라우드의 옛 사본에게 빼앗깁니다.
+         비길 때는 지금 사용자가 들고 있는 기기를 믿는 편이 낫습니다. */
+      if (!prev || (row.updatedAt || 0) > (prev.updatedAt || 0)) map.set(row.date, row);
     }
     return [...map.values()].sort((a, b) => b.date.localeCompare(a.date));
   }
 
   function mergeCustom(localRows, cloudRows) {
     const map = new Map();
-    for (const row of [...(localRows || []), ...(cloudRows || [])]) {
-      if (row && row.id) map.set(row.id, row);
-    }
+    /* 클라우드를 먼저 깔고 이 기기 것을 위에 얹습니다. 예전에는 순서가 반대라,
+       이 기기에서 이름을 고친 나만의 운동이 동기화될 때마다 옛 이름으로
+       되돌아갔습니다. */
+    for (const row of cloudRows || []) if (row && row.id) map.set(row.id, row);
+    for (const row of localRows || []) if (row && row.id) map.set(row.id, row);
     return [...map.values()];
   }
 
@@ -4742,13 +5048,22 @@
     state.authError = '';
     if (state.guest) localStorage.setItem('fitlog-guest', '1');
     else localStorage.removeItem('fitlog-guest');
+    if (user) rememberLastUid(user.uid);
 
-    WorkoutDB.setScope(user ? user.uid : 'guest');
+    /* offlineUid: 인증을 확인할 수 없어(네트워크 없음) 이 기기에 마지막으로
+       들어왔던 사람의 저장소만 여는 경우입니다. */
+    state.offline = !user && !!opts.offlineUid;
+    WorkoutDB.setScope(user ? user.uid : (opts.offlineUid || 'guest'));
     await WorkoutDB.open();
 
     if (!user) {
       const current = await WorkoutDB.getAllSessions();
-      if (!current.length) {
+      const currentCustom = await WorkoutDB.getCustomExercises();
+      /* 옛 저장소에서 옮겨오는 건 '이 기기에 아직 아무것도 없을 때' 만입니다.
+         예전에는 세션만 보고 판단했는데, replaceAll 은 나만의 운동 저장소까지
+         비웁니다. 그래서 운동은 아직 안 했지만 나만의 운동을 다섯 개 만들어 둔
+         사람이 앱을 다시 열면 그 다섯 개가 사라졌습니다. */
+      if (!current.length && !currentCustom.length) {
         const legacy = await WorkoutDB.readLegacy();
         if ((legacy.sessions || []).length || (legacy.customExercises || []).length) {
           await WorkoutDB.replaceAll(legacy.sessions, legacy.customExercises);
@@ -4805,6 +5120,28 @@
   }
   function rememberedUsername(uid) {
     try { return localStorage.getItem('fitlog-id:' + uid) || ''; } catch (_) { return ''; }
+  }
+
+  /* ── 오프라인으로 들어오기 ────────────────────────────────────────────────
+     파이어베이스 SDK 는 gstatic.com 에서 받아오고, 서비스워커는 그 주소를
+     일부러 건드리지 않습니다(캐시하면 로그인이 깨집니다). 그래서 신호가 없는
+     지하 헬스장에서 앱을 열면 SDK 가 안 받아지고, 인증을 물어볼 방법 자체가
+     없어집니다. 예전에는 그 상태에서 로그인 화면을 띄웠습니다 — 기록은 전부
+     이 기기 안에 있는데, 로그인은 네트워크가 없어 절대 안 되고, 게스트 버튼은
+     없앴으니 들어갈 문이 하나도 없었습니다. 오늘 운동을 못 적습니다.
+
+     그래서 마지막으로 들어왔던 uid 를 기억해 두고, 인증을 확인할 수 없을 때는
+     그 사람의 기기 저장소를 열어 줍니다. 클라우드는 건드리지 않습니다 —
+     토큰이 없으니 애초에 불가능하고, 여기서 여는 건 이미 이 기기에 있는
+     데이터뿐입니다. 신호가 돌아오면 평소대로 로그인해 동기화됩니다. */
+  function rememberLastUid(uid) {
+    try {
+      if (uid) localStorage.setItem('fitlog-last-uid', uid);
+      else localStorage.removeItem('fitlog-last-uid');
+    } catch (_) {}
+  }
+  function lastUid() {
+    try { return localStorage.getItem('fitlog-last-uid') || ''; } catch (_) { return ''; }
   }
 
   /* Fetches the profile after entry rather than before it, for the same reason
@@ -4911,26 +5248,47 @@
     if (state.authReady) render();
   }
 
+  /* ── 백그라운드 동기화 ────────────────────────────────────────────────────
+     이 함수는 네트워크를 여러 번 기다립니다(최대 45초). 그 사이에 사용자가
+     로그아웃하고 다른 계정으로 들어올 수 있습니다. 예전에는 누구를 위해
+     도는 동기화인지 기억하지 않아서, 기다리는 동안 계정이 바뀌면 A 의 기록
+     전체가 B 의 IndexedDB 와 B 의 Firestore(users/{B}/sessions)로 들어갔습니다.
+     공용 폰에서 한 번만 일어나도 남의 운동 기록이 내 계정에 영구히 박힙니다.
+
+     그래서 시작할 때 uid 를 붙잡아 두고, 기다림이 끝날 때마다 "아직 나인가"
+     를 확인합니다. 아니면 아무것도 쓰지 않고 조용히 빠집니다.
+     state.syncing 도 finally 에서 반드시 풉니다 — 예전에는 로그아웃으로
+     중간에 버려진 동기화가 이 깃발을 켠 채로 남아, 다음 사람의 동기화가
+     통째로 건너뛰어졌습니다. */
   async function syncInBackground() {
     if (state.syncing) return;
+    const myUid = state.user && state.user.uid;
+    if (!myUid) return;
+    const stillMe = () => !!state.user && state.user.uid === myUid;
     state.syncing = true;
     try {
       await withTimeout(Cloud.touchProfile(), 8000, '프로필');
+      if (!stillMe()) return;
       let cloudData = await withTimeout(Cloud.pullAll(), 12000, '불러오기');
+      if (!stillMe()) return;
       /* Detect only — importing is the user's call, made from the home screen. */
       state.pendingImport = await detectImportableLocal(cloudData);
       const localSessions = await WorkoutDB.getAllSessions();
       const localCustom = await WorkoutDB.getCustomExercises();
+      if (!stillMe()) return;
       const sessions = mergeByDate(localSessions, cloudData.sessions);
       const customExercises = mergeCustom(localCustom, cloudData.customExercises);
       await WorkoutDB.replaceAll(sessions, customExercises);
+      if (!stillMe()) return;
       await withTimeout(Cloud.pushAll(sessions, customExercises), 15000, '저장');
+      if (!stillMe()) return;
 
       /* 루틴과 몸무게도 같이 맞춥니다. 예전에는 저장만 올려보내고 내려받는
          쪽이 없어서, 새 기기로 로그인하면 만들어 둔 루틴과 몸무게 기록이
          통째로 사라진 것처럼 보였습니다. */
       const routines = mergeRoutines(await WorkoutDB.getRoutines(), cloudData.routines);
       const metrics  = mergeMetrics(await WorkoutDB.getMetrics(), cloudData.metrics);
+      if (!stillMe()) return;
       for (const r of routines) await WorkoutDB.putRoutine(clone(r));
       for (const m of metrics)  await WorkoutDB.putMetric(clone(m));
       state.routines = routines;
@@ -4944,18 +5302,30 @@
 
       /* Refresh data in place — loadWorkspace() would reset the tab and close
          sheets, yanking the user out of whatever they were editing. */
+      if (!stillMe()) return;
       state.sessions = await WorkoutDB.getAllSessions();
       state.customExercises = await WorkoutDB.getCustomExercises();
-      const saved = await WorkoutDB.getSession(state.date);
-      if (saved) state.session = normalizeSession(saved);
+      /* 과거 기록을 고치는 중이면 손대지 않습니다. 그 편집은 일부러 저장을
+         미뤄 state.session 에만 있고 디스크에는 없습니다(persist 가 pastDirty
+         만 세우고 돌아갑니다). 여기서 디스크 것으로 덮으면 방금 고친 무게가
+         화면에서 사라지고, 저장 바는 여전히 "저장하지 않은 변경이 있습니다"
+         라고 하며, 저장을 누르면 되돌아간 값이 그대로 기록됩니다. */
+      if (!state.editingPast) {
+        const saved = await WorkoutDB.getSession(state.date);
+        if (saved) state.session = normalizeSession(saved);
+      }
 
-      state.syncing = false;
       render();
     } catch (err) {
       console.warn('cloud sync failed', err);
+      /* 계정이 이미 바뀌었다면 지난 계정의 실패를 지금 사람에게 알릴 이유가
+         없습니다 — 자기가 하지도 않은 일이 실패했다고 나옵니다. */
+      if (stillMe()) {
+        render();
+        toast('클라우드 동기화 실패 — 기록은 이 기기에 저장됩니다');
+      }
+    } finally {
       state.syncing = false;
-      render();
-      toast('클라우드 동기화 실패 — 기록은 이 기기에 저장됩니다');
     }
   }
 
@@ -4974,6 +5344,12 @@
         try { sessionStorage.removeItem('fitlog-auth-pending'); } catch (_) {}
         await enterApp(user);
       } else {
+        /* 리디렉트 방식(모바일)에서는 여기서 null 이 옵니다 — 브라우저가 곧
+           구글로 떠나므로 보통은 아무 일도 없습니다. 그런데 사용자가 구글
+           화면에서 뒤로가기를 누르면 이 페이지가 상태 그대로 되살아납니다.
+           그때 authBusy 가 켜진 채면 로그인 화면의 모든 버튼이 죽어 있어
+           로그인도, 회원가입도, 비밀번호 찾기도 못 합니다. 풀어 둡니다. */
+        state.authBusy = false;
         render();
       }
     } catch (err) {
@@ -5008,9 +5384,14 @@
     state.authError    = '';
     render();
     try {
+      /* 아이디 로그인은 이메일 로그인과 달리 파이어스토어를 한 번 들릅니다
+         (아이디 → 이메일). 그 읽기가 응답 없이 멈추면 authBusy 가 true 로
+         굳고, 로그인 화면의 버튼이 — 구글, 로그인, 비밀번호 찾기, 회원가입
+         전부 — 영영 눌리지 않게 됩니다. 이메일로 넣으면 멀쩡해서 원인을
+         알기도 어렵습니다. */
       const user = rawId.includes('@')
-        ? await Cloud.signInEmail(rawId, password)
-        : await Cloud.signInUsername(rawId, password);
+        ? await withTimeout(Cloud.signInEmail(rawId, password), 20000, '로그인')
+        : await withTimeout(Cloud.signInUsername(rawId, password), 20000, '로그인');
       state.authPassword = '';
       await enterApp(user);
     } catch (err) {
@@ -5094,8 +5475,11 @@
       await WorkoutDB.replaceAll(sessions, customExercises);
       state.sessions = await WorkoutDB.getAllSessions();
       state.customExercises = await WorkoutDB.getCustomExercises();
-      const saved = await WorkoutDB.getSession(state.date);
-      if (saved) state.session = normalizeSession(saved);
+      /* 동기화 쪽과 같은 이유 — 편집 중인 과거 기록은 덮지 않습니다. */
+      if (!state.editingPast) {
+        const saved = await WorkoutDB.getSession(state.date);
+        if (saved) state.session = normalizeSession(saved);
+      }
       try { localStorage.setItem(importDismissKey(), '1'); } catch (_) {}
       render();
       toast(`${p.sessions.length}일치 기록을 가져왔습니다`);
@@ -5119,8 +5503,16 @@
        setup screen back on top of a signed-out app. */
     state.onboarding = false;
     state.profile = null;
+    /* 이전 계정의 동기화 깃발과 '가져오시겠어요?' 카드를 남겨 두면, 다음
+       사람의 동기화가 건너뛰어지고 남의 기록을 가져오라는 카드가 뜹니다. */
+    state.syncing = false;
+    state.pendingImport = null;
+    state.offline = false;
     resetSignup();
     localStorage.removeItem('fitlog-guest');
+    /* 로그아웃했으면 오프라인 자동 진입도 더는 하지 않습니다 — 그러지 않으면
+       나간 계정의 기록이 다음에 앱을 열 때 그냥 열립니다. */
+    rememberLastUid('');
 
     /* Nothing about the local workspace may be allowed to stop the sign-out.
 
@@ -5204,23 +5596,48 @@
     } catch (err) {
       state.accountBusy = false;
       render();
-      toast(err && err.message === 'cancelled' ? '삭제를 취소했습니다' : `삭제 실패: ${Cloud.authMessage(err)}`);
+      if (err && err.message === 'cancelled') {
+        toast('삭제를 취소했습니다 — 기록은 그대로 있습니다');
+      } else if (err && err.code === 'fitlog/reauth-failed') {
+        toast(`본인 확인에 실패해 삭제하지 않았습니다 — ${err.message}`);
+      } else {
+        toast(`삭제 실패: ${Cloud.authMessage(err)}`);
+      }
     }
   }
 
+  /* ── 계정 삭제 ────────────────────────────────────────────────────────────
+     순서가 중요합니다. 예전에는 곧바로 삭제를 시도했는데, 그 함수는 규칙상
+     파이어스토어 기록을 '먼저' 다 지운 다음 계정을 지웁니다(계정이 사라지면
+     그 사람의 문서를 지울 권한도 같이 사라지기 때문입니다). 그런데 마지막
+     단계에서 파이어베이스가 "최근에 로그인한 적이 없다" 며 거부하는 일이
+     흔하고, 그때 다시 로그인 창이 뜹니다. 여기서 사용자가 취소하거나(마음이
+     바뀌어서, 또는 설치형 앱에서 구글 팝업이 막혀서) 하면 —
+
+       · 클라우드의 운동 기록은 이미 전부 사라진 뒤이고
+       · 아이디 예약도 이미 풀렸고
+       · 계정은 멀쩡히 남아 로그인도 되는데
+       · 화면에는 "삭제를 취소했습니다" 라고 떴습니다.
+
+     다른 기기에만 있던 기록은 그대로 날아가는데 사용자는 아무 일도 없었다고
+     믿습니다. 그래서 지우기 전에 본인 확인을 먼저 끝냅니다. 여기서 실패하면
+     아무것도 건드리지 않은 상태이므로 '취소' 가 사실이 됩니다. */
   async function deleteAccountWithReauth() {
     try {
-      await Cloud.deleteAccountAndData();
+      await Cloud.reauthenticate();
     } catch (err) {
-      if (!err || err.code !== 'auth/requires-recent-login') throw err;
-      toast('보안을 위해 다시 로그인이 필요합니다');
-      try {
-        await Cloud.reauthenticate();
-      } catch (_) {
-        throw new Error('cancelled');
-      }
-      await Cloud.deleteAccountAndData();
+      const code = (err && err.code) || '';
+      const cancelled = code === 'auth/popup-closed-by-user'
+                     || code === 'auth/cancelled-popup-request'
+                     || (err && err.message === '취소되었습니다');
+      if (cancelled) throw new Error('cancelled');
+      /* 팝업이 막혔거나 네트워크 문제인 경우 — 왜 안 됐는지는 말해 줘야
+         합니다. 어느 쪽이든 아직 아무것도 지우지 않았습니다. */
+      const e = new Error(Cloud.authMessage(err));
+      e.code = 'fitlog/reauth-failed';
+      throw e;
     }
+    await Cloud.deleteAccountAndData();
   }
 
   /* ── Init ────────────────────────────────── */
@@ -5248,10 +5665,21 @@
      a screen that stopped being true minutes ago. Re-checking when the tab comes
      back costs one read and can only ever take the gate down. */
   function watchForGateGoingStale() {
+    /* 이미 확인 중인지 표시해 둡니다.
+       iOS 는 앱으로 돌아올 때 visibilitychange·pageshow·focus 를 한꺼번에
+       올립니다. 예전 주석은 "가드가 첫 번째만 통과시킨다" 고 했지만 사실이
+       아니었습니다 — 아래 함수는 한참 뒤에야 상태를 바꾸므로 세 개가 나란히
+       들어갑니다. 그러면 셋 다 같은 아이디를 예약하려 들고, 하나만 이기고
+       나머지는 실패하는데, 늦게 끝난 실패가 방금 복구된 계정 위에 설정
+       화면을 다시 세웁니다. */
+    let checking = false;
     const recheck = () => {
-      if (document.hidden) return;
+      if (checking || document.hidden) return;
       if (!state.onboarding || !state.user || state.authBusy) return;
-      loadProfileThenMaybeOnboard(state.user, 8000);
+      checking = true;
+      Promise.resolve(loadProfileThenMaybeOnboard(state.user, 8000))
+        .catch(() => {})
+        .then(() => { checking = false; });
     };
     /* Three events rather than one, because iOS is the case that matters and
        is the least predictable: switching tabs fires visibilitychange, but
@@ -5261,6 +5689,20 @@
     document.addEventListener('visibilitychange', recheck);
     window.addEventListener('pageshow', recheck);
     window.addEventListener('focus', recheck);
+
+    /* 뒤로가기로 되살아난 페이지 구조.
+       구글 로그인은 이 페이지를 떠났다가 돌아오는데, 사용자가 구글 화면에서
+       뒤로가기를 누르면 브라우저가 자바스크립트 상태를 그대로 복원합니다
+       (bfcache). 그때 '로그인 진행 중' 이 켜진 채면 화면의 모든 버튼이 죽어
+       있습니다. 복원된 경우에만 풀어 줍니다 — 정상적인 진행 중에는 건드리지
+       않아야 하므로 event.persisted 를 봅니다. */
+    window.addEventListener('pageshow', (e) => {
+      if (!e.persisted) return;
+      if (state.user || !state.authBusy) return;
+      state.authBusy = false;
+      try { sessionStorage.removeItem('fitlog-auth-pending'); } catch (_) {}
+      render();
+    });
   }
 
   async function init() {
@@ -5275,6 +5717,13 @@
       navigator.serviceWorker.addEventListener('message', event => {
         if (event.data?.type !== 'SW_UPDATED') return;
         try { if (sessionStorage.getItem('fitlog-auth-pending')) return; } catch (_) {}
+        /* 과거 기록을 고치는 중이면 새로고침하지 않습니다. 그 편집은 일부러
+           디스크에 없고 화면에만 있어서, 새로고침하면 예고 없이 사라집니다.
+           새 버전은 다음에 앱을 열 때 어차피 적용되므로 급할 게 없습니다. */
+        if (hasUnsavedPast()) {
+          toast('새 버전이 있어요 — 지금 고치는 기록을 저장한 뒤 적용됩니다');
+          return;
+        }
         window.location.reload();
       });
     }
@@ -5296,7 +5745,12 @@
     let redirectUser = null;
     try { redirectUser = await withTimeout(Cloud.completeRedirect(), 15000, '로그인 확인'); }
     catch (err) { console.warn('redirect result failed', err); }
-    try { if (redirectUser) sessionStorage.removeItem('fitlog-auth-pending'); } catch (_) {}
+    /* 결과가 없어도 지웁니다. 이 표시는 "지금 구글 로그인 하러 나가 있음" 을
+       뜻하는데, 여기까지 왔다는 건 돌아왔다는 뜻입니다. 예전에는 로그인이
+       성공했을 때만 지워서, 구글 화면에서 취소하면 이 표시가 브라우저 세션이
+       끝날 때까지 남았습니다. 그러면 새 버전이 나와도 자동 새로고침이 계속
+       막힙니다(위 SW_UPDATED 처리가 이 표시를 보고 물러납니다). */
+    try { sessionStorage.removeItem('fitlog-auth-pending'); } catch (_) {}
 
     Cloud.onAuth(async (user) => {
       if (!state.authReady) return;
@@ -5351,6 +5805,17 @@
        account. */
     if (localStorage.getItem('fitlog-guest') === '1' || hasLegacy) {
       await enterApp(null, { guest: true });
+      return;
+    }
+
+    /* 인증을 확인할 방법이 없었는데(파이어베이스가 아예 안 떴거나 응답이
+       없었음) 이 기기에 마지막으로 들어온 계정이 있다면, 그 사람의 기록을
+       열어 줍니다. 로그인 화면에 세워 두면 신호 없는 곳에서는 영영 못
+       들어갑니다. 신호가 돌아오면 평소대로 인증되고 동기화됩니다. */
+    const last = lastUid();
+    if (last && !Cloud.configured()) {
+      await enterApp(null, { offlineUid: last });
+      toast('오프라인입니다 — 기록은 이 기기에 저장되고 나중에 동기화됩니다');
       return;
     }
     state.authReady = true;

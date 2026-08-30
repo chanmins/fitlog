@@ -87,6 +87,12 @@ html, body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   letter-spacing: -0.01em;
+  /* 한글은 기본값(word-break: normal)에서 음절 아무 데서나 줄이 바뀝니다 —
+     "기록이 없어요" 가 "기록이 없 / 어요" 로 쪼개집니다. keep-all 은 띄어쓰기
+     에서만 끊어 단어를 온전히 둡니다. 대신 띄어쓰기 없는 긴 문자열(URL, 아주
+     긴 운동 이름)이 칸을 넘칠 수 있어, 그때만 아무 데서나 끊게 함께 겁니다. */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 
 body { background: var(--bg-grad); background-attachment: fixed; }
@@ -290,8 +296,9 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .balance-window { font-size: 12px; font-weight: 700; color: var(--muted); }
 .balance-empty { font-size: 13px; color: var(--muted); font-weight: 600; line-height: 1.6; }
 .balance-bars { display: flex; flex-direction: column; gap: 9px; }
-.balance-row { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 10px; }
-.balance-name { font-size: 12px; font-weight: 800; color: var(--sub); }
+.balance-row { display: grid; grid-template-columns: 48px 1fr auto; align-items: center; gap: 10px; }
+/* 48px = '스트레칭' 이 12px/800 에서 차지하는 폭. 좁으면 두 줄로 깨집니다. */
+.balance-name { font-size: 12px; font-weight: 800; color: var(--sub); white-space: nowrap; }
 .balance-track { height: 7px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
 .balance-fill { display: block; height: 100%; border-radius: 4px; transition: width .3s ease; }
 .balance-meta { font-size: 12px; font-weight: 700; color: var(--muted); white-space: nowrap; }
@@ -348,6 +355,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 
 /* recent list */
 .recent-list { display: flex; flex-direction: column; gap: 8px; }
+.recent-more { margin-top: 10px; width: 100%; font-size: 13px; }
 .recent-row {
   display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
   background: var(--surface); border: 1px solid var(--line);
@@ -758,6 +766,13 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   display: flex; flex-direction: column; gap: 3px; min-width: 0;
 }
 .pick-item-en { font-size: 12px; color: var(--muted); font-weight: 600; }
+/* 고르기 전에 어떤 동작인지 볼 수 있어야 합니다. 44px 은 손가락 탭 최소 크기. */
+.pick-info {
+  flex-shrink: 0; width: 34px; height: 34px; display: grid; place-items: center;
+  border: none; background: none; color: var(--muted); border-radius: 999px;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.pick-info:active { background: var(--surface-3); color: var(--text); }
 .pick-item-eq {
   font-size: 11px; font-weight: 700; color: var(--sub); padding: 3px 8px;
   border-radius: 999px; background: var(--surface-3); flex-shrink: 0;
@@ -1706,3 +1721,8 @@ body.overlay-open { overflow: hidden; }
 .wt-now em { margin-left: auto; font-style: normal; font-size: 10px; font-weight: 700; color: var(--muted); }
 
 .dsum-timing { margin: 6px 0 14px; font-size: 12px; font-weight: 600; color: var(--muted); }
+
+/* 위험 구역은 접어 둡니다 — 펼쳐 두면 되돌릴 수 없는 버튼 두 개가 설정 화면
+   중앙에 상시 노출되고, 정작 안전한 백업은 접혀 있어 순서가 거꾸로였습니다. */
+.danger-adv .settings-adv-summary { color: var(--red); }
+.app-version { margin-top: 10px; opacity: .6; letter-spacing: .02em; }

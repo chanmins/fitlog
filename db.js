@@ -103,10 +103,19 @@ const WorkoutDB = (() => {
     });
   }
 
+  /* abort 를 반드시 함께 받습니다.
+     IndexedDB 트랜잭션은 error 를 거치지 않고 곧바로 중단될 수 있습니다 —
+     저장 공간 부족(iOS 에서 흔합니다), 다른 탭의 버전 변경, 연결이 밑에서
+     닫히는 경우(setScope 가 그렇게 합니다). 예전에는 그때 이 약속이 영영
+     결말이 나지 않았고, 저장은 promise 사슬로 줄을 서 있어서 그 뒤의 모든
+     저장이 통째로 멈췄습니다. 화면의 숫자는 state 에 있으니 멀쩡해 보이고,
+     "입력하는 즉시 저장됩니다" 라는 안내도 그대로인데, 새로고침하면 중단
+     시점 이후가 전부 사라집니다. */
   function txDone(tx) {
     return new Promise((resolve, reject) => {
       tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+      tx.onerror = () => reject(tx.error || new Error("transaction error"));
+      tx.onabort = () => reject(tx.error || new Error("transaction aborted"));
     });
   }
 
@@ -114,7 +123,13 @@ const WorkoutDB = (() => {
     const db = await open();
     const tx = db.transaction("sessions", "readonly");
     const rows = await requestToPromise(tx.objectStore("sessions").getAll());
-    return (rows || []).sort((a, b) => b.date.localeCompare(a.date));
+    /* date 가 문자열이 아닌 행이 하나라도 섞이면 localeCompare 가 터지고,
+       그 예외는 loadWorkspace → init 까지 올라가 앱이 아예 안 열립니다.
+       기록은 저장소에 멀쩡히 있는데 설정 화면조차 못 가서 손쓸 방법이
+       없어집니다. 이상한 행은 조용히 빼고 나머지를 보여 줍니다. */
+    return (rows || [])
+      .filter(r => r && typeof r.date === "string")
+      .sort((a, b) => b.date.localeCompare(a.date));
   }
 
   async function getSession(date) {
@@ -213,24 +228,79 @@ const WorkoutDB = (() => {
     return txDone(tx);
   }
 
+  /* 백업에는 저장소 네 곳이 전부 들어가야 합니다.
+     예전에는 sessions 와 customExercises 만 담았습니다. 그래서 루틴 6개와
+     1년치 몸무게를 쌓아 둔 사람이 폰을 바꾸며 백업으로 옮기면, 그 둘이
+     통째로 사라졌습니다 — 그런데 화면에는 "파일을 저장했습니다" 라고만
+     떴습니다. 로그인하지 않은 사람에게는 이 파일이 유일한 사본입니다. */
   async function exportAll() {
-    const [sessions, customExercises] = await Promise.all([
+    const [sessions, customExercises, routines, metrics] = await Promise.all([
       getAllSessions(),
       getCustomExercises(),
+      getRoutines().catch(() => []),
+      getMetrics().catch(() => []),
     ]);
     return {
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
       sessions,
       customExercises,
+      routines,
+      metrics,
     };
   }
 
+  /* 가져오기 전에 실제로 FITLOG 백업인지 확인합니다.
+     예전 검사는 "sessions 라는 이름의 배열이 있는가" 뿐이었습니다. 그래서
+     다른 앱의 내보내기 파일이나 빈 배열([])도 통과했고, replaceAll 이 기존
+     기록을 전부 지운 뒤 쓸 만한 게 없어 그대로 끝났습니다 — 로그인하지 않은
+     사람은 2년치를 그렇게 잃습니다. 게다가 date 가 숫자인 행이 하나만 있어도
+     그 뒤로 앱이 아예 안 열렸습니다.
+
+     그래서 각 행을 실제로 뜯어보고, 쓸 수 있는 것만 남깁니다. 남은 게 하나도
+     없으면 아무것도 건드리지 않고 거절합니다. */
+  function cleanSessions(rows) {
+    const out = [];
+    for (const r of Array.isArray(rows) ? rows : []) {
+      if (!r || typeof r.date !== "string") continue;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(r.date)) continue;
+      out.push({
+        ...r,
+        exercises: Array.isArray(r.exercises) ? r.exercises.filter(e => e && typeof e === "object") : [],
+        parts: Array.isArray(r.parts) ? r.parts.filter(x => typeof x === "string") : [],
+      });
+    }
+    return out;
+  }
+
   async function importAll(payload) {
-    if (!payload || !Array.isArray(payload.sessions)) {
+    if (!payload || typeof payload !== "object") {
       throw new Error("올바른 백업 파일이 아닙니다.");
     }
-    await replaceAll(payload.sessions, payload.customExercises || []);
+    const sessions = cleanSessions(payload.sessions);
+    const customExercises = (Array.isArray(payload.customExercises) ? payload.customExercises : [])
+      .filter(e => e && typeof e.id === "string" && e.id);
+    if (!sessions.length && !customExercises.length) {
+      throw new Error("이 파일에는 불러올 기록이 없습니다.");
+    }
+    await replaceAll(sessions, customExercises);
+
+    /* 루틴과 몸무게는 버전 2 백업부터 들어 있습니다. 옛 백업에는 없으므로,
+       없으면 지우지 않고 그냥 둡니다 — 없는 걸 가져왔다고 있던 걸 지우면
+       안 됩니다. */
+    if (Array.isArray(payload.routines)) {
+      for (const r of payload.routines) {
+        if (r && typeof r.id === "string" && r.id) await putRoutine(r);
+      }
+    }
+    if (Array.isArray(payload.metrics)) {
+      for (const m of payload.metrics) {
+        if (m && typeof m.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(m.date) && Number(m.weightKg) > 0) {
+          await putMetric({ date: m.date, weightKg: Number(m.weightKg) });
+        }
+      }
+    }
+    return { sessions: sessions.length, customExercises: customExercises.length };
   }
 
   /* 옮겨올 데이터를 '읽기만' 하는 용도입니다. 버전을 지정하면 그 DB 를

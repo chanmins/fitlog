@@ -392,13 +392,23 @@ const Cloud = (() => {
 
     const displayName = (prof && prof.name) ? String(prof.name).trim() : id;
     try { await u.updateProfile({ displayName }); } catch (_) {}
-    await store.collection("users").doc(u.uid).set({
-      username: id,
-      email: String(email || "").trim(),
-      displayName,
-      profile: sanitizeProfile(prof),
-      createdAt: Date.now(),
-    }, { merge: true });
+    /* 이 쓰기가 실패하면 아이디 예약과 인증 계정만 남습니다. 그러면 사용자는
+       같은 아이디로 다시 가입할 수 없고("이미 사용 중인 아이디입니다" — 자기
+       이름인데), 같은 이메일로도 못 합니다("이미 가입된 이메일입니다").
+       양쪽 문이 다 닫히므로, 위의 예약 실패와 똑같이 되돌립니다. */
+    try {
+      await store.collection("users").doc(u.uid).set({
+        username: id,
+        email: String(email || "").trim(),
+        displayName,
+        profile: sanitizeProfile(prof),
+        createdAt: Date.now(),
+      }, { merge: true });
+    } catch (err) {
+      try { await store.collection("usernames").doc(id).delete(); } catch (_) {}
+      try { await u.delete(); } catch (_) {}
+      throw err;
+    }
 
     return profile(auth.currentUser || u);
   }
@@ -732,11 +742,15 @@ const Cloud = (() => {
        the rules only let the owner delete it, so a leftover doc would reserve
        that name forever with no way to reclaim it. */
     if (store) {
-      try {
-        const snap = await store.collection("users").doc(u.uid).get();
-        const name = snap.exists ? (snap.data() || {}).username : "";
-        if (name) await store.collection("usernames").doc(name).delete();
-      } catch (_) {}
+      /* 아이디 예약을 푸는 데 실패했으면 여기서 멈춥니다.
+         규칙상 usernames/{name} 은 그 주인만 지울 수 있는데, 주인의 계정이
+         사라지면 아무도 못 지우고 아무도 다시 만들 수 없습니다 — 그 아이디는
+         영원히 죽습니다(새로 가입하려는 사람에겐 "이미 사용 중"). 예전에는
+         이 실패를 통째로 삼키고 계정 삭제로 넘어갔습니다. 요청 하나만
+         떨어져도 그렇게 됩니다. 실패하면 되돌릴 수 있는 상태로 두고 알립니다. */
+      const snap = await store.collection("users").doc(u.uid).get();
+      const name = snap.exists ? (snap.data() || {}).username : "";
+      if (name) await store.collection("usernames").doc(name).delete();
       try { await store.collection("users").doc(u.uid).delete(); } catch (_) {}
     }
     await u.delete();
