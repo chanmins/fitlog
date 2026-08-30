@@ -316,6 +316,26 @@ const APP_VERSION = (() => {
   const appEl = document.getElementById('app');
   const importInput = document.getElementById('import-file');
 
+  /* 탭을 눌러 옮겨갈 때만 방향이 있는 슬라이드를 씁니다. goTab() 이 매 렌더
+     직전에 채워 두고, render() 가 그 값을 한 번 읽자마자 비웁니다 — 그래야
+     체크박스 하나 누른 것 같은, 탭과 무관한 재렌더에서는 다시 슬라이드가
+     재생되지 않습니다. */
+  let navDir = null;
+  /* 세트를 옆으로 미는 동작이 끝나자마자 그 아래 버튼의 클릭으로도 잡히는
+     것을 막는 1회용 플래그. */
+  let suppressNextClick = false;
+  /* .set-swipe-action 너비와 맞춥니다. 세트 줄이 좁아서(6칸이 빽빽합니다),
+     너무 많이 밀면 세트 번호까지 왼쪽 밖으로 밀려 나가 뭘 지우는 중인지
+     안 보입니다 — 삭제 버튼이 겨우 들어갈 만큼만 잡아 둡니다. */
+  const SWIPE_REVEAL = 60;
+  let openSwipeRow = null;
+  /* 방금 추가된 운동·세트의 id. renderExerciseCard 가 이번 렌더에서 한 번
+     읽어 살짝 커지며 나타나는 클래스를 붙이고, render() 가 곧바로 비웁니다
+     — DOM 을 통째로 새로 그리는 구조라, "새로 생겼다" 는 사실 자체를 상태로
+     들고 있다가 한 번만 써먹는 수밖에 없습니다. */
+  let pendingEnterExIds = new Set();
+  let pendingEnterSetIds = new Set();
+
   /* ── Data helpers ───────────────────────── */
   function emptySession(date) {
     return { date, parts: [], notes: '', exercises: [], run: { km:'', minutes:'', notes:'' },
@@ -1130,16 +1150,44 @@ const APP_VERSION = (() => {
     }).join('')}</div>`;
   }
 
+  /* +/- 버튼으로 값을 조정할 때만 숫자가 세는 듯 지나가며 바뀝니다. 자판을
+     직접 두드릴 때는(digit/dot/back) 누른 그대로 바로 보여야지, 한 자
+     칠 때마다 이전 값에서 세어 올라가면 오히려 산만합니다 — 그래서 animate
+     인자는 조정 버튼 쪽에서만 true 로 넘깁니다. */
+  function animateNumberText(el, toStr) {
+    const from = parseFloat(el.textContent);
+    const to = parseFloat(toStr);
+    if (!Number.isFinite(from) || !Number.isFinite(to) || from === to) { el.textContent = toStr; return; }
+    const decimals = (toStr.split('.')[1] || '').length;
+    const dur = 180;
+    const t0 = performance.now();
+    const runId = (el._tweenRun = (el._tweenRun || 0) + 1);
+    function step(now) {
+      if (el._tweenRun !== runId) return; /* 그새 다른 값으로 또 바뀌었으면 중단 */
+      const t = Math.min(1, (now - t0) / dur);
+      const eased = 1 - Math.pow(1 - t, 3);
+      if (t < 1) {
+        el.textContent = (from + (to - from) * eased).toFixed(decimals);
+        requestAnimationFrame(step);
+      } else {
+        el.textContent = toStr;
+      }
+    }
+    requestAnimationFrame(step);
+  }
+
   /* Repaint ONLY the big number inside an open picker sheet.
      Going through render() would swap appEl.innerHTML, destroying and
      rebuilding the sheet — which replays its slide-up animation and makes the
      whole panel appear to blink on every single keypress. */
-  function paintPickerValue() {
+  function paintPickerValue(animate) {
     const p = state.weightPicker || state.repsPicker;
     if (!p) return;
     const el = document.querySelector('.picker-big-num');
     if (!el) { render(); return; }
-    el.textContent = pickerDisplay(p);
+    const next = pickerDisplay(p);
+    if (animate) animateNumberText(el, next);
+    else { el._tweenRun = (el._tweenRun || 0) + 1; el.textContent = next; }
     /* Dim the placeholder zero so an empty pad never looks like a typed 0. */
     el.classList.toggle('is-empty', p.str === '');
     el.classList.toggle('is-fresh', !!p.fresh);
@@ -1390,10 +1438,16 @@ const APP_VERSION = (() => {
   }
 
   /* ── Navigation ─────────────────────────── */
+  const TAB_ORDER = ['home', 'workout', 'history', 'settings'];
   async function goTab(tab) {
     /* Leaving the screen is the one moment a held past-day edit would be lost
        silently, so it is the one place that has to ask. */
     if (!await confirmLeavePast()) return;
+    /* 하단 탭의 왼쪽→오른쪽 순서를 그대로 방향으로 씁니다. 오른쪽 탭으로
+       가면 새 화면이 오른쪽에서, 왼쪽 탭으로 가면 왼쪽에서 들어옵니다 —
+       탭 순서와 반대로 미끄러지면 오히려 어디로 이동했는지 헷갈립니다. */
+    navDir = tab === state.tab ? null
+      : (TAB_ORDER.indexOf(tab) > TAB_ORDER.indexOf(state.tab) ? 'fwd' : 'back');
     state.tab = tab;
     /* The tab bar is visible over the day-summary overlay now, so tapping a tab
        has to dismiss it — otherwise the tab switches behind a screen that is
@@ -1531,6 +1585,11 @@ const APP_VERSION = (() => {
 
   /* ── Render Root ──────────────────────────── */
   function render() {
+    /* 매 렌더마다 DOM 을 통째로 새로 그리므로, 스와이프로 열어 둔 세트나
+       진행 중이던 드래그가 가리키던 노드는 더 이상 존재하지 않습니다.
+       참조를 들고 있으면 다음 동작에서 죽은 노드를 건드리게 되니 비워 둡니다. */
+    openSwipeRow = null;
+    gesture = null;
     if (!state.authReady) { appEl.innerHTML = renderSplash(); return; }
     /* state.offline: 인증을 확인할 수 없어(네트워크 없음) 이 기기에 마지막으로
        들어왔던 계정의 기록만 열어 준 상태입니다. 로그인한 것도 게스트도
@@ -1554,6 +1613,12 @@ const APP_VERSION = (() => {
     else if (state.tab === 'workout')  html = renderWorkout();
     else if (state.tab === 'history')  html = renderHistory();
     else if (state.tab === 'settings') html = renderSettings();
+    /* 위 네 함수가 이번 렌더에서 navDir·pendingEnter* 를 읽어 화면에 이미
+       반영했습니다. 다음 렌더(탭 이동이나 새로 추가한 게 아닌 보통의 상태
+       변화)에서는 다시 재생되면 안 되므로 여기서 곧바로 비웁니다. */
+    navDir = null;
+    pendingEnterExIds = new Set();
+    pendingEnterSetIds = new Set();
 
     if (state.profileEditing) html += renderProfileSheet();
     if (state.yearPicker)     html += renderYearPickerSheet();
@@ -2414,7 +2479,7 @@ const APP_VERSION = (() => {
       <header class="topbar">
         <div class="topbar-brand">FIT<span>LOG</span></div>
       </header>
-      <main class="screen">
+      <main class="screen${navDir ? ' nav-' + navDir : ''}">
         <div class="home-hero">
           <div class="home-date">${td.getMonth()+1}월 ${td.getDate()}일 (${WEEKDAYS[td.getDay()]})</div>
           <div class="home-title">${greet},<br><em>오늘도 가볍게</em> 시작해요</div>
@@ -2436,7 +2501,7 @@ const APP_VERSION = (() => {
   function renderWorkout() {
     const s = state.session;
     if (!s) return `<header class="topbar"><div class="topbar-title">기록</div></header>
-      <main class="screen"><div class="empty-state"><div class="empty-icon">🏋️</div>오늘의 운동을 시작하세요</div>
+      <main class="screen${navDir ? ' nav-' + navDir : ''}"><div class="empty-state"><div class="empty-icon">🏋️</div>오늘의 운동을 시작하세요</div>
       <button class="btn-hero" data-act="today">오늘 기록 시작하기</button></main>`;
 
     const partTiles = PARTS.map(p => {
@@ -2580,7 +2645,7 @@ const APP_VERSION = (() => {
         <div class="topbar-spacer"></div>
         ${isToday ? '' : `<button class="btn-today" data-act="today">오늘로</button>`}
       </header>
-      <main class="screen">
+      <main class="screen${navDir ? ' nav-' + navDir : ''}">
         <div class="day-nav">
           <button class="day-nav-arrow" data-act="shift-day" data-delta="-1" aria-label="이전 날">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -2763,7 +2828,17 @@ const APP_VERSION = (() => {
       const label = warmup ? 'W' : workingNo;
       const kg   = (set.kg   !== '' && set.kg   != null) ? toDisplayWeight(set.kg) : '--';
       const reps = (set.reps !== '' && set.reps != null) ? set.reps : '--';
-      return `<div class="set-row${done?' done':''}${warmup?' warmup':''}${hold?' hold':''}">
+      const enter = pendingEnterSetIds.has(set.id) ? ' enter' : '';
+      /* .set-swipe 가 실제 목록 항목의 경계입니다 — 왼쪽으로 밀면 뒤에 깔린
+         빨간 삭제 버튼이 드러납니다. 기존의 작은 X 버튼(.set-del)은 그대로
+         두었습니다 — 스와이프는 손이 빠른 사람을 위한 지름길이지 유일한
+         길이 아닙니다. */
+      return `<div class="set-swipe" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}">
+        <button class="set-swipe-action" data-act="del-set" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="세트 삭제">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+          <span>삭제</span>
+        </button>
+        <div class="set-row${done?' done':''}${warmup?' warmup':''}${hold?' hold':''}${enter}" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}">
         <button class="set-num${warmup?' warmup':''}" data-act="toggle-warmup" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="웜업 세트로 전환" title="탭하면 웜업/일반 세트 전환">${label}</button>
         ${hold ? '' : `<button class="val-chip${done?' done':''}" data-act="open-weight" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}">
           <span class="val-chip-num">${kg}</span>
@@ -2780,6 +2855,7 @@ const APP_VERSION = (() => {
         <button class="set-del" data-act="del-set" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="세트 삭제">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
+        </div>
       </div>`;
     }).join('');
 
@@ -2787,8 +2863,9 @@ const APP_VERSION = (() => {
     const allDone = prog.total > 0 && prog.done === prog.total;
     const metaBits = [];
     if (prog.total) metaBits.push(`${prog.done}/${prog.total} 세트`);
+    const exEnter = pendingEnterExIds.has(ex.id) ? ' enter' : '';
 
-    return `<article class="ex-card${allDone?' all-done':''}" data-exid="${esc(ex.id)}">
+    return `<article class="ex-card${allDone?' all-done':''}${exEnter}" data-exid="${esc(ex.id)}">
       <div class="ex-card-head">
         <div style="flex:1;min-width:0">
           <div class="ex-card-name">${allDone?'<span class="ex-done-tick"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>':''}${esc(ex.name)}</div>
@@ -3573,7 +3650,7 @@ const APP_VERSION = (() => {
     body += '<div style="height:18px"></div>';
 
     return `<header class="topbar"><div class="topbar-title">히스토리</div></header>
-      <main class="screen">${body}</main>`;
+      <main class="screen${navDir ? ' nav-' + navDir : ''}">${body}</main>`;
   }
 
   /* ── Settings Tab ─────────────────────────── */
@@ -3636,7 +3713,7 @@ const APP_VERSION = (() => {
       <header class="topbar">
         <div class="topbar-brand">FIT<span>LOG</span></div>
       </header>
-      <main class="screen settings-screen">
+      <main class="screen settings-screen${navDir ? ' nav-' + navDir : ''}">
         ${account}
 
         <div class="settings-label">운동</div>
@@ -3814,14 +3891,166 @@ const APP_VERSION = (() => {
       </main>`;
   }
 
+  /* ── 손짓: 세트 옆으로 밀어 지우기 · 당겨서 동기화 ────────────────────────
+     둘 다 같은 포인터 이벤트 한 벌로 처리합니다. 손을 뗄 때까지는 아직 뭘
+     하려는 건지 모르니, 처음 몇 픽셀만 보고 판단합니다 — 가로로 크게
+     움직였고 세트 줄 위에서 시작했으면 스와이프, 화면 맨 위에서 세로
+     아래로 당겼으면 새로고침, 둘 다 아니면 그냥 평소 스크롤입니다. */
+  let gesture = null;
+  function onSwipePointerDown(e) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    /* 스와이프로 드러난 삭제 버튼은 원래 제 클릭으로 동작해야 하니 건드리지
+       않습니다. */
+    if (e.target.closest('.set-swipe-action')) { gesture = null; return; }
+    const row = e.target.closest('.set-row');
+    if (openSwipeRow && row !== openSwipeRow) closeOpenSwipe();
+    /* 당겨서 새로고침은 탭 화면 맨 위, 그리고 로그인해서 클라우드가 있을
+       때만 후보로 둡니다 — 게스트는 동기화할 데가 없고, 요약 화면(day
+       summary)은 자기 스크롤을 따로 가지고 있어 문서 스크롤 값으로
+       "맨 위" 를 판단하면 엉뚱하게 걸립니다. */
+    const inTabScreen = !!e.target.closest('.screen') && !e.target.closest('.detail-screen');
+    const atTop = (document.scrollingElement || document.documentElement).scrollTop <= 0;
+    gesture = {
+      mode: null,
+      row: row || null,
+      wasOpen: !!row && row === openSwipeRow,
+      startX: e.clientX, startY: e.clientY,
+      pointerId: e.pointerId,
+      pullCandidate: !row && inTabScreen && atTop && !!state.user && !state.syncing,
+    };
+  }
+  function onSwipePointerMove(e) {
+    if (!gesture || gesture.pointerId !== e.pointerId) return;
+    const dx = e.clientX - gesture.startX;
+    const dy = e.clientY - gesture.startY;
+    if (!gesture.mode) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      if (gesture.row && Math.abs(dx) > Math.abs(dy)) {
+        gesture.mode = 'swipe';
+        gesture.row.classList.add('swiping');
+        try { gesture.row.setPointerCapture(e.pointerId); } catch (_) {}
+      } else if (gesture.pullCandidate && dy > 0 && dy > Math.abs(dx)) {
+        gesture.mode = 'pull';
+        ensurePullEl().classList.add('dragging');
+      } else {
+        gesture = null; /* 둘 다 아니면 손을 떼고 원래 스크롤에 맡깁니다 */
+        return;
+      }
+    }
+    if (gesture.mode === 'swipe') {
+      e.preventDefault();
+      const base = gesture.wasOpen ? -SWIPE_REVEAL : 0;
+      gesture.dx = Math.max(-SWIPE_REVEAL, Math.min(0, base + dx));
+      gesture.row.style.transform = `translateX(${gesture.dx}px)`;
+    } else if (gesture.mode === 'pull') {
+      e.preventDefault();
+      /* 당길수록 점점 뻑뻑해지게(0.5배) — 끝없이 따라오면 얼마나 당겨야
+         새로고침되는지 손끝으로 가늠할 수 없습니다. */
+      gesture.pullDist = Math.min(90, Math.max(0, dy) * 0.5);
+      ensurePullEl().style.transform = `translateY(${gesture.pullDist}px)`;
+    }
+  }
+  function onSwipePointerUp(e) {
+    if (!gesture || gesture.pointerId !== e.pointerId) return;
+    const g = gesture;
+    gesture = null;
+    if (g.mode === 'swipe') {
+      suppressNextClick = true;
+      g.row.classList.remove('swiping');
+      if (g.dx <= -SWIPE_REVEAL / 2) {
+        g.row.style.transform = `translateX(-${SWIPE_REVEAL}px)`;
+        openSwipeRow = g.row;
+      } else {
+        g.row.style.transform = '';
+        if (openSwipeRow === g.row) openSwipeRow = null;
+      }
+    } else if (g.mode === 'pull') {
+      ensurePullEl().classList.remove('dragging');
+      if ((g.pullDist || 0) >= 40) syncInBackground();
+      else hideSyncIndicator();
+    } else if (!g.mode && g.row && g.wasOpen) {
+      /* 열려 있던 스와이프를 그냥 탭 한 번으로 닫으려던 것 — 그 탭이 바로
+         밑 버튼(완료 체크 등)까지 같이 누르면 안 됩니다. */
+      g.row.classList.remove('swiping');
+      g.row.style.transform = '';
+      if (openSwipeRow === g.row) openSwipeRow = null;
+      suppressNextClick = true;
+    }
+  }
+  function closeOpenSwipe() {
+    if (openSwipeRow && openSwipeRow.isConnected) {
+      openSwipeRow.style.transform = '';
+      openSwipeRow.classList.remove('swiping');
+    }
+    openSwipeRow = null;
+  }
+
+  /* 지우기 전에 그 자리를 눈에 보이게 접어 줍니다. 상태부터 바꾸고 다시
+     그리면(render()) 지울 노드가 그 순간 이미 DOM 에서 없어서, 사라지는
+     모습을 태울 대상이 없습니다 — 그래서 실제 노드를 먼저 움츠러들게 하고,
+     그 트랜지션이 끝나야 상태를 바꿉니다. 대상이 없으면(이미 스크롤 밖으로
+     사라졌거나 셀렉터가 못 찾은 경우) 그냥 곧바로 지웁니다. */
+  function animateRemoval(el) {
+    return new Promise(resolve => {
+      if (!el) { resolve(); return; }
+      const h = el.getBoundingClientRect().height;
+      el.style.height = h + 'px';
+      el.style.overflow = 'hidden';
+      el.classList.add('removing');
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          el.style.height = '0px';
+          el.style.marginTop = '0px';
+          el.style.marginBottom = '0px';
+          el.style.opacity = '0';
+        });
+      });
+      setTimeout(resolve, 220);
+    });
+  }
+
+  /* 당겨서 새로고침 표시. render() 가 지울 수 있는 appEl 안이 아니라
+     body 에 직접 붙여 둡니다 — 휴식 타이머 바와 같은 이유로, 동기화가
+     도는 동안 어딜 누르든(탭을 옮기든) 표시가 끊기면 안 됩니다. */
+  let pullEl = null;
+  function ensurePullEl() {
+    if (pullEl) return pullEl;
+    pullEl = document.createElement('div');
+    pullEl.className = 'pull-refresh';
+    pullEl.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>';
+    document.body.appendChild(pullEl);
+    return pullEl;
+  }
+  function showSyncIndicator() {
+    const el = ensurePullEl();
+    el.classList.remove('dragging');
+    el.classList.add('loading');
+    el.style.transform = 'translateY(64px)';
+  }
+  function hideSyncIndicator() {
+    if (!pullEl) return;
+    pullEl.classList.remove('dragging', 'loading');
+    pullEl.style.transform = '';
+  }
+
   /* ── Event Binding ────────────────────────── */
   function bindEvents() {
     appEl.onclick  = onClick;
     appEl.oninput  = onInput;
     appEl.onchange = onChangeEvt;
+    appEl.onpointerdown = onSwipePointerDown;
+    appEl.onpointermove = onSwipePointerMove;
+    appEl.onpointerup = onSwipePointerUp;
+    appEl.onpointercancel = onSwipePointerUp;
   }
 
   async function onClick(e) {
+    /* 세트를 옆으로 밀었다 놓은 동작(또는 열려 있던 걸 닫으려 한 탭)이
+       바로 뒤에 클릭으로도 잡히면, 밀기가 끝나자마자 그 아래 버튼(완료 체크
+       등)이 같이 눌린 것처럼 동작해 버립니다. 스와이프 쪽에서 표시해 두면
+       그 클릭 한 번만 건너뜁니다. */
+    if (suppressNextClick) { suppressNextClick = false; return; }
+
     /* del-custom needs to stop before pick-item fires */
     const delCustom = e.target.closest('[data-act="del-custom"]');
     if (delCustom) { e.stopPropagation(); await handleDeleteCustom(delCustom.dataset.id); return; }
@@ -3945,12 +4174,12 @@ const APP_VERSION = (() => {
     if (act === 'numpad-w-adj') {
       if (!state.weightPicker) return;
       pickerAdjust(state.weightPicker, Number(btn.dataset.delta), 0, 999);
-      paintPickerValue(); return;
+      paintPickerValue(true); return;
     }
     if (act === 'numpad-r-adj') {
       if (!state.repsPicker) return;
       pickerAdjust(state.repsPicker, Number(btn.dataset.delta), 0, 999);
-      paintPickerValue(); return;
+      paintPickerValue(true); return;
     }
     if (act === 'numpad-w-dot') {
       if (!state.weightPicker) return;
@@ -4763,9 +4992,15 @@ const APP_VERSION = (() => {
     for (const p of picks) if (addExerciseToSession(p.part || partId, p.name, p.exId)) n++;
     /* Scroll to the first genuinely new card. Diffing against the ids that
        existed beforehand rather than trusting p.exId, because an exercise added
-       from the custom list gets a generated id that the pick never carried. */
+       from the custom list gets a generated id that the pick never carried.
+       첫 카드는 스크롤과 함께 눈에 띄는 테두리 펄스(flashExercise)를 받으니,
+       나머지 새 카드들만 살짝 커지며 나타나는 쪽을 씁니다 — 둘 다 같은
+       카드에 겹치면 애니메이션 속성이 서로 덮어써 하나만 재생됩니다. */
     for (const ex of state.session.exercises) {
-      if (!before.has(ex.id)) { firstId = ex.id; break; }
+      if (!before.has(ex.id)) {
+        if (!firstId) firstId = ex.id;
+        else pendingEnterExIds.add(ex.id);
+      }
     }
     await persist();
     closeAllSheets();
@@ -4810,6 +5045,10 @@ const APP_VERSION = (() => {
   }
 
   async function handleDeleteEx(exId) {
+    /* 지우고 나서 다시 그리면 그 순간 카드가 이미 없어, 사라지는 걸 태울
+       대상이 없습니다. 그래서 상태를 바꾸기 '전에' 실제 카드를 먼저
+       움츠러들게 하고, 그게 끝나야 지웁니다. */
+    await animateRemoval(document.querySelector(`.ex-card[data-exid="${CSS.escape(exId)}"]`));
     state.session.exercises = state.session.exercises.filter(e=>e.id!==exId);
     await persist(); render();
   }
@@ -4998,7 +5237,9 @@ const APP_VERSION = (() => {
     const ex = state.session.exercises.find(e=>e.id===exId);
     if (!ex) return;
     const prev = ex.sets[ex.sets.length-1] || { kg:'', reps:'' };
-    ex.sets.push({ id:uid(), kg:prev.kg, reps:prev.reps, done:false, warmup:false });
+    const newSet = { id:uid(), kg:prev.kg, reps:prev.reps, done:false, warmup:false };
+    ex.sets.push(newSet);
+    pendingEnterSetIds.add(newSet.id);
     await persist(); render();
   }
 
@@ -5006,6 +5247,7 @@ const APP_VERSION = (() => {
     const ex = state.session.exercises.find(e=>e.id===exId);
     if (!ex) return;
     if (ex.sets.length <= 1) { toast('마지막 세트는 지울 수 없습니다'); return; }
+    await animateRemoval(document.querySelector(`.set-swipe[data-ex="${CSS.escape(exId)}"][data-set="${CSS.escape(setId)}"]`));
     ex.sets = ex.sets.filter(s => s.id !== setId);
     await persist(); render();
   }
@@ -5513,6 +5755,10 @@ const APP_VERSION = (() => {
     if (!myUid) return;
     const stillMe = () => !!state.user && state.user.uid === myUid;
     state.syncing = true;
+    /* 이 동기화가 당겨서 시작한 게 아니어도(로그인 직후 자동 동기화 등)
+       도는 동안은 똑같이 보여 줍니다 — 지금까지는 아무 표시가 없어서
+       클라우드에 올라가는지 자체를 알 방법이 없었습니다. */
+    showSyncIndicator();
     try {
       await withTimeout(Cloud.touchProfile(), 8000, '프로필');
       if (!stillMe()) return;
@@ -5573,6 +5819,7 @@ const APP_VERSION = (() => {
       }
     } finally {
       state.syncing = false;
+      hideSyncIndicator();
     }
   }
 
@@ -5753,6 +6000,7 @@ const APP_VERSION = (() => {
     /* 이전 계정의 동기화 깃발과 '가져오시겠어요?' 카드를 남겨 두면, 다음
        사람의 동기화가 건너뛰어지고 남의 기록을 가져오라는 카드가 뜹니다. */
     state.syncing = false;
+    hideSyncIndicator();
     state.pendingImport = null;
     state.offline = false;
     resetSignup();

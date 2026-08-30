@@ -129,6 +129,15 @@ em { font-style: normal; }
 }
 @keyframes screenIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
+/* 하단 탭을 눌러 옮겨갈 때만 씁니다(render() 가 매번 화면을 통째로 다시
+   그리므로, 방향 표시가 없으면 체크박스 하나 누른 것도 탭 이동과 똑같이
+   보입니다). 탭 순서보다 오른쪽으로 가면 오른쪽에서, 왼쪽으로 가면
+   왼쪽에서 새 화면이 들어오고, 그 뒤를 옅게 따라 나갑니다. */
+.screen.nav-fwd { animation: screenSlideFwd .3s cubic-bezier(.22,.9,.32,1); }
+.screen.nav-back { animation: screenSlideBack .3s cubic-bezier(.22,.9,.32,1); }
+@keyframes screenSlideFwd { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes screenSlideBack { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+
 /* 상단바 높이는 반드시 '안전영역까지 더한' 값이어야 합니다.
    box-sizing 이 border-box 라 height:56px 은 패딩을 포함한 전체 높이입니다.
    아이폰의 위쪽 안전영역은 59px 안팎이라, 위아래 패딩만으로 이미 56px 을
@@ -516,7 +525,41 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .set-table-head span:nth-child(5) { text-align: center; }
 .set-row {
   display: grid; grid-template-columns: 26px 1fr 1fr 38px 40px 26px; gap: 6px; align-items: center;
+  background: var(--surface); position: relative; z-index: 1; touch-action: pan-y;
+  transition: transform .18s cubic-bezier(.2,.8,.3,1);
 }
+.set-row.swiping { transition: none; }
+
+/* ── 세트 왼쪽으로 밀어 지우기 ────────────────────────────────────────────
+   .set-swipe 가 실제 목록 항목의 테두리입니다. 안 밀면 .set-row 배경이
+   뒤에 깔린 삭제 버튼을 완전히 덮고, 밀면 오른쪽으로 그 버튼이 드러납니다. */
+.set-swipe { position: relative; border-radius: var(--r-sm); overflow: hidden; }
+.set-swipe-action {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 60px; z-index: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  background: var(--red); color: #fff; border: none; font-size: 10px; font-weight: 800;
+}
+.set-swipe.removing, .ex-card.removing {
+  transition: height .2s ease, opacity .18s ease, margin .2s ease;
+}
+
+/* 새로 추가된 세트·운동이 목록 위로 순간이동하듯 나타나지 않도록. */
+.set-row.enter, .ex-card.enter { animation: listItemIn .22s cubic-bezier(.22,.9,.32,1); }
+@keyframes listItemIn { from { opacity: 0; transform: scale(.95) translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* 당겨서 새로고침 표시. #app 밖(body)에 떠 있는 원형 아이콘입니다. */
+.pull-refresh {
+  position: fixed; top: 0; left: 50%; z-index: 45;
+  width: 38px; height: 38px; margin-left: -19px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; background: var(--surface); border: 1px solid var(--line);
+  box-shadow: var(--sh-pop); color: var(--accent);
+  transform: translateY(-56px);
+  transition: transform .25s cubic-bezier(.2,.9,.3,1);
+  pointer-events: none;
+}
+.pull-refresh.dragging { transition: none; }
+.pull-refresh.loading svg { animation: spin .8s linear infinite; }
 .set-num {
   width: 26px; height: 30px; border-radius: 9px; display: grid; place-items: center;
   background: var(--surface-2); font-size: 13px; font-weight: 800; color: var(--sub);
