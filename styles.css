@@ -515,16 +515,18 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .prev-hint strong { color: var(--text); font-weight: 800; }
 
 /* set table */
-.set-table { display: flex; flex-direction: column; gap: 7px; }
+/* 세트 사이 간격을 넉넉히 둡니다 — X 버튼을 없애고 스와이프가 지우는
+   유일한 길이 된 뒤로는, 줄 사이가 좁으면 스와이프를 시작한 손끝이 바로
+   위/아래 세트로 잘못 물릴 수 있습니다. */
+.set-table { display: flex; flex-direction: column; gap: 12px; }
 .set-table-head {
-  display: grid; grid-template-columns: 26px 1fr 1fr 38px 40px 26px; gap: 6px;
+  display: grid; grid-template-columns: 26px 1fr 1fr 38px 40px; gap: 6px;
   align-items: center; padding: 0 2px 2px; font-size: 11px; font-weight: 800;
   color: var(--muted); text-transform: uppercase; letter-spacing: .05em;
 }
 .set-table-head span:nth-child(2), .set-table-head span:nth-child(3), .set-table-head span:nth-child(4) { text-align: center; }
-.set-table-head span:nth-child(5) { text-align: center; }
 .set-row {
-  display: grid; grid-template-columns: 26px 1fr 1fr 38px 40px 26px; gap: 6px; align-items: center;
+  display: grid; grid-template-columns: 26px 1fr 1fr 38px 40px; gap: 6px; align-items: center;
   background: var(--surface); position: relative; z-index: 1; touch-action: pan-y;
   transition: transform .18s cubic-bezier(.2,.8,.3,1);
 }
@@ -569,7 +571,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
    column and leave 완료/삭제 floating mid-row instead of at the right edge.
    The header above it loses the same column so 시간/완료 stay over what they
    label. */
-.set-row.hold, .set-table-head.hold { grid-template-columns: 26px 1fr 38px 40px 26px; }
+.set-row.hold, .set-table-head.hold { grid-template-columns: 26px 1fr 38px 40px; }
 .set-row.done .set-num { background: var(--accent-soft); color: var(--accent); }
 .set-num.warmup { background: color-mix(in srgb, var(--orange) 18%, var(--surface-2)); color: var(--orange); }
 .set-row.warmup .val-chip { opacity: .78; }
@@ -612,15 +614,6 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
    범위를 좌우로 넓혀 옆 버튼과 겹치지 않는 선까지 키웁니다. 흐릿하게 두는
    것은 의도적입니다 — 자주 쓰는 버튼이 아니고, 완료 체크 옆에서 눈에 띄면
    잘못 누르기 쉽습니다. */
-.set-del {
-  width: 30px; height: 46px; display: grid; place-items: center;
-  color: var(--muted); opacity: .55; transition: opacity .15s, color .15s;
-  position: relative;
-}
-.set-del::after {
-  content: ''; position: absolute; top: 0; bottom: 0; left: -8px; right: -6px;
-}
-.set-del:active { color: var(--red); opacity: 1; }
 .add-set-row {
   margin-top: 4px; height: 42px; border-radius: var(--r-sm);
   background: transparent; border: 1.5px dashed var(--line-2); color: var(--sub);

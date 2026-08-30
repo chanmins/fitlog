@@ -2830,9 +2830,8 @@ const APP_VERSION = (() => {
       const reps = (set.reps !== '' && set.reps != null) ? set.reps : '--';
       const enter = pendingEnterSetIds.has(set.id) ? ' enter' : '';
       /* .set-swipe 가 실제 목록 항목의 경계입니다 — 왼쪽으로 밀면 뒤에 깔린
-         빨간 삭제 버튼이 드러납니다. 기존의 작은 X 버튼(.set-del)은 그대로
-         두었습니다 — 스와이프는 손이 빠른 사람을 위한 지름길이지 유일한
-         길이 아닙니다. */
+         빨간 삭제 버튼이 드러납니다. 원래 있던 작은 X 버튼은 없앴습니다 —
+         이제 지우는 길은 스와이프 하나뿐입니다. */
       return `<div class="set-swipe" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}">
         <button class="set-swipe-action" data-act="del-set" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="세트 삭제">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
@@ -2851,9 +2850,6 @@ const APP_VERSION = (() => {
         ${set.pr ? '<span class="pr-flag" title="개인 기록">PR</span>' : ''}
         <button class="done-toggle${done?' done':''}" data-act="toggle-done" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="세트 완료">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-        </button>
-        <button class="set-del" data-act="del-set" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="세트 삭제">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
         </div>
       </div>`;
@@ -2880,7 +2876,7 @@ const APP_VERSION = (() => {
         </button>
       </div>
       <div class="set-table">
-        <div class="set-table-head${hold ? ' hold' : ''}"><span>#</span>${hold ? '' : '<span>무게</span>'}<span>${hold ? '시간' : '횟수'}</span><span>완료</span><span></span></div>
+        <div class="set-table-head${hold ? ' hold' : ''}"><span>#</span>${hold ? '' : '<span>무게</span>'}<span>${hold ? '시간' : '횟수'}</span><span>완료</span></div>
         ${sets}
         <button class="add-set-row" data-act="add-set" data-ex="${esc(ex.id)}">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
