@@ -1041,12 +1041,6 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .settings-block { flex-direction: column; align-items: stretch; gap: 11px; cursor: default; }
 .settings-block:active { background: transparent; }
 .settings-block .presets-scroll { margin: 0; }
-.reminder-time {
-  height: 46px; background: var(--surface-2); border: 1px solid var(--line);
-  border-radius: var(--r-sm); padding: 0 12px; font-size: 15px; font-weight: 700;
-  color: var(--text); align-self: flex-start;
-  color-scheme: dark;
-}
 
 /* Identity row: avatar, name, handle, and the body stats on one line under it. */
 .profile-row { padding: 16px 14px; }

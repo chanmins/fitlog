@@ -255,23 +255,6 @@ const APP_VERSION = (() => {
     if (!hapticsOn() || !navigator.vibrate) return;
     try { navigator.vibrate(pattern); } catch (_) {}
   }
-  /* 휴식 종료 알림의 무음 여부. 기본값 true(소리 남) — 지금까지 항상
-     silent:false 로 보냈던 동작 그대로. */
-  function restSoundOn() {
-    try { return localStorage.getItem('fitlog-rest-sound') !== '0'; } catch (_) { return true; }
-  }
-  function setRestSoundOn(on) { try { localStorage.setItem('fitlog-rest-sound', on ? '1' : '0'); } catch (_) {} }
-
-  /* 오늘 아직 기록이 없으면 알려주는 리마인더. 진짜 백그라운드 푸시가
-     아니라(그러려면 서버가 있어야 합니다) 앱을 열어 둔 상태에서만 동작하는
-     최선의 근사치입니다 — 설정 화면에 그렇게 설명해 둡니다. */
-  function reminderOn() { try { return localStorage.getItem('fitlog-reminder') === '1'; } catch (_) { return false; } }
-  function setReminderOn(on) {
-    try { if (on) localStorage.setItem('fitlog-reminder', '1'); else localStorage.removeItem('fitlog-reminder'); } catch (_) {}
-  }
-  function reminderTime() { try { return localStorage.getItem('fitlog-reminder-time') || '20:00'; } catch (_) { return '20:00'; } }
-  function setReminderTime(v) { try { localStorage.setItem('fitlog-reminder-time', v); } catch (_) {} }
-
   /* 무게·키 단위. 저장은 언제나 kg·cm — 화면에 보여주고 입력받을 때만
      변환합니다. 그래야 단위를 몇 번을 바꿔도 기록 자체는 절대 어긋나지
      않습니다(오늘 100kg 로 적은 세트가 내일 단위를 바꿨다고 값이 미끄러지면
@@ -1339,12 +1322,12 @@ const APP_VERSION = (() => {
     if (remaining <= 0 && !rt.chimed) {
       rt.chimed = true;
       try { localStorage.removeItem(REST_KEY); } catch (_) {}
-      if (restSoundOn()) playRestChime();
+      playRestChime();
       vibrate([120, 80, 120]);
       /* 끝났을 때는 화면을 보고 있든 아니든 알립니다 — 다른 앱을 보다가
          돌아오는 게 이 기능의 목적이라, 화면이 켜져 있다고 조용할 이유가
-         없습니다. silent 는 설정의 '소리' 스위치를 그대로 따릅니다. */
-      showRestNotification('휴식 종료', (rt.label ? rt.label + ' · ' : '') + '다음 세트를 시작하세요 💪', !restSoundOn());
+         없습니다. */
+      showRestNotification('휴식 종료', (rt.label ? rt.label + ' · ' : '') + '다음 세트를 시작하세요 💪', false);
     }
 
     const pct = Math.max(0, Math.min(100, (remaining / rt.duration) * 100));
@@ -1402,38 +1385,8 @@ const APP_VERSION = (() => {
     /* 화면이 꺼져 있던 동안에도 시간은 흘렀으므로, 돌아오는 순간 다시 계산해
        바를 맞춥니다. */
     document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) {
-        if (state.restTimer) renderRestTimerBar();
-        maybeShowDailyReminder();
-      }
+      if (!document.hidden && state.restTimer) renderRestTimerBar();
     });
-    /* 부팅 직후 곧바로 부르지 않습니다 — 이 시점엔 아직 기록을 불러오는
-       중이라(loadWorkspace 는 이후에 끝남) state.sessions 가 비어 있어,
-       "오늘 기록 없음" 으로 잘못 판단하고 하루짜리 표시를 써 버릴 수
-       있습니다. 60초 주기와 화면 복귀 시점이면 충분히 안전합니다. */
-    setInterval(maybeShowDailyReminder, 60000);
-  }
-
-  /* ── 오늘 운동 리마인더 ────────────────────────────────────────────────────
-     진짜 백그라운드 푸시가 아닙니다 — 이 앱은 서버가 없는 순수 클라이언트
-     PWA 라, 앱이 꺼져 있을 때 알림을 울리려면 푸시 서버가 있어야 합니다.
-     여기서 할 수 있는 최선은 "앱이 켜져 있는 동안(포그라운드 또는 백그라운드
-     탭) 설정한 시각이 지났는데 오늘 기록이 없으면 알려주기" 뿐입니다.
-     설정 화면에도 이 한계를 그대로 적어 둡니다. */
-  function maybeShowDailyReminder() {
-    if (!reminderOn()) return;
-    const now = new Date();
-    const hhmm = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-    if (hhmm < reminderTime()) return;
-    const today = todayISO();
-    let shownFor = '';
-    try { shownFor = localStorage.getItem('fitlog-reminder-shown') || ''; } catch (_) {}
-    if (shownFor === today) return;
-    try { localStorage.setItem('fitlog-reminder-shown', today); } catch (_) {}
-    const hasToday = state.sessions.some(s => s.date === today && sessionHasAnything(s));
-    if (hasToday) return;
-    toast('오늘 아직 운동 기록이 없어요 — 잊지 않으셨나요? 💪');
-    showRestNotification('오늘 운동하셨나요?', '아직 오늘 기록이 없어요.', !restSoundOn());
   }
 
   /* ── Navigation ─────────────────────────── */
@@ -3708,6 +3661,7 @@ const APP_VERSION = (() => {
               ${REST_PRESETS.map(sec => `<button class="preset-chip${restDuration()===sec?' on':''}" data-act="set-rest-dur" data-val="${sec}">${sec}초</button>`).join('')}
             </div>
           </div>` : ''}
+          ${restTimerOn() ? `
           <button class="settings-item" data-act="toggle-haptics" role="switch" aria-checked="${hapticsOn()}">
             <div class="settings-item-icon${hapticsOn() ? ' accent' : ''}">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
@@ -3717,34 +3671,7 @@ const APP_VERSION = (() => {
               <div class="settings-item-sub">휴식 종료·개인 기록 때 짧게 울립니다</div>
             </div>
             <span class="switch${hapticsOn() ? ' on' : ''}" aria-hidden="true"><i></i></span>
-          </button>
-          <button class="settings-item" data-act="toggle-rest-sound" role="switch" aria-checked="${restSoundOn()}">
-            <div class="settings-item-icon${restSoundOn() ? ' accent' : ''}">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>
-            </div>
-            <div class="settings-item-text">
-              <div class="settings-item-title">휴식 종료 소리</div>
-              <div class="settings-item-sub">꺼두면 진동으로만 알립니다</div>
-            </div>
-            <span class="switch${restSoundOn() ? ' on' : ''}" aria-hidden="true"><i></i></span>
-          </button>
-          <button class="settings-item" data-act="toggle-reminder" role="switch" aria-checked="${reminderOn()}">
-            <div class="settings-item-icon${reminderOn() ? ' accent' : ''}">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-            </div>
-            <div class="settings-item-text">
-              <div class="settings-item-title">오늘 운동 리마인더</div>
-              <div class="settings-item-sub">앱을 서버 없이 만들어서, 정해진 시각이 지났는데 앱을 열고 있고 오늘 기록이 없을 때만 알려드릴 수 있어요 — 폰이 꺼져 있거나 앱을 아예 안 연 날은 못 울립니다</div>
-            </div>
-            <span class="switch${reminderOn() ? ' on' : ''}" aria-hidden="true"><i></i></span>
-          </button>
-          ${reminderOn() ? `
-          <div class="settings-item settings-block">
-            <div class="settings-item-text">
-              <div class="settings-item-title">알려줄 시각</div>
-            </div>
-            <input class="reminder-time" type="time" data-act="set-reminder-time" value="${esc(reminderTime())}">
-          </div>` : ''}
+          </button>` : ''}
         </div>
 
         <div class="settings-label">개인화</div>
@@ -4286,16 +4213,6 @@ const APP_VERSION = (() => {
       return;
     }
     if (act === 'toggle-haptics') { setHapticsOn(!hapticsOn()); render(); return; }
-    if (act === 'toggle-rest-sound') { setRestSoundOn(!restSoundOn()); render(); return; }
-    if (act === 'toggle-reminder') {
-      const on = !reminderOn();
-      setReminderOn(on);
-      /* 껐다 켜면 오늘치 '이미 보여줬음' 기록을 지워, 다시 켠 그날 저녁에도
-         조건이 맞으면 정상적으로 다시 알려줍니다. */
-      if (on) { try { localStorage.removeItem('fitlog-reminder-shown'); } catch (_) {} }
-      render();
-      return;
-    }
     if (act === 'set-start-tab') { setStartTab(btn.dataset.val); render(); return; }
     if (act === 'set-week-start') { setWeekStartsMon(btn.dataset.val === 'mon'); render(); return; }
     if (act === 'set-unit-weight') { setUnitWeight(btn.dataset.val); render(); return; }
@@ -4350,12 +4267,6 @@ const APP_VERSION = (() => {
       if (!await confirmLeavePast()) { render(); return; }
       await persist();
       await loadDay(t.value);
-    }
-    if (t.dataset.act === 'set-reminder-time' && t.value) {
-      setReminderTime(t.value);
-      /* 시각을 바꾸면 오늘치 '이미 보여줬음' 표시도 지워, 새 시각 기준으로
-         다시 판단하게 합니다. */
-      try { localStorage.removeItem('fitlog-reminder-shown'); } catch (_) {}
     }
   }
 
