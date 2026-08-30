@@ -739,6 +739,13 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 /* ============================================================
    EXERCISE PICKER
    ============================================================ */
+/* .sheet-panel is normally overflow-y:auto on the whole panel, but the
+   picker needs the footer button held outside that scroll region (see the
+   .picker-footer comment below) — so this sheet scrolls only inside
+   .picker-scroll, and the panel itself just lays its children out top to
+   bottom. */
+.picker-sheet { display: flex; flex-direction: column; overflow: hidden; }
+.picker-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .search-bar { position: relative; margin-bottom: 14px; }
 .search-bar svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); }
 .search-bar input {
@@ -788,11 +795,19 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   border-color: transparent; color: var(--accent-ink);
 }
 .pick-item-name:disabled { opacity: .6; }
-/* Sticky commit bar so the count stays reachable in a long list. */
+/* .picker-sheet is a flex column: header stays put, .picker-scroll (search +
+   list + custom-add) scrolls in its own box, and this footer sits below it as
+   a normal flex child. It used to be position:sticky inside the same scroll
+   box as the list — sticky pins to the viewport regardless of real scroll
+   position, so even at scrollTop 0 it clamped to the bottom of the sheet and
+   visually collided with whatever list items happened to occupy that same
+   band (the next item's row showed through/under the button). Being a plain
+   flex sibling of an independently-scrolling box means there's no shared
+   space left to collide over. */
 .picker-footer {
-  position: sticky; bottom: 0; z-index: 2;
+  flex-shrink: 0;
   padding: 12px 0 calc(4px + var(--safe-bot));
-  background: linear-gradient(to top, var(--surface) 72%, transparent);
+  background: var(--surface);
 }
 .picker-confirm:disabled { opacity: .75; }
 .custom-add-row { display: flex; gap: 8px; margin-top: 10px; padding-top: 14px; border-top: 1px solid var(--line); }

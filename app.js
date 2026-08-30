@@ -2874,6 +2874,14 @@ const APP_VERSION = (() => {
   }
 
   /* ── Exercise Picker Sheet ────────────────── */
+  /* 검색창+목록+직접추가 를 .picker-scroll 로 따로 묶어서 그 안에서만
+     스크롤되게 합니다. 예전에는 이 셋이 .picker-footer(하단 "N개 운동
+     추가" 버튼)와 같은 스크롤 영역(.sheet-panel) 안에 있었는데, 버튼이
+     position:sticky 로 화면 하단에 붙다 보니 스크롤을 전혀 안 한
+     시작 상태에서도 목록 뒤쪽 항목들과 같은 화면 위치를 다투게 되어
+     버튼 밑으로 다음 운동(예: "프론트 스쿼트") 이 겹쳐 보이는
+     버그가 있었습니다. 버튼을 별도 스크롤 영역 바깥의 flex 자식으로
+     두면 애초에 겹칠 자리가 없습니다. */
   function renderExercisePickerSheet(partId) {
     const part = PARTS.find(p => p.id === partId);
     const n = state.pickSelection.length;
@@ -2889,15 +2897,17 @@ const APP_VERSION = (() => {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
-        <div class="search-bar">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input id="picker-search" placeholder="운동 검색" value="${esc(state.exerciseSearch)}" data-act="search-ex">
-        </div>
-        <div class="pick-list">${buildPickItems(partId)}</div>
-        <div class="custom-add-row">
-          <input id="custom-name" placeholder="나만의 운동 직접 추가"
-                 data-act="custom-name" value="${esc(state.customName)}">
-          <button class="btn-add-sm" data-act="add-custom" data-part="${partId}">추가</button>
+        <div class="picker-scroll">
+          <div class="search-bar">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input id="picker-search" placeholder="운동 검색" value="${esc(state.exerciseSearch)}" data-act="search-ex">
+          </div>
+          <div class="pick-list">${buildPickItems(partId)}</div>
+          <div class="custom-add-row">
+            <input id="custom-name" placeholder="나만의 운동 직접 추가"
+                   data-act="custom-name" value="${esc(state.customName)}">
+            <button class="btn-add-sm" data-act="add-custom" data-part="${partId}">추가</button>
+          </div>
         </div>
         <div class="picker-footer">
           <button class="picker-confirm${n?'':' ghost'}" data-act="commit-picks" data-part="${partId}" ${n?'':'disabled'}>
