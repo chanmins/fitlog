@@ -3902,9 +3902,15 @@ const APP_VERSION = (() => {
     if (openSwipeRow && row !== openSwipeRow) closeOpenSwipe();
     /* 당겨서 새로고침은 탭 화면 맨 위, 그리고 로그인해서 클라우드가 있을
        때만 후보로 둡니다 — 게스트는 동기화할 데가 없고, 요약 화면(day
-       summary)은 자기 스크롤을 따로 가지고 있어 문서 스크롤 값으로
-       "맨 위" 를 판단하면 엉뚱하게 걸립니다. */
-    const inTabScreen = !!e.target.closest('.screen') && !e.target.closest('.detail-screen');
+       summary)·루틴 편집처럼 전체 화면 오버레이(.detail-screen)는 자기
+       스크롤을 따로 가지고 있어 문서 스크롤 값으로 "맨 위" 를 판단하면
+       엉뚱하게 걸립니다.
+       .topbar 도 후보에 포함합니다 — 헤더가 sticky 로 화면 맨 위에 붙어
+       있어서, 실제로 아래로 당길 때 손가락이 자연스럽게 그 위에서
+       시작되는 경우가 많습니다. .screen 안에서만 받으면 정작 가장 자연스러운
+       시작 지점에서는 안 먹히는 셈이라 헤더도 같이 받아 줍니다. */
+    const inTabScreen = (!!e.target.closest('.screen') || !!e.target.closest('.topbar'))
+      && !e.target.closest('.detail-screen');
     const atTop = (document.scrollingElement || document.documentElement).scrollTop <= 0;
     gesture = {
       mode: null,

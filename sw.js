@@ -1,4 +1,4 @@
-const CACHE = "fitlog-v66";
+const CACHE = "fitlog-v67";
 /* Photos live in their own cache that version bumps do NOT clear. They never
    change once published, and re-downloading 2MB of them on every update would
    spend the free tier's daily transfer for nothing. */
@@ -6,13 +6,13 @@ const MEDIA_CACHE = "fitlog-media-v1";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=66",
-  "./app.js?v=66",
-  "./db.js?v=66",
-  "./exercises.js?v=66",
-  "./exercise-photos.js?v=66",
-  "./cloud.js?v=66",
-  "./firebase-config.js?v=66",
+  "./styles.css?v=67",
+  "./app.js?v=67",
+  "./db.js?v=67",
+  "./exercises.js?v=67",
+  "./exercise-photos.js?v=67",
+  "./cloud.js?v=67",
+  "./firebase-config.js?v=67",
   "./manifest.json",
   "./icons/icon.svg",
   "./icons/icon-192.png",
