@@ -550,9 +550,14 @@ const APP_VERSION = (() => {
     const sets = ex.sets || [];
     return { done: sets.filter(s => s.done).length, total: sets.length };
   }
-  /* ── 운동 시간과 휴식 ────────────────────────────────────────────────────
-     세트를 완료할 때 남긴 시각으로 계산합니다. 첫 세트와 마지막 세트 사이가
-     그날 실제로 운동한 시간이고, 그 사이 간격들의 중앙값이 세트 간 휴식입니다.
+  /* ── 세트 간 휴식 ────────────────────────────────────────────────────────
+     세트를 완료할 때 남긴 시각으로 계산합니다. 그 간격들의 중앙값이 세트 간
+     휴식입니다. 총 운동 시간(첫~마지막 세트 사이)은 더는 화면에 보여주지
+     않습니다 — 세트를 몰아서 나중에 한꺼번에 체크하면(흔한 사용 패턴입니다)
+     실제 운동 시간과 크게 어긋나는데, 그 두 경우를 구분할 방법이 없어서
+     부정확하다는 지적을 받았습니다. minutes 는 그래도 계산해서 남겨
+     둡니다 — 세션이 통째로 말이 안 되면(0분 이하거나 300분 초과) 휴식
+     중앙값도 같이 버리는 안전장치로만 씁니다.
 
      평균이 아니라 중앙값을 쓰는 이유: 중간에 전화를 받거나 자리를 비우면
      간격 하나가 20분이 되는데, 평균은 그 하나에 통째로 끌려갑니다. 중앙값은
@@ -2574,13 +2579,6 @@ const APP_VERSION = (() => {
             <div class="sum-val">${Number.isFinite(runKm)&&runKm?runKm:'-'}<span>km</span></div>
             <div class="sum-lbl">러닝</div>
           </div>` : ''}
-          ${(() => {
-            const t = sessionTiming(s);
-            return t ? `<div class="sum-item">
-              <div class="sum-val">${t.minutes}<span>분</span></div>
-              <div class="sum-lbl">운동 시간</div>
-            </div>` : '';
-          })()}
         </div>
         ${stats.total ? `<div class="sum-bar"><div class="sum-bar-fill" style="width:${pct}%"></div></div>` : ''}
       </div>` : '';
@@ -2751,14 +2749,15 @@ const APP_VERSION = (() => {
             <div><b>${(s.exercises || []).length}</b><span>운동</span></div>
             <div><b>${stats.done}</b><span>완료 세트</span></div>
             ${hasRunData(s.run) && Number.isFinite(runKm) && runKm ? `<div><b>${runKm}</b><span>km</span></div>` : ''}
-            ${(() => {
-              const t = sessionTiming(s);
-              return t ? `<div><b>${t.minutes}</b><span>분</span></div>` : '';
-            })()}
           </div>
         </div>
         ${body}
         ${(() => {
+          /* 총 운동 시간(첫 세트~마지막 세트)은 표시하지 않습니다 — 세트를
+             몰아서 나중에 한꺼번에 체크하거나, 중간에 딴짓을 하다 돌아오면
+             실제와 크게 어긋나는데 그걸 구분할 방법이 없습니다. 세트 사이
+             '보통' 휴식(중앙값)은 그런 이상치 하나에 흔들리지 않아 남겨
+             둡니다. */
           const t = sessionTiming(s);
           return t && t.rest ? `<p class="dsum-timing">세트 사이 보통 ${esc(fmtDur(t.rest))} 쉬었어요</p>` : '';
         })()}
