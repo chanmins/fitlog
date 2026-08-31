@@ -91,7 +91,12 @@ const Cloud = (() => {
       const key = typeof RECAPTCHA_V3_SITE_KEY !== "undefined" ? RECAPTCHA_V3_SITE_KEY : "";
       if (!key || typeof firebase.appCheck !== "function") return;
       firebase.appCheck().activate(key, true);
-    } catch (_) {}
+    } catch (err) {
+      /* 키가 설정된 뒤에도 activate() 가 조용히 실패하면 App Check 가 꺼진
+         채로 앱이 정상 동작해 버려서 아무도 눈치채지 못합니다. 사이트 키
+         자체가 없을 때(위 return)는 의도된 상태이므로 로깅하지 않습니다. */
+      console.warn("[fitlog] App Check activate() failed:", err);
+    }
   }
 
   function init() {
@@ -267,13 +272,6 @@ const Cloud = (() => {
     }
   }
 
-  async function signUpEmail(email, password) {
-    if (!auth) throw new Error("Firebase가 설정되지 않았습니다.");
-    await persistenceReady;
-    const cred = await auth.createUserWithEmailAndPassword(String(email || "").trim(), password);
-    return profile(cred.user);
-  }
-
   /* ── Username accounts ────────────────────────────────────────────────────
      Firebase Auth signs in with an email, full stop — there is no username
      provider. Two ways to fake one:
@@ -384,14 +382,23 @@ const Cloud = (() => {
         createdAt: Date.now(),
       });
     } catch (err) {
-      try { await u.delete(); } catch (_) {}
+      /* 계정을 되돌리는 이 delete() 자체가 실패하면, 사용자는 아이디도 못
+         쓰고(예약 실패) 이메일로 재가입도 안 되는(계정은 살아있으므로)
+         상태로 남습니다. 원래 에러(username-taken)를 던지는 건 맞지만,
+         되돌리기 실패는 조용히 삼키지 않고 남겨서 나중에 "가입도 재가입도
+         안 된다" 는 문의가 오면 원인을 바로 찾을 수 있게 합니다. */
+      try { await u.delete(); } catch (rollbackErr) {
+        console.warn("[fitlog] signUpUsername: failed to roll back auth account after reservation failure", rollbackErr);
+      }
       const e = new Error("taken");
       e.code = "fitlog/username-taken";
       throw e;
     }
 
     const displayName = (prof && prof.name) ? String(prof.name).trim() : id;
-    try { await u.updateProfile({ displayName }); } catch (_) {}
+    try { await u.updateProfile({ displayName }); } catch (err) {
+      console.warn("[fitlog] signUpUsername: updateProfile(displayName) failed, continuing", err);
+    }
     /* 이 쓰기가 실패하면 아이디 예약과 인증 계정만 남습니다. 그러면 사용자는
        같은 아이디로 다시 가입할 수 없고("이미 사용 중인 아이디입니다" — 자기
        이름인데), 같은 이메일로도 못 합니다("이미 가입된 이메일입니다").
@@ -405,8 +412,14 @@ const Cloud = (() => {
         createdAt: Date.now(),
       }, { merge: true });
     } catch (err) {
-      try { await store.collection("usernames").doc(id).delete(); } catch (_) {}
-      try { await u.delete(); } catch (_) {}
+      /* 되돌리기 두 단계 중 하나라도 실패하면 아이디/계정이 고아 상태로
+         남는다는 뜻이라, 로그가 없으면 발견할 방법이 없습니다. */
+      try { await store.collection("usernames").doc(id).delete(); } catch (rollbackErr) {
+        console.warn("[fitlog] signUpUsername: failed to release reserved username after profile write failure", id, rollbackErr);
+      }
+      try { await u.delete(); } catch (rollbackErr) {
+        console.warn("[fitlog] signUpUsername: failed to roll back auth account after profile write failure", rollbackErr);
+      }
       throw err;
     }
 
@@ -550,16 +563,6 @@ const Cloud = (() => {
     await store.collection("users").doc(u.uid).set({ routines: clean }, { merge: true });
   }
 
-  async function loadRoutines(forUid) {
-    if (!store) return [];
-    const id = forUid || uid();
-    if (!id) return [];
-    const snap = await store.collection("users").doc(id).get();
-    if (!snap.exists) return [];
-    const rows = (snap.data() || {}).routines;
-    return Array.isArray(rows) ? rows : [];
-  }
-
   /* 몸무게 기록도 문서 하나에 들어갈 만큼 작습니다. 하루 한 줄, 2년이면
      700줄 남짓이라 넉넉합니다. */
   async function saveMetrics(rows) {
@@ -570,16 +573,6 @@ const Cloud = (() => {
       weightKg: Number(r.weightKg) || 0,
     })).filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.date) && r.weightKg > 0);
     await store.collection("users").doc(u.uid).set({ metrics: clean }, { merge: true });
-  }
-
-  async function loadMetrics(forUid) {
-    if (!store) return [];
-    const id = forUid || uid();
-    if (!id) return [];
-    const snap = await store.collection("users").doc(id).get();
-    if (!snap.exists) return [];
-    const rows = (snap.data() || {}).metrics;
-    return Array.isArray(rows) ? rows : [];
   }
 
   async function saveProfile(prof) {
@@ -593,7 +586,15 @@ const Cloud = (() => {
     const patch = { profile: clean, updatedAt: Date.now() };
     if (clean.name) patch.displayName = clean.name;
     await store.collection("users").doc(u.uid).set(patch, { merge: true });
-    if (clean.name) { try { await u.updateProfile({ displayName: clean.name }); } catch (_) {} }
+    if (clean.name) {
+      try { await u.updateProfile({ displayName: clean.name }); } catch (err) {
+        /* Firestore 쪽(patch)은 이미 저장됐으니 실패해도 앱 데이터는
+           멀쩡합니다 — Auth 쪽 표시 이름만 구버전으로 남는 사소한 불일치라
+           throw 하지는 않지만, 왜 화면 이름이 안 바뀌었는지 추적할 수 있게
+           남깁니다. */
+        console.warn("[fitlog] saveProfile: auth updateProfile(displayName) failed", err);
+      }
+    }
     return clean;
   }
 
@@ -680,8 +681,8 @@ const Cloud = (() => {
   }
 
   /* 루틴과 몸무게는 users/{uid} 문서 한 곳에 들어 있으므로 여기서 같이 읽습니다.
-     loadRoutines()/loadMetrics()를 따로 부르면 같은 문서를 두 번 읽게 되고,
-     무료 요금제의 하루 읽기 수를 이유 없이 두 배로 씁니다. */
+     둘을 따로 읽는 함수를 두면 같은 문서를 두 번 읽게 되어 무료 요금제의
+     하루 읽기 수를 이유 없이 두 배로 씁니다 — 그래서 이 한 곳에서만 읽습니다. */
   async function pullAll() {
     const sessionsCol = userCol("sessions");
     const customCol = userCol("customExercises");
@@ -751,7 +752,12 @@ const Cloud = (() => {
       const snap = await store.collection("users").doc(u.uid).get();
       const name = snap.exists ? (snap.data() || {}).username : "";
       if (name) await store.collection("usernames").doc(name).delete();
-      try { await store.collection("users").doc(u.uid).delete(); } catch (_) {}
+      /* 아이디 예약은 이미 풀렸으니 계정 삭제를 막을 이유는 없지만, 이
+         문서 삭제만 실패하면 users/{uid} 가 고아로 남습니다 — 로그를 남겨
+         나중에 추적할 수 있게 합니다. */
+      try { await store.collection("users").doc(u.uid).delete(); } catch (err) {
+        console.warn("[fitlog] deleteAccountAndData: failed to delete users/" + u.uid + " doc", err);
+      }
     }
     await u.delete();
   }
@@ -783,7 +789,6 @@ const Cloud = (() => {
     signInGoogle,
     completeRedirect,
     signInEmail,
-    signUpEmail,
     signInUsername,
     signUpUsername,
     claimUsername,
@@ -798,9 +803,7 @@ const Cloud = (() => {
     resolveResetTarget,
     saveProfile,
     saveRoutines,
-    loadRoutines,
     saveMetrics,
-    loadMetrics,
     loadProfile,
     signOut,
     touchProfile,
