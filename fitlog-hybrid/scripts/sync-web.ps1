@@ -31,7 +31,10 @@ $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repo = Split-Path -Parent $here
 if (-not $Source) {
-    $Source = Join-Path (Split-Path -Parent $repo) 'fitlog-main'
+    # 웹 원본은 이 저장소의 부모(= 저장소 루트)에 그대로 있습니다. 예전에는 옆에
+    # fitlog-main 폴더를 따로 두었는데, 사본이 둘로 갈라지면서 웹만 고쳐지고 앱은
+    # 옛 파일로 빌드되는 일이 생겨 하나로 합쳤습니다.
+    $Source = Split-Path -Parent $repo
 }
 $dest = Join-Path $repo 'android\app\src\main\assets\web'
 
@@ -48,7 +51,9 @@ $exclude = @(
     'firebase.json', '.firebaserc', 'firestore.rules', 'firestore.indexes.json',
     '.gitignore', '.nojekyll', 'README.md'
 )
-$excludeDirs = @('.git', '.github')
+# fitlog-hybrid 는 이 스크립트가 들어 있는 앱 프로젝트 자신입니다. 빼지 않으면
+# 안드로이드 프로젝트가 통째로 APK 의 assets 안으로 들어갑니다.
+$excludeDirs = @('.git', '.github', 'fitlog-hybrid')
 if ($NoMedia) { $excludeDirs += 'media' }
 
 if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }

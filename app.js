@@ -1256,7 +1256,14 @@ const APP_VERSION = (() => {
   function restoreRestTimer() {
     if (!restTimerOn()) return;
     let saved = null;
-    try { saved = JSON.parse(localStorage.getItem(REST_KEY) || 'null'); } catch (_) {}
+    /* 네이티브 껍데기 안에서는 네이티브가 들고 있는 타이머가 진실입니다.
+       앱이 완전히 죽어 있는 동안에도 계속 돌던 쪽이 그쪽이고, localStorage 는
+       마지막으로 화면이 살아 있던 순간에 멈춰 있습니다. 네이티브가 없거나
+       네이티브에도 남은 게 없으면 지금까지처럼 localStorage 를 봅니다. */
+    if (window.FitLogNative && window.FitLogNative.ok) {
+      try { saved = window.FitLogNative.pending(); } catch (_) {}
+    }
+    if (!saved) { try { saved = JSON.parse(localStorage.getItem(REST_KEY) || 'null'); } catch (_) {} }
     if (!saved || !saved.endsAt) return;
     /* 이미 끝난 타이머는 되살리지 않습니다 — 어제 남은 알림이 오늘 뜨면
        그게 더 이상합니다. */
@@ -1271,6 +1278,10 @@ const APP_VERSION = (() => {
   }
 
   async function showRestNotification(title, body, silent) {
+    /* 네이티브 껍데기 안에서는 알림을 네이티브가 띄웁니다. 여기서 또 띄우면
+       같은 휴식에 대해 알림이 두 줄 쌓이고, 웹 쪽 알림은 앱이 화면 밖으로
+       나가면 어차피 정확한 시각에 울리지도 못합니다. */
+    if (window.FitLogNative && window.FitLogNative.ownsNotifications) return;
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
     const opts = {
       body, tag: 'fitlog-rest', renotify: !silent, silent: !!silent,
@@ -1300,6 +1311,13 @@ const APP_VERSION = (() => {
     state.restTimer = { endsAt: Date.now() + seconds * 1000, duration: seconds, label: label || '', setId: setId || '', chimed: false };
     saveRestTimer();
     renderRestTimerBar();
+    /* 네이티브가 있으면 여기서 손을 뗍니다. 끝나는 시각을 넘겨 주면 그 뒤는
+       OS 가 책임집니다 — 앱을 완전히 닫아도, 화면이 꺼져 있어도 정확히 그
+       시각에 울립니다. 아래 웹 알림 경로는 네이티브가 없을 때만 씁니다. */
+    if (window.FitLogNative && window.FitLogNative.ok) {
+      window.FitLogNative.startRest(state.restTimer);
+      return;
+    }
     /* Ask once, lazily, only when the feature is actually used — so a background
        notification can fire if the user switches tabs/apps while resting. Never
        re-prompt if they dismissed or denied it. */
@@ -1337,12 +1355,16 @@ const APP_VERSION = (() => {
     if (rt.endsAt > Date.now()) rt.chimed = false;   // 다시 재는 중이면 종료 알림도 다시
     saveRestTimer();
     renderRestTimerBar();
+    /* ±15 는 끝나는 시각을 옮기는 일입니다. 네이티브에 예약해 둔 알림도 같이
+       옮겨 주지 않으면, 화면은 1:45 인데 알림은 1:30 에 울립니다. */
+    if (window.FitLogNative && window.FitLogNative.ok) window.FitLogNative.updateRest(rt);
     pushRestNotification();
   }
 
   function cancelRestTimer() {
     state.restTimer = null;
     saveRestTimer();
+    if (window.FitLogNative && window.FitLogNative.ok) window.FitLogNative.stopRest();
     clearRestNotification();
     document.querySelector('.rest-timer-bar')?.remove();
     document.body.classList.remove('has-rest-timer');
@@ -1422,6 +1444,20 @@ const APP_VERSION = (() => {
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden && state.restTimer) renderRestTimerBar();
     });
+    /* 네이티브에서 오는 두 가지 소식을 받습니다. 끝났다는 소식은 없어도
+       250ms 뒤 틱이 알아서 알아채지만, 알림을 눌러 앱이 막 깨어난 순간에는
+       이걸 받아야 화면이 곧바로 맞습니다. 껐다는 소식은 반드시 필요합니다 —
+       네이티브 알림에서 끈 휴식이 웹 화면에만 계속 남아 있으면 안 됩니다. */
+    if (window.FitLogNative && window.FitLogNative.ok) {
+      window.FitLogNative.onFinish(() => { if (state.restTimer) renderRestTimerBar(); });
+      window.FitLogNative.onCancel(() => {
+        /* 이미 네이티브가 스스로 끈 상태라 stopRest 를 되쏘지 않습니다. */
+        state.restTimer = null;
+        saveRestTimer();
+        document.querySelector('.rest-timer-bar')?.remove();
+        document.body.classList.remove('has-rest-timer');
+      });
+    }
   }
 
   /* ── Navigation ─────────────────────────── */
