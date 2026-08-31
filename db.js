@@ -197,14 +197,7 @@ const WorkoutDB = (() => {
     const db = await open();
     const tx = db.transaction("metrics", "readonly");
     const rows = await requestToPromise(tx.objectStore("metrics").getAll());
-    /* getAllSessions() 와 같은 이유입니다 — date 가 문자열이 아닌 행이
-       섞이면 localeCompare 가 TypeError 를 던지고, 그 예외가 loadWorkspace
-       까지 올라가 앱이 아예 안 열립니다. 몸무게 기록 하나가 이상하다고
-       전체 앱이 막히면 안 되므로 이상한 행은 조용히 걸러내고 나머지를
-       보여 줍니다. */
-    return (rows || [])
-      .filter(r => r && typeof r.date === "string")
-      .sort((a, b) => a.date.localeCompare(b.date));
+    return (rows || []).sort((a, b) => a.date.localeCompare(b.date));
   }
 
   async function putMetric(row) {
@@ -214,14 +207,16 @@ const WorkoutDB = (() => {
     return txDone(tx);
   }
 
+  async function deleteMetric(date) {
+    const db = await open();
+    const tx = db.transaction("metrics", "readwrite");
+    tx.objectStore("metrics").delete(date);
+    return txDone(tx);
+  }
+
   async function replaceAll(sessions, customExercises) {
     const db = await open();
     const tx = db.transaction(["sessions", "customExercises"], "readwrite");
-    /* clear() 든 put() 이든 이 트랜잭션 안의 요청 하나가 실패하면 IndexedDB
-       가 트랜잭션 전체를 abort 시킵니다 — sessions 는 지워지고
-       customExercises 만 남는 식의 절반짜리 결과는 스펙상 나오지 않습니다.
-       다만 txDone() 이 reject 될 수 있으므로, 호출자(importAll)가 실패를
-       "가져오기 실패" 로 분명히 알 수 있도록 에러를 그대로 던집니다. */
     tx.objectStore("sessions").clear();
     tx.objectStore("customExercises").clear();
     for (const session of sessions || []) {
@@ -230,12 +225,7 @@ const WorkoutDB = (() => {
     for (const exercise of customExercises || []) {
       if (exercise && exercise.id) tx.objectStore("customExercises").put(exercise);
     }
-    try {
-      return await txDone(tx);
-    } catch (err) {
-      console.warn("[fitlog] replaceAll transaction failed, no data was changed:", err);
-      throw err;
-    }
+    return txDone(tx);
   }
 
   /* 백업에는 저장소 네 곳이 전부 들어가야 합니다.
@@ -247,11 +237,8 @@ const WorkoutDB = (() => {
     const [sessions, customExercises, routines, metrics] = await Promise.all([
       getAllSessions(),
       getCustomExercises(),
-      /* 루틴/몸무게 로드 실패로 세션 백업 전체가 막히면 안 되므로 빈 배열로
-         넘어가되, 콘솔에는 남겨 "내보내기 완료" 파일에 왜 루틴이 0개인지
-         나중에 추적할 수 있게 합니다. */
-      getRoutines().catch((err) => { console.warn("[fitlog] exportAll: getRoutines failed, exporting 0 routines:", err); return []; }),
-      getMetrics().catch((err) => { console.warn("[fitlog] exportAll: getMetrics failed, exporting 0 metrics:", err); return []; }),
+      getRoutines().catch(() => []),
+      getMetrics().catch(() => []),
     ]);
     return {
       version: 2,
@@ -300,45 +287,20 @@ const WorkoutDB = (() => {
 
     /* 루틴과 몸무게는 버전 2 백업부터 들어 있습니다. 옛 백업에는 없으므로,
        없으면 지우지 않고 그냥 둡니다 — 없는 걸 가져왔다고 있던 걸 지우면
-       안 됩니다.
-       개별 put() 이 하나 실패해도(예: 저장 공간 부족) 나머지 항목은 계속
-       시도하고, 실제로 몇 개가 들어갔는지와 실패 건수를 반환값에 남깁니다
-       — 이전에는 실패가 조용히 삼켜져서 "가져오기 완료" 라고만 뜨고 정작
-       루틴 절반이 안 들어간 걸 알 방법이 없었습니다. */
-    let routinesOk = 0, routinesFailed = 0;
+       안 됩니다. */
     if (Array.isArray(payload.routines)) {
       for (const r of payload.routines) {
-        if (!(r && typeof r.id === "string" && r.id)) continue;
-        try {
-          await putRoutine(r);
-          routinesOk++;
-        } catch (err) {
-          routinesFailed++;
-          console.warn("[fitlog] importAll: failed to import routine", r.id, err);
-        }
+        if (r && typeof r.id === "string" && r.id) await putRoutine(r);
       }
     }
-    let metricsOk = 0, metricsFailed = 0;
     if (Array.isArray(payload.metrics)) {
       for (const m of payload.metrics) {
-        if (!(m && typeof m.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(m.date) && Number(m.weightKg) > 0)) continue;
-        try {
+        if (m && typeof m.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(m.date) && Number(m.weightKg) > 0) {
           await putMetric({ date: m.date, weightKg: Number(m.weightKg) });
-          metricsOk++;
-        } catch (err) {
-          metricsFailed++;
-          console.warn("[fitlog] importAll: failed to import metric", m.date, err);
         }
       }
     }
-    return {
-      sessions: sessions.length,
-      customExercises: customExercises.length,
-      routines: routinesOk,
-      routinesFailed,
-      metrics: metricsOk,
-      metricsFailed,
-    };
+    return { sessions: sessions.length, customExercises: customExercises.length };
   }
 
   /* 옮겨올 데이터를 '읽기만' 하는 용도입니다. 버전을 지정하면 그 DB 를
@@ -347,13 +309,8 @@ const WorkoutDB = (() => {
   function openNamed(name) {
     return new Promise((resolve) => {
       const req = indexedDB.open(name);
-      /* 실패해도 호출자에게는 여전히 null 을 돌려줍니다 — readLegacy/readGuest
-         쪽에서 "옮겨올 게 없다" 와 "열지 못했다" 를 구분해 처리하지 않기
-         때문입니다. 다만 콘솔에는 남겨서, 데이터가 안 옮겨졌을 때 저장 공간
-         부족이나 다른 탭의 버전 충돌처럼 원인이 있었는지 나중에 확인할 수
-         있게 합니다. */
-      req.onerror = () => { console.warn(`[fitlog] openNamed(${name}) failed:`, req.error); resolve(null); };
-      req.onblocked = () => { console.warn(`[fitlog] openNamed(${name}) blocked by another tab`); resolve(null); };
+      req.onerror = () => resolve(null);
+      req.onblocked = () => resolve(null);
       req.onsuccess = () => resolve(req.result);
     });
   }
@@ -418,6 +375,7 @@ const WorkoutDB = (() => {
     deleteRoutine,
     getMetrics,
     putMetric,
+    deleteMetric,
     replaceAll,
     exportAll,
     importAll,
