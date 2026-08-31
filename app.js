@@ -4053,12 +4053,13 @@ const APP_VERSION = (() => {
     showSyncIndicator();
     const shownAt = Date.now();
     try {
+      /* 저장 큐를 먼저 비웁니다. 안 그러면 방금 체크한 세트가 디스크에
+         닿기도 전에 옛 목록을 읽어 화면을 덮습니다. 열린 기록은 디스크
+         것으로 갈아끼우지 않습니다 — 그게 기록을 지우던 경로입니다. */
+      try { await persist(); } catch (_) {}
       state.sessions = await WorkoutDB.getAllSessions();
       state.customExercises = await WorkoutDB.getCustomExercises();
-      if (!state.editingPast) {
-        const saved = await WorkoutDB.getSession(state.date);
-        if (saved) state.session = normalizeSession(saved);
-      }
+      applyOpenSessionToList();
       render();
     } catch (err) {
       console.warn('local refresh failed', err);
@@ -5508,6 +5509,29 @@ const APP_VERSION = (() => {
     if (file) await importJson(file);
   });
 
+  /* 지금 화면에 열린 기록은 메모리가 최신입니다. 디스크/클라우드 합친
+     결과 위에 덮어, replaceAll 이 방금 입력한 세트를 지우지 않게 합니다.
+     과거 편집(editingPast)은 아직 저장 전이라 디스크에 올리지 않습니다. */
+  function overlayOpenSession(rows) {
+    if (!state.session || !state.session.date || state.editingPast) return rows;
+    const live = clone(state.session);
+    if (!live.updatedAt) live.updatedAt = Date.now();
+    const map = new Map();
+    for (const row of rows || []) {
+      if (row && typeof row.date === 'string') map.set(row.date, row);
+    }
+    map.set(live.date, live);
+    return [...map.values()].sort((a, b) => b.date.localeCompare(a.date));
+  }
+  function applyOpenSessionToList() {
+    if (!state.session || !state.session.date || state.editingPast) return;
+    const copy = clone(state.session);
+    const idx = state.sessions.findIndex(x => x.date === copy.date);
+    if (idx >= 0) state.sessions[idx] = copy;
+    else state.sessions.push(copy);
+    state.sessions.sort((a, b) => b.date.localeCompare(a.date));
+  }
+
   function mergeByDate(localRows, cloudRows) {
     const map = new Map();
     for (const row of localRows || []) {
@@ -5862,17 +5886,26 @@ const APP_VERSION = (() => {
        동기화까지 띄우면 상단에 계속 앉아 있는 것처럼 보입니다. */
     if (fromPull) showSyncIndicator();
     try {
+      /* 클라우드를 받기 전·후에 저장 큐를 비우고, 디스크는 네트워크가
+         끝난 뒤에 다시 읽습니다. 예전에 시작 시점 스냅샷으로 replaceAll
+         하면, 그 사이 persist 된 세트가 통째로 사라졌습니다. */
+      try { await persist(); } catch (_) {}
+      if (!stillMe()) return;
       await withTimeout(Cloud.touchProfile(), 8000, '프로필');
       if (!stillMe()) return;
       let cloudData = await withTimeout(Cloud.pullAll(), 12000, '불러오기');
       if (!stillMe()) return;
       /* Detect only — importing is the user's call, made from the home screen. */
       state.pendingImport = await detectImportableLocal(cloudData);
+      try { await persist(); } catch (_) {}
+      if (!stillMe()) return;
       const localSessions = await WorkoutDB.getAllSessions();
       const localCustom = await WorkoutDB.getCustomExercises();
       if (!stillMe()) return;
-      const sessions = mergeByDate(localSessions, cloudData.sessions);
+      let sessions = mergeByDate(localSessions, cloudData.sessions);
+      sessions = overlayOpenSession(sessions);
       const customExercises = mergeCustom(localCustom, cloudData.customExercises);
+      if (!stillMe()) return;
       await WorkoutDB.replaceAll(sessions, customExercises);
       if (!stillMe()) return;
       await withTimeout(Cloud.pushAll(sessions, customExercises), 15000, '저장');
@@ -5901,14 +5934,10 @@ const APP_VERSION = (() => {
       state.sessions = await WorkoutDB.getAllSessions();
       state.customExercises = await WorkoutDB.getCustomExercises();
       /* 과거 기록을 고치는 중이면 손대지 않습니다. 그 편집은 일부러 저장을
-         미뤄 state.session 에만 있고 디스크에는 없습니다(persist 가 pastDirty
-         만 세우고 돌아갑니다). 여기서 디스크 것으로 덮으면 방금 고친 무게가
-         화면에서 사라지고, 저장 바는 여전히 "저장하지 않은 변경이 있습니다"
-         라고 하며, 저장을 누르면 되돌아간 값이 그대로 기록됩니다. */
-      if (!state.editingPast) {
-        const saved = await WorkoutDB.getSession(state.date);
-        if (saved) state.session = normalizeSession(saved);
-      }
+         미뤄 state.session 에만 있고 디스크에는 없습니다. 오늘 기록도
+         디스크 것으로 덮지 않습니다 — 동기화 중에 입력한 세트가 화면에서
+         사라집니다. 목록만 열린 세션과 맞춥니다. */
+      applyOpenSessionToList();
 
       render();
     } catch (err) {
