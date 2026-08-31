@@ -69,6 +69,53 @@ const APP_VERSION = (() => {
     ]);
   }
 
+  /* ── 테마 ────────────────────────────────────────────────────────────────
+     'auto' 는 아무것도 안 하는 상태입니다 — data-theme 속성을 지우면 CSS 의
+     prefers-color-scheme 이 시스템 설정을 그대로 따릅니다. 'light'/'dark' 는
+     그 위에 속성으로 덮어씁니다(속성 선택자가 미디어쿼리보다 우선합니다). */
+  const THEME_MODES = ['auto', 'light', 'dark'];
+
+  function initTheme() {
+    let saved = null;
+    try { saved = localStorage.getItem('fitlog-theme-mode'); } catch (_) {}
+    state.themeMode = THEME_MODES.includes(saved) ? saved : 'auto';
+    applyTheme();
+    /* auto 로 두고 해가 지면(또는 시스템이 밤에 자동 전환되면) 앱을 다시
+       열지 않아도 색이 따라갑니다. CSS 는 알아서 바뀌지만 주소창 색은
+       JS 가 다시 칠해 줘야 합니다. */
+    try {
+      window.matchMedia('(prefers-color-scheme: light)')
+        .addEventListener('change', () => { if (state.themeMode === 'auto') applyTheme(); });
+    } catch (_) {}
+  }
+
+  /* 지금 실제로 보이는 테마 — 'auto' 면 시스템 설정을 읽습니다. */
+  function effectiveTheme() {
+    if (state.themeMode !== 'auto') return state.themeMode;
+    try { return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'; }
+    catch (_) { return 'dark'; }
+  }
+
+  function applyTheme() {
+    const html = document.documentElement;
+    if (state.themeMode === 'auto') html.removeAttribute('data-theme');
+    else html.setAttribute('data-theme', state.themeMode);
+
+    /* 주소창·상태바 색도 같이 맞춥니다. 이게 없으면 라이트 화면 위에 검은
+       상태바가 남아 앱이 반쯤만 바뀐 것처럼 보입니다. */
+    try {
+      const meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute('content', effectiveTheme() === 'light' ? '#FAFBFC' : '#09090D');
+    } catch (_) {}
+  }
+
+  function setThemeMode(mode) {
+    if (!THEME_MODES.includes(mode)) return;
+    state.themeMode = mode;
+    try { localStorage.setItem('fitlog-theme-mode', mode); } catch (_) {}
+    applyTheme();
+  }
+
   /* ── State ──────────────────────────────── */
   const state = {
     tab: 'home',
@@ -167,6 +214,12 @@ const APP_VERSION = (() => {
        through the normal render() innerHTML swap, so a live countdown can't steal
        focus from a numpad or input the user is mid-edit on. */
     restTimer: null,
+
+    /* Theme mode: 'auto' | 'light' | 'dark' */
+    themeMode: 'auto',
+
+    /* Accordion states for exercise cards — { exId: true/false } */
+    expandedExercises: {},
   };
 
   const REST_PRESETS = [30, 60, 90, 120, 180];
@@ -445,55 +498,10 @@ const APP_VERSION = (() => {
     return { kg, reps, orm: epley1RM(kg, reps) };
   }
 
-  /* 이 운동의 지금까지 최고 기록. beforeDate 를 주면 그 날은 빼고 셉니다
-     (오늘 세트가 오늘의 다른 세트에 밀려 기록이 아닌 것으로 판정되면
-     곤란하므로, 판정할 때는 항상 오늘을 빼고 봅니다). */
-  function personalBest(name, beforeDate) {
-    let best = null;
-    for (const s of state.sessions) {
-      if (beforeDate && s.date >= beforeDate) continue;
-      for (const ex of s.exercises || []) {
-        if (ex.name !== name) continue;
-        for (const st of ex.sets || []) {
-          if (!st.done) continue;
-          const sc = setScore(st);
-          if (!sc) continue;
-          if (!best || sc.kg > best.kg) best = { ...sc, date: s.date, kind: 'kg' };
-        }
-      }
-    }
-    return best;
-  }
-
-  function bestOrm(name, beforeDate) {
-    let best = 0;
-    for (const s of state.sessions) {
-      if (beforeDate && s.date >= beforeDate) continue;
-      for (const ex of s.exercises || []) {
-        if (ex.name !== name) continue;
-        for (const st of ex.sets || []) {
-          if (!st.done) continue;
-          const sc = setScore(st);
-          if (sc && sc.orm > best) best = sc.orm;
-        }
-      }
-    }
-    return best;
-  }
-
-  /* 방금 완료한 세트가 기록을 깼는지. 깼으면 무엇을 깼는지 돌려줍니다. */
-  function checkPR(ex, set, date) {
-    const sc = setScore(set);
-    if (!sc) return null;
-    const prevKg = personalBest(ex.name, date);
-    const prevOrm = bestOrm(ex.name, date);
-    /* 첫 기록은 PR 로 치지 않습니다. 처음 한 것은 전부 최고 기록이라
-       축하가 의미를 잃습니다. */
-    if (!prevKg && !prevOrm) return null;
-    if (sc.kg > (prevKg ? prevKg.kg : 0)) return { type: 'kg', kg: sc.kg, reps: sc.reps, prev: prevKg ? prevKg.kg : 0 };
-    if (sc.orm > prevOrm + 0.01) return { type: 'orm', kg: sc.kg, reps: sc.reps, orm: sc.orm, prev: prevOrm };
-    return null;
-  }
+  /* 세트를 완료할 때 하던 실시간 PR 판정(personalBest / bestOrm / checkPR)은
+     걷어냈습니다. 화면 어디에도 그 결과를 쓰지 않는데 세트를 체크할 때마다
+     전체 기록을 두 번 훑고 있었습니다. 운동별 최고 기록은 아래
+     allPersonalBests() 가 히스토리의 "개인 기록" 카드에서 한 번에 계산합니다. */
 
   /* 운동별 최고 기록 목록 — 히스토리의 "개인 기록" 카드에서 씁니다. */
   function allPersonalBests() {
@@ -664,37 +672,22 @@ const APP_VERSION = (() => {
   }
 
   /* ── 변화 읽기 ───────────────────────────────────────────────────────────
-     "볼륨이 12% 늘었다" 같은 숫자만으로는 무슨 일이 있었는지 모릅니다.
-     세트를 더 했는지, 같은 세트에 무게를 올렸는지, 아니면 세트를 줄이고
-     무게만 올렸는지가 전혀 다른 이야기인데 볼륨 하나로는 구분이 안 됩니다.
+     전부 세트 기준입니다. 예전에는 볼륨과 부위별 최고 중량까지 섞어 문장을
+     만들었는데, 그 두 숫자는 이제 화면 어디에도 없습니다 — 근거가 보이지
+     않는 "볼륨이 12% 늘었어요" 는 사용자가 확인할 방법이 없는 말입니다.
 
-     그래서 세 가지를 같이 봅니다 — 세트 수, 볼륨, 최대 중량. 셋의 방향
-     조합으로 실제로 무슨 일이 있었는지 문장을 만듭니다. */
+     부위 단위의 최고 중량은 애초에 읽을 값이 아니기도 합니다: '가슴 최고
+     100kg' 이 벤치프레스인지 케이블 플라이인지에 따라 뜻이 완전히 달라지고,
+     그건 "개인 기록" 카드가 운동별로 이미 정확히 보여 줍니다. */
   function readChange(now, before) {
     const dSets = pctChange(now.setsPerWeek, before.setsPerWeek);
-    const dVol  = pctChange(now.volPerWeek, before.volPerWeek);
-    const dKg   = now.maxKg - before.maxKg;
     const up = v => v != null && v >= 8;
     const down = v => v != null && v <= -8;
-    const flat = v => v != null && !up(v) && !down(v);
 
     if (!before.sets && now.sets) return { tone: 'good', text: '새로 시작했어요' };
     if (before.sets && !now.sets)  return { tone: 'bad',  text: `${ANALYSIS_WEEKS}주째 안 했어요` };
-
-    if (down(dSets) && up(dVol))
-      return { tone: 'good', text: `세트는 줄었는데 볼륨은 ${dVol}% 늘었어요 — 무게를 올렸네요` };
-    if (up(dSets) && down(dVol))
-      return { tone: 'warn', text: `세트는 늘었는데 볼륨은 ${Math.abs(dVol)}% 줄었어요 — 무게가 내려갔습니다` };
-    if (up(dVol) && dKg > 0)
-      return { tone: 'good', text: `볼륨 ${dVol}% 증가 · 최고 중량 ${Math.round(toDisplayWeight(dKg))}${weightUnitLabel()} 상승` };
-    if (up(dVol))
-      return { tone: 'good', text: `볼륨이 ${dVol}% 늘었어요` };
-    if (down(dVol))
-      return { tone: 'warn', text: `볼륨이 ${Math.abs(dVol)}% 줄었어요` };
-    if (flat(dVol) && flat(dSets) && dKg === 0)
-      return { tone: 'flat', text: '세트도 무게도 그대로예요' };
-    if (dKg > 0) return { tone: 'good', text: `최고 중량이 ${Math.round(toDisplayWeight(dKg))}${weightUnitLabel()} 올랐어요` };
-    if (dKg < 0) return { tone: 'warn', text: `최고 중량이 ${Math.abs(Math.round(toDisplayWeight(dKg)))}${weightUnitLabel()} 내려갔어요` };
+    if (up(dSets))   return { tone: 'good', text: `세트가 ${dSets}% 늘었어요` };
+    if (down(dSets)) return { tone: 'warn', text: `세트가 ${Math.abs(dSets)}% 줄었어요` };
     return { tone: 'flat', text: '지난 기간과 비슷해요' };
   }
 
@@ -1028,8 +1021,9 @@ const APP_VERSION = (() => {
         '이두와 삼두가 함께 들어가므로, 실제 근육별 세트 수는 여기 숫자보다',
         '적습니다. 단정이 아니라 참고로 보세요.',
         '',
-        '세트 수만으로는 40kg 12세트와 100kg 12세트가 같아 보이므로,',
-        '볼륨(무게 × 횟수)과 최고 중량을 함께 적었습니다.',
+        '이 카드는 세트 수만 봅니다. 40kg 12세트와 100kg 12세트가 같게',
+        '읽힌다는 뜻이니, 무게가 어떻게 늘었는지는 "개인 기록" 에서 운동별로',
+        '확인하세요.',
       ].join('\n'),
       confirmText: '알겠어요', cancelText: '',
     });
@@ -2419,7 +2413,7 @@ const APP_VERSION = (() => {
     if (todaySess) {
       const parts = sessionPartIds(todaySess).map(id=>{
         const p = PARTS.find(x=>x.id===id);
-        return p ? `<span class="muscle-tag" style="background:color-mix(in srgb,${p.color} 16%,var(--surface-2));color:${p.color}">${p.label}</span>` : '';
+        return p ? `<span class="muscle-tag part" style="--pc:${p.color}">${p.label}</span>` : '';
       }).join('');
       /* The whole card is the tap target — looking at what you did is the far
          more common intent than editing it, and 편집 stays one tap away inside.
@@ -2571,7 +2565,7 @@ const APP_VERSION = (() => {
       if (!shown.includes(part.id)) continue;
       const exercises = s.exercises.filter(e => e.part === part.id);
       blocks += `<div class="sec-head">
-        <div class="sec-title" style="color:${part.color}">${part.label}</div>
+        <div class="sec-title part-title" style="--pc:${part.color}">${part.label}</div>
         <button class="btn-add-sm" data-act="open-picker" data-part="${part.id}">+ 운동 추가</button>
       </div>`;
       if (exercises.length) {
@@ -2748,8 +2742,8 @@ const APP_VERSION = (() => {
             const val = hold
               ? `${esc(String(reps))}<i>초</i>`
               : `${esc(String(kg))}<i>${weightUnitLabel()}</i> × ${esc(String(reps))}`;
-            return `<span class="dsum-set${warm ? ' warm' : ''}${set.done ? ' done' : ''}${set.pr ? ' pr' : ''}">
-              <b>${warm ? 'W' : workingNo}</b>${val}${set.pr ? '<em>PR</em>' : ''}
+            return `<span class="dsum-set${warm ? ' warm' : ''}${set.done ? ' done' : ''}">
+              <b>${warm ? 'W' : workingNo}</b>${val}
             </span>`;
           }).join('');
           const p = exProgress(ex);
@@ -2781,7 +2775,7 @@ const APP_VERSION = (() => {
                    : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>진행 중`}
           </div>
           <div class="dsum-parts">${orderedParts(sessionPartIds(s)).map(p =>
-            `<span class="muscle-tag" style="background:color-mix(in srgb,${p.color} 16%,var(--surface-2));color:${p.color}">${p.label}</span>`
+            `<span class="muscle-tag part" style="--pc:${p.color}">${p.label}</span>`
           ).join('')}</div>
           <div class="dsum-stats">
             <div><b>${(s.exercises || []).length}</b><span>운동</span></div>
@@ -2867,7 +2861,6 @@ const APP_VERSION = (() => {
           <span class="val-chip-num">${reps}</span>
           <span class="val-chip-unit">${hold ? '초' : '회'}</span>
         </button>
-        ${set.pr ? '<span class="pr-flag" title="개인 기록">PR</span>' : ''}
         <button class="done-toggle${done?' done':''}" data-act="toggle-done" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="세트 완료">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
         </button>
@@ -2881,13 +2874,20 @@ const APP_VERSION = (() => {
     if (prog.total) metaBits.push(`${prog.done}/${prog.total} 세트`);
     const exEnter = pendingEnterExIds.has(ex.id) ? ' enter' : '';
 
-    return `<article class="ex-card${allDone?' all-done':''}${exEnter}" data-exid="${esc(ex.id)}">
+    /* 아코디언: 기본은 펼침. 접으면 이름과 "2/3 세트" 만 남아 한 화면에
+       운동이 여러 개 들어옵니다. 화살표는 SVG 하나를 CSS 로 뒤집습니다. */
+    const isExpanded = state.expandedExercises[ex.id] !== false;
+
+    return `<article class="ex-card${allDone?' all-done':''}${exEnter}${isExpanded?' expanded':''}" data-exid="${esc(ex.id)}">
       <div class="ex-card-head">
-        <div style="flex:1;min-width:0">
-          <div class="ex-card-name">${allDone?'<span class="ex-done-tick"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>':''}${esc(ex.name)}</div>
-          ${muscleTags ? `<div class="ex-card-sub">${muscleTags}</div>` : ''}
-          ${metaBits.length ? `<div class="ex-card-meta">${esc(metaBits.join(' · '))}</div>` : ''}
-        </div>
+        <button class="ex-card-toggle" data-act="toggle-ex-accordion" data-ex="${esc(ex.id)}" aria-expanded="${isExpanded}">
+          <span class="ex-card-chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+          <div class="ex-card-titles">
+            <div class="ex-card-name">${allDone?'<span class="ex-done-tick"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>':''}${esc(ex.name)}</div>
+            ${muscleTags ? `<div class="ex-card-sub">${muscleTags}</div>` : ''}
+            ${metaBits.length ? `<div class="ex-card-meta">${esc(metaBits.join(' · '))}</div>` : ''}
+          </div>
+        </button>
         <button class="btn-icon ghost" data-act="show-ex-info" data-exid="${esc(ex.id)}" data-exname="${esc(ex.name)}">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
         </button>
@@ -2895,6 +2895,7 @@ const APP_VERSION = (() => {
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
+      ${isExpanded ? `
       <div class="set-table">
         <div class="set-table-head${hold ? ' hold' : ''}"><span>#</span>${hold ? '' : '<span>무게</span>'}<span>${hold ? '시간' : '횟수'}</span><span>완료</span></div>
         ${sets}
@@ -2902,7 +2903,7 @@ const APP_VERSION = (() => {
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           세트 추가
         </button>
-      </div>
+      </div>` : ''}
     </article>`;
   }
 
@@ -3427,35 +3428,16 @@ const APP_VERSION = (() => {
     const legend = usedParts.map(p =>
       `<span class="ch-leg"><i style="background:${p.color}"></i>${esc(p.label)}</span>`).join('');
 
-    /* ── 총 볼륨 (무게 × 횟수)
-          세트 수는 60kg×10 과 100kg×10 을 똑같이 1세트로 셉니다. 실제로 든
-          무게를 곱해야 힘든 날과 가벼운 날이 구분됩니다. 한 종류라 범례는
-          필요 없습니다 — 제목이 곧 이름입니다. */
-    const maxVol = Math.max(...rows.map(r => r.volume), 1);
-    /* v 는 항상 kg 기준 볼륨입니다 — 표시 직전에 지금 단위로 바꿉니다.
-       'kg' 일 때만 1000kg 단위 't' 로 줄여 씁니다. lb 는 그런 관용 단위가
-       없어 그냥 큰 수(콤마 포함)로 보여줍니다. */
-    const fmtVol = v => {
-      const dv = Math.round(toDisplayWeight(v));
-      return (unitWeight() === 'kg' && dv >= 10000) ? `${(dv / 1000).toFixed(1)}t` : fmtNum(dv);
-    };
-    const volBars = rows.map((r, i) => {
-      const x = PAD_L + slot * i + (slot - bw) / 2;
-      const h = r.volume ? Math.max(3, (r.volume / maxVol) * plotH) : 0;
-      const y = PAD_T + plotH - h;
-      return bar(x, y, bw, h, 'var(--vol-color)', 4)
-        + (r.volume ? `<text x="${x + bw / 2}" y="${y - 4}" class="ch-val">${fmtVol(r.volume)}</text>` : '')
-        + `<title>${r.label} · ${fmtNum(Math.round(toDisplayWeight(r.volume)))}${weightUnitLabel()}</title>`;
-    }).join('');
+    /* 총 볼륨 그래프는 뺐습니다 — 그리던 코드도 같이 지웁니다. 남겨 두면
+       화면에 없는 값을 매 렌더마다 계산하고, 다음에 이 함수를 읽는 사람이
+       "이 막대는 어디에 그려지지?" 를 한참 찾게 됩니다. */
 
     const totKm = rows.reduce((a, r) => a + r.km, 0);
     const totSets = rows.reduce((a, r) => a + r.total, 0);
     const totDays = rows.reduce((a, r) => a + r.days, 0);
 
-    /* 요약 줄에서는 총 볼륨을 뺐습니다 — 아래 "총 볼륨" 그래프와 같은
-       숫자가 중복으로 두 번 나오고 있었습니다. 세트 수만으로는 가벼운
-       날/무거운 날이 안 구분된다는 총 볼륨 자체의 쓸모는 그대로라
-       그래프는 남깁니다. */
+    /* 요약 줄은 운동일·세트·러닝 세 가지입니다. 볼륨은 요약에서도
+       그래프에서도 뺐습니다. */
     return `<div class="stats-card">
       <div class="stats-head"><div class="sec-title">운동량 추이</div>${toggle}</div>
 
@@ -3468,11 +3450,6 @@ const APP_VERSION = (() => {
       <div class="ch-title">러닝 <span>km</span></div>
       <svg class="ch" viewBox="0 0 ${W} ${H}" role="img" aria-label="${modeLabel}별 러닝 거리">
         ${base}${yLab(maxKm % 1 ? maxKm.toFixed(1) : maxKm)}${runBars}${axis}
-      </svg>
-
-      <div class="ch-title">총 볼륨 <span>무게 × 횟수</span></div>
-      <svg class="ch" viewBox="0 0 ${W} ${H}" role="img" aria-label="${modeLabel}별 총 볼륨">
-        ${base}${yLab(fmtVol(maxVol))}${volBars}${axis}
       </svg>
 
       <div class="ch-title">부위별 세트</div>
@@ -3580,15 +3557,18 @@ const APP_VERSION = (() => {
     const untouched = parts.filter(p => !w.cur[p.id].sets && !w.prev[p.id].sets);
     if (!trained.length) return '';
 
-    const maxVol = Math.max(...trained.map(p => w.cur[p.id].volPerWeek), 1);
+    /* 막대와 화살표도 세트 기준입니다. 볼륨 숫자를 카드에서 뺐으니, 막대
+       길이만 볼륨으로 남겨 두면 "주 5세트" 라고 적힌 줄이 옆줄보다 짧아
+       보이는 이유를 화면 어디에서도 설명하지 못합니다. */
+    const maxSets = Math.max(...trained.map(p => w.cur[p.id].setsPerWeek), 1);
     const rows = trained.map(part => {
       const c = w.cur[part.id], pv = w.prev[part.id];
       const v = volumeVerdict(c.setsPerWeek);
-      const dVol = pctChange(c.volPerWeek, pv.volPerWeek);
-      const arrow = dVol == null ? '' : dVol >= 8 ? `<span class="pa-up">▲${dVol}%</span>`
-                  : dVol <= -8 ? `<span class="pa-down">▼${Math.abs(dVol)}%</span>`
+      const dSets = pctChange(c.setsPerWeek, pv.setsPerWeek);
+      const arrow = dSets == null ? '' : dSets >= 8 ? `<span class="pa-up">▲${dSets}%</span>`
+                  : dSets <= -8 ? `<span class="pa-down">▼${Math.abs(dSets)}%</span>`
                   : `<span class="pa-flat">–</span>`;
-      const width = Math.max(2, Math.round((c.volPerWeek / maxVol) * 100));
+      const width = Math.max(2, Math.round((c.setsPerWeek / maxSets) * 100));
       return `<div class="pa-row">
         <div class="pa-head">
           <span class="dsum-dot" style="background:${part.color}"></span>
@@ -3597,7 +3577,7 @@ const APP_VERSION = (() => {
           ${arrow}
         </div>
         <div class="pa-bar"><span style="width:${width}%;background:${part.color}"></span></div>
-        <div class="pa-meta">주 ${c.setsPerWeek.toFixed(1)}세트 · ${fmtNum(Math.round(toDisplayWeight(c.volPerWeek)))}${weightUnitLabel()}${c.maxKg ? ` · 최고 ${toDisplayWeight(c.maxKg)}${weightUnitLabel()}` : ''}</div>
+        <div class="pa-meta">주 ${c.setsPerWeek.toFixed(1)}세트</div>
       </div>`;
     }).join('');
 
@@ -3897,6 +3877,16 @@ const APP_VERSION = (() => {
             <div class="presets-scroll">
               ${[[0.92,'작게'],[1,'보통'],[1.08,'크게'],[1.18,'아주 크게']]
                 .map(([v,l]) => `<button class="preset-chip${fontScale()===v?' on':''}" data-act="set-font-scale" data-val="${v}">${l}</button>`).join('')}
+            </div>
+          </div>
+          <div class="settings-item settings-block">
+            <div class="settings-item-text">
+              <div class="settings-item-title">테마</div>
+              <div class="settings-item-sub">야간 운동 시 눈 피로 감소</div>
+            </div>
+            <div class="presets-scroll">
+              ${[['auto','자동'],['light','라이트'],['dark','다크']]
+                .map(([v,l]) => `<button class="preset-chip${state.themeMode===v?' on':''}" data-act="set-theme" data-val="${v}">${l}</button>`).join('')}
             </div>
           </div>
         </div>
@@ -4445,12 +4435,10 @@ const APP_VERSION = (() => {
 
            ✓ 를 누르는 길과 똑같은 markSetDone 을 씁니다 — 완료 시각과 개인
            기록 판정이 한쪽에만 빠지는 일이 다시 생기지 않게. */
-        let pr = null;
-        if (value > 0 && !set.done) pr = markSetDone(ex, set, true);
+        if (value > 0 && !set.done) markSetDone(ex, set, true);
         await persist();
         state.repsPicker = null;
         render();
-        toastPR(ex, pr);
         return;
       }
       state.repsPicker = null;
@@ -4458,6 +4446,13 @@ const APP_VERSION = (() => {
     }
 
     if (act === 'toggle-warmup') { await handleToggleWarmup(btn.dataset.ex, btn.dataset.set); return; }
+
+    if (act === 'toggle-ex-accordion') {
+      const exId = btn.dataset.ex;
+      state.expandedExercises[exId] = state.expandedExercises[exId] !== false ? false : true;
+      render();
+      return;
+    }
 
     /* Exercise actions */
     if (act === 'toggle-pick') {
@@ -4653,6 +4648,7 @@ const APP_VERSION = (() => {
     if (act === 'set-unit-weight') { setUnitWeight(btn.dataset.val); render(); return; }
     if (act === 'set-unit-height') { setUnitHeight(btn.dataset.val); render(); return; }
     if (act === 'set-font-scale') { setFontScale(Number(btn.dataset.val)); applyFontScale(); render(); return; }
+    if (act === 'set-theme') { setThemeMode(btn.dataset.val); render(); return; }
   }
 
   /* ── Input handler ───────────────────────── */
@@ -5471,12 +5467,9 @@ const APP_VERSION = (() => {
         set.doneAt = Date.now();
         startRestTimer(restDurationFor(set), ex?.name || '', set.id);
       }
-      const pr = checkPR(ex, set, state.session.date);
-      set.pr = !!pr;
-      return pr;
+      return null;
     }
     delete set.doneAt;
-    delete set.pr;
     /* 지금 돌아가는 휴식이 '이 세트' 가 시작한 것일 때만 끕니다.
        예전에는 무조건 껐습니다 — 3세트를 끝내 90초를 재는 중에 1세트를
        잘못 체크한 걸 발견해 풀면, 돌아가던 휴식이 같이 사라졌습니다. */
@@ -5486,21 +5479,12 @@ const APP_VERSION = (() => {
     return null;
   }
 
-  function toastPR(ex, pr) {
-    if (!pr) return;
-    vibrate([25, 45, 25]);
-    toast(pr.type === 'kg'
-      ? `개인 기록! ${ex.name} ${toDisplayWeight(pr.kg)}${weightUnitLabel()} (이전 ${toDisplayWeight(pr.prev)}${weightUnitLabel()})`
-      : `개인 기록! ${ex.name} ${toDisplayWeight(pr.kg)}${weightUnitLabel()} × ${pr.reps} — 추정 1RM ${Math.round(toDisplayWeight(pr.orm))}${weightUnitLabel()}`);
-  }
-
   async function handleToggleDone(exId, setId) {
     const ex = state.session.exercises.find(e=>e.id===exId);
     const set = ex?.sets.find(s=>s.id===setId);
     if (!set) return;
-    const pr = markSetDone(ex, set, !set.done);
+    markSetDone(ex, set, !set.done);
     await persist(); render();
-    toastPR(ex, pr);
   }
 
   async function handleToggleWarmup(exId, setId) {
@@ -6427,6 +6411,7 @@ const APP_VERSION = (() => {
   async function init() {
     markDisplayMode();
     applyFontScale();
+    initTheme();
     render();
     startRestTicker();
     /* 앱을 껐다 켜도 쉬던 중이었다면 남은 시간이 이어집니다. */

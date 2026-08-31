@@ -65,6 +65,154 @@
   --safe-bot: 0px;
 
   --nav-h: 64px;
+
+  /* 부위 색을 얼마나 어둡게 섞을지 — 다크는 원색 그대로. 아래 라이트
+     테마 블록의 주석에 왜 이런 토큰이 필요한지 적어 두었습니다. */
+  --part-mix: 100%;
+  --part-ink: transparent;
+}
+
+/* ============================================================
+   라이트 테마
+   ------------------------------------------------------------
+   이 앱은 원래 다크 전용이라 위의 :root 값이 곧 다크입니다. 라이트에서는
+   표면·글자만 뒤집어서는 안 됩니다 — 강조색 라임(#B8E23C)은 흰 배경 위에서
+   대비가 1.7:1 이라 글자로 쓰면 사실상 안 보이는데, 이 파일에서만 52곳이
+   그 색을 글자색으로 씁니다. 그래서 라이트에서는 강조색과 의미색(빨강·파랑
+   ·초록…)을 전부 어두운 쪽으로 다시 잡습니다. 아래 값은 흰 배경 대비
+   4.5:1 이상이 나오는 것들입니다.
+
+   --accent 는 배경으로도 쓰이므로(주요 버튼) 짝이 되는 --accent-ink 를
+   흰색으로 뒤집습니다. 어두운 라임 위의 흰 글자가 같은 4.9:1 입니다.
+
+   --part-mix / --part-ink 는 부위 색(가슴·등·하체…) 전용입니다. 그 색들은
+   CSS 가 아니라 app.js 가 인라인으로 넘기기 때문에 여기서 값을 바꿀 수가
+   없습니다. 대신 '얼마나 어둡게 섞을지' 를 토큰으로 두고, 색을 쓰는 쪽에서
+   color-mix 로 섞습니다 — 다크에서는 100%(원색 그대로), 라이트에서는 62%를
+   남기고 나머지를 잉크로 채웁니다. 부위별 색 구분은 그대로 살아 있습니다.
+   ============================================================ */
+
+/* 시스템이 라이트일 때 — 단, 사용자가 다크를 직접 고른 경우는 제외 */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg:        #FAFBFC;
+    --bg-grad:   radial-gradient(120% 80% at 50% -10%, #F2F5FA 0%, #FAFBFC 60%);
+    --surface:   #FFFFFF;
+    --surface-2: #F4F6FB;
+    --surface-3: #E9EDF5;
+    --line:      rgba(16,20,35,0.09);
+    --line-2:    rgba(16,20,35,0.16);
+
+    --text:  #171B2C;
+    --sub:   #5B6273;
+    --muted: #868D9D;
+
+    --accent:      #5F7D14;
+    --accent-2:    #4C6510;
+    --accent-ink:  #FFFFFF;
+    --accent-soft: rgba(95,125,20,0.12);
+    --accent-line: rgba(95,125,20,0.32);
+
+    --red:    #D42A44;
+    --red-soft: rgba(212,42,68,0.10);
+    --blue:   #1567C8;
+    --green:  #0B8A62;
+    --orange: #A56A00;
+    --orange-line: rgba(165,106,0,0.32);
+    --purple: #6A45D4;
+    --pink:   #C2306A;
+
+    --sh-card: 0 1px 1px rgba(16,20,35,.05), 0 2px 8px rgba(16,20,35,.05);
+    --sh-pop:  0 -8px 40px rgba(16,20,35,.14);
+    --sh-glow: 0 3px 12px rgba(95,125,20,.16);
+
+    --part-mix: 62%;
+    --part-ink: #0B0E14;
+  }
+}
+
+/* 사용자가 직접 고른 다크 — 시스템이 라이트여도 이쪽이 이깁니다 */
+html[data-theme="dark"] {
+  --bg:        #090A0E;
+  --bg-grad:   radial-gradient(120% 80% at 50% -10%, #14161f 0%, #090a0e 60%);
+  --surface:   #15171F;
+  --surface-2: #1C1F29;
+  --surface-3: #252935;
+  --line:      rgba(255,255,255,0.07);
+  --line-2:    rgba(255,255,255,0.12);
+
+  --text:  #F4F5F7;
+  --sub:   #B3B7C2;
+  --muted: #71757F;
+
+  --accent:      #B8E23C;
+  --accent-2:    #9BD130;
+  --accent-ink:  #0B0E05;
+  --accent-soft: rgba(184,226,60,0.12);
+  --accent-line: rgba(184,226,60,0.26);
+
+  --red:    #FF5B6E;
+  --red-soft: rgba(255,91,110,0.13);
+  --blue:   #4FA8FF;
+  --green:  #35D6A4;
+  --orange: #FFB020;
+  --orange-line: rgba(255,176,32,0.30);
+  --purple: #A98BFF;
+  --pink:   #FF6B9A;
+
+  --sh-card: 0 1px 1px rgba(0,0,0,.28), 0 2px 8px rgba(0,0,0,.14);
+  --sh-pop:  0 -8px 40px rgba(0,0,0,.55);
+  --sh-glow: 0 3px 12px rgba(184,226,60,.14);
+
+  --part-mix: 100%;
+  --part-ink: transparent;
+}
+
+/* 사용자가 직접 고른 라이트 — 시스템이 다크여도 이쪽이 이깁니다 */
+html[data-theme="light"] {
+  --bg:        #FAFBFC;
+  --bg-grad:   radial-gradient(120% 80% at 50% -10%, #F2F5FA 0%, #FAFBFC 60%);
+  --surface:   #FFFFFF;
+  --surface-2: #F4F6FB;
+  --surface-3: #E9EDF5;
+  --line:      rgba(16,20,35,0.09);
+  --line-2:    rgba(16,20,35,0.16);
+
+  --text:  #171B2C;
+  --sub:   #5B6273;
+  --muted: #868D9D;
+
+  --accent:      #5F7D14;
+  --accent-2:    #4C6510;
+  --accent-ink:  #FFFFFF;
+  --accent-soft: rgba(95,125,20,0.12);
+  --accent-line: rgba(95,125,20,0.32);
+
+  --red:    #D42A44;
+  --red-soft: rgba(212,42,68,0.10);
+  --blue:   #1567C8;
+  --green:  #0B8A62;
+  --orange: #A56A00;
+  --orange-line: rgba(165,106,0,0.32);
+  --purple: #6A45D4;
+  --pink:   #C2306A;
+
+  --sh-card: 0 1px 1px rgba(16,20,35,.05), 0 2px 8px rgba(16,20,35,.05);
+  --sh-pop:  0 -8px 40px rgba(16,20,35,.14);
+  --sh-glow: 0 3px 12px rgba(95,125,20,.16);
+
+  --part-mix: 62%;
+  --part-ink: #0B0E14;
+}
+
+/* 부위 색을 '글자·아이콘' 으로 쓰는 자리. 색 자체는 app.js 가 --pc /
+   --pt-color 로 넘기고, 어둡게 섞는 정도만 테마가 정합니다. */
+.muscle-tag.part {
+  background: color-mix(in srgb, var(--pc) 16%, var(--surface-2));
+  color: color-mix(in srgb, var(--pc) var(--part-mix, 100%), var(--part-ink, transparent));
+}
+.sec-title.part-title {
+  color: color-mix(in srgb, var(--pc) var(--part-mix, 100%), var(--part-ink, transparent));
 }
 
 @media (display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui) {
@@ -483,7 +631,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   color: #0b0e05;
 }
 .part-tile.on .pt-check { opacity: 1; transform: scale(1); }
-.part-tile.on .pt-count { color: var(--pt-color, var(--accent)); }
+.part-tile.on .pt-count { color: color-mix(in srgb, var(--pt-color, var(--accent)) var(--part-mix, 100%), var(--part-ink, transparent)); }
 
 /* ============================================================
    WORKOUT — exercise cards
@@ -494,7 +642,23 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   box-shadow: var(--sh-card); transition: border-color .2s;
 }
 .ex-card.all-done { border-color: var(--accent-line); }
+
+/* 아코디언 헤더 — 제목 전체가 펼침/접힘 버튼이고, ⓘ·✕ 는 그 오른쪽에
+   그대로 남습니다(버튼 안에 버튼을 넣으면 안 되므로 형제로 둡니다). */
 .ex-card-head { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 12px; }
+.ex-card:not(.expanded) .ex-card-head { margin-bottom: 0; }
+.ex-card-toggle {
+  flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: 8px;
+  text-align: left; padding: 0; background: none;
+}
+.ex-card-titles { flex: 1; min-width: 0; }
+.ex-card-chev {
+  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  width: 18px; height: 22px; color: var(--muted); transition: transform .2s;
+}
+.ex-card.expanded .ex-card-chev { transform: rotate(180deg); }
+.ex-card-toggle:active .ex-card-chev { color: var(--accent); }
+
 .ex-card-name { font-size: 16px; font-weight: 800; letter-spacing: -0.03em; display: flex; align-items: center; gap: 6px; }
 .ex-done-tick { color: var(--accent); }
 .ex-card-sub { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
@@ -523,13 +687,13 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
    위/아래 세트로 잘못 물릴 수 있습니다. */
 .set-table { display: flex; flex-direction: column; gap: 12px; }
 .set-table-head {
-  display: grid; grid-template-columns: 26px 1fr 1fr 38px 40px; gap: 6px;
+  display: grid; grid-template-columns: 26px 1fr 1fr 40px; gap: 6px;
   align-items: center; padding: 0 2px 2px; font-size: 11px; font-weight: 800;
   color: var(--muted); text-transform: uppercase; letter-spacing: .05em;
 }
 .set-table-head span:nth-child(2), .set-table-head span:nth-child(3), .set-table-head span:nth-child(4) { text-align: center; }
 .set-row {
-  display: grid; grid-template-columns: 26px 1fr 1fr 38px 40px; gap: 6px; align-items: center;
+  display: grid; grid-template-columns: 26px 1fr 1fr 40px; gap: 6px; align-items: center;
   background: var(--surface); position: relative; z-index: 1;
   /* pan-y 로 두면 브라우저가 세로 팬을 독점해서, 맨 위에서 아래로 당기는
      새로고침의 preventDefault 가 무시됩니다. manipulation 은 더블탭 줌만
@@ -585,7 +749,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
    column and leave 완료/삭제 floating mid-row instead of at the right edge.
    The header above it loses the same column so 시간/완료 stay over what they
    label. */
-.set-row.hold, .set-table-head.hold { grid-template-columns: 26px 1fr 38px 40px; }
+.set-row.hold, .set-table-head.hold { grid-template-columns: 26px 1fr 40px; }
 .set-row.done .set-num { background: var(--accent-soft); color: var(--accent); }
 .set-num.warmup { background: color-mix(in srgb, var(--orange) 18%, var(--surface-2)); color: var(--orange); }
 .set-row.warmup .val-chip { opacity: .78; }
@@ -1672,18 +1836,7 @@ body.overlay-open { overflow: hidden; }
 .ch-leg { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 700; color: var(--sub); }
 .ch-leg i { width: 8px; height: 8px; border-radius: 3px; display: inline-block; }
 
-/* ── 개인 기록 ──────────────────────────────────────────────────────────
-   세트 줄에서는 자리를 거의 안 쓰면서 눈에 띄어야 해서 작은 배지로 둡니다. */
-.pr-flag {
-  font-size: 9px; font-weight: 900; letter-spacing: .04em;
-  color: var(--bg); background: var(--accent);
-  padding: 2px 5px; border-radius: 5px; justify-self: center;
-}
-.dsum-set.pr { border-color: var(--accent-line); }
-.dsum-set em {
-  font-style: normal; font-size: 8px; font-weight: 900;
-  color: var(--accent); margin-left: 4px; letter-spacing: .04em;
-}
+/* ── 개인 기록 ────────────────────────────────────────────────────────── */
 .pr-list { display: flex; flex-direction: column; gap: 2px; }
 /* 열 너비를 고정해 숫자가 세로로 줄을 맞춥니다. auto 로 두면 79kg 과 74kg
    처럼 글자폭이 다를 때마다 날짜가 좌우로 흔들려, 훑어볼 때 눈이 걸립니다. */
@@ -1750,7 +1903,7 @@ body.overlay-open { overflow: hidden; }
   background: var(--surface-2); border: 1.5px solid var(--line); cursor: pointer;
 }
 .rt-tile.on { border-color: var(--pt-color); background: color-mix(in srgb, var(--pt-color) 12%, var(--surface-2)); }
-.rt-tile .pt-icon { width: 24px; height: 24px; color: var(--pt-color); }
+.rt-tile .pt-icon { width: 24px; height: 24px; color: color-mix(in srgb, var(--pt-color) var(--part-mix, 100%), var(--part-ink, transparent)); }
 .rt-tile .pt-icon svg { width: 100%; height: 100%; }
 .rt-tile .pt-name { font-size: 12px; font-weight: 800; color: var(--text); }
 .rt-tile .pt-count { font-size: 10px; font-weight: 700; color: var(--muted); }
