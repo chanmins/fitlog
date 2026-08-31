@@ -4047,7 +4047,7 @@ const APP_VERSION = (() => {
   async function refreshFromPull() {
     if (state.syncing) return;
     if (state.user && !state.offline) {
-      syncInBackground();
+      syncInBackground(true);
       return;
     }
     showSyncIndicator();
@@ -5852,16 +5852,15 @@ const APP_VERSION = (() => {
      state.syncing 도 finally 에서 반드시 풉니다 — 예전에는 로그아웃으로
      중간에 버려진 동기화가 이 깃발을 켠 채로 남아, 다음 사람의 동기화가
      통째로 건너뛰어졌습니다. */
-  async function syncInBackground() {
+  async function syncInBackground(fromPull) {
     if (state.syncing) return;
     const myUid = state.user && state.user.uid;
     if (!myUid) return;
     const stillMe = () => !!state.user && state.user.uid === myUid;
     state.syncing = true;
-    /* 이 동기화가 당겨서 시작한 게 아니어도(로그인 직후 자동 동기화 등)
-       도는 동안은 똑같이 보여 줍니다 — 지금까지는 아무 표시가 없어서
-       클라우드에 올라가는지 자체를 알 방법이 없었습니다. */
-    showSyncIndicator();
+    /* 동그라미는 당겨서 새로고침할 때만 보여 줍니다. 로그인 직후 자동
+       동기화까지 띄우면 상단에 계속 앉아 있는 것처럼 보입니다. */
+    if (fromPull) showSyncIndicator();
     try {
       await withTimeout(Cloud.touchProfile(), 8000, '프로필');
       if (!stillMe()) return;
