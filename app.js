@@ -93,6 +93,9 @@ const APP_VERSION = (() => {
     saveBroken: false,
     /* 피커에서 '나만의 운동 직접 추가' 칸에 적고 있는 이름 */
     customName: '',
+    /* 인증을 확인할 수 없어(오프라인) 이 기기 기록만 열어 준 상태.
+       클라우드에는 아무것도 쓰지 않습니다. */
+    offline: false,
     authMode: 'signin',       /* 'signin' | 'signup' */
     authId: '',               /* 아이디 (or email) typed on the sign-in screen */
     authPassword: '',
@@ -276,6 +279,10 @@ const APP_VERSION = (() => {
     return unitWeight() === 'lb' ? Math.round((n / LB_PER_KG) * 100) / 100 : n;
   }
   function weightUnitLabel() { return unitWeight(); }
+  function fmtWeight(kg) {
+    if (kg === '' || kg == null || !Number.isFinite(Number(kg))) return '';
+    return `${toDisplayWeight(kg)}${weightUnitLabel()}`;
+  }
   function toDisplayHeight(cm) {
     if (cm === '' || cm == null || !Number.isFinite(Number(cm))) return cm;
     const n = Number(cm);
@@ -518,6 +525,12 @@ const APP_VERSION = (() => {
       });
   }
 
+  function fmtSets(sets) {
+    return (sets||[])
+      .filter(s => s.kg!==''||s.reps!=='')
+      .map(s => `${s.kg??'-'}kg×${s.reps??'-'}`)
+      .join(' · ');
+  }
   function exVolume(ex) {
     /* Warm-up sets don't count toward working volume — matches how lifters
        actually think about volume, and keeps the number meaningful. */
@@ -602,6 +615,9 @@ const APP_VERSION = (() => {
   function analysisParts() {
     return PARTS.filter(p => p.kind === 'weight' && p.id !== 'stretch');
   }
+
+  /* 설정의 주 시작 요일(월/일)을 따릅니다 — weekStartOf 가 그 기준입니다. */
+  function weekStartDate(d) { return weekStartOf(d); }
 
   /* 최근 n주 / 그 직전 n주의 부위별 세트·볼륨·최대중량 */
   /* 두 창은 반드시 같은 길이여야 합니다.
@@ -1253,14 +1269,7 @@ const APP_VERSION = (() => {
   function restoreRestTimer() {
     if (!restTimerOn()) return;
     let saved = null;
-    /* 네이티브 껍데기 안에서는 네이티브가 들고 있는 타이머가 진실입니다.
-       앱이 완전히 죽어 있는 동안에도 계속 돌던 쪽이 그쪽이고, localStorage 는
-       마지막으로 화면이 살아 있던 순간에 멈춰 있습니다. 네이티브가 없거나
-       네이티브에도 남은 게 없으면 지금까지처럼 localStorage 를 봅니다. */
-    if (window.FitLogNative && window.FitLogNative.ok) {
-      try { saved = window.FitLogNative.pending(); } catch (_) {}
-    }
-    if (!saved) { try { saved = JSON.parse(localStorage.getItem(REST_KEY) || 'null'); } catch (_) {} }
+    try { saved = JSON.parse(localStorage.getItem(REST_KEY) || 'null'); } catch (_) {}
     if (!saved || !saved.endsAt) return;
     /* 이미 끝난 타이머는 되살리지 않습니다 — 어제 남은 알림이 오늘 뜨면
        그게 더 이상합니다. */
@@ -1275,10 +1284,6 @@ const APP_VERSION = (() => {
   }
 
   async function showRestNotification(title, body, silent) {
-    /* 네이티브 껍데기 안에서는 알림을 네이티브가 띄웁니다. 여기서 또 띄우면
-       같은 휴식에 대해 알림이 두 줄 쌓이고, 웹 쪽 알림은 앱이 화면 밖으로
-       나가면 어차피 정확한 시각에 울리지도 못합니다. */
-    if (window.FitLogNative && window.FitLogNative.ownsNotifications) return;
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
     const opts = {
       body, tag: 'fitlog-rest', renotify: !silent, silent: !!silent,
@@ -1308,13 +1313,6 @@ const APP_VERSION = (() => {
     state.restTimer = { endsAt: Date.now() + seconds * 1000, duration: seconds, label: label || '', setId: setId || '', chimed: false };
     saveRestTimer();
     renderRestTimerBar();
-    /* 네이티브가 있으면 여기서 손을 뗍니다. 끝나는 시각을 넘겨 주면 그 뒤는
-       OS 가 책임집니다 — 앱을 완전히 닫아도, 화면이 꺼져 있어도 정확히 그
-       시각에 울립니다. 아래 웹 알림 경로는 네이티브가 없을 때만 씁니다. */
-    if (window.FitLogNative && window.FitLogNative.ok) {
-      window.FitLogNative.startRest(state.restTimer);
-      return;
-    }
     /* Ask once, lazily, only when the feature is actually used — so a background
        notification can fire if the user switches tabs/apps while resting. Never
        re-prompt if they dismissed or denied it. */
@@ -1352,16 +1350,12 @@ const APP_VERSION = (() => {
     if (rt.endsAt > Date.now()) rt.chimed = false;   // 다시 재는 중이면 종료 알림도 다시
     saveRestTimer();
     renderRestTimerBar();
-    /* ±15 는 끝나는 시각을 옮기는 일입니다. 네이티브에 예약해 둔 알림도 같이
-       옮겨 주지 않으면, 화면은 1:45 인데 알림은 1:30 에 울립니다. */
-    if (window.FitLogNative && window.FitLogNative.ok) window.FitLogNative.updateRest(rt);
     pushRestNotification();
   }
 
   function cancelRestTimer() {
     state.restTimer = null;
     saveRestTimer();
-    if (window.FitLogNative && window.FitLogNative.ok) window.FitLogNative.stopRest();
     clearRestNotification();
     document.querySelector('.rest-timer-bar')?.remove();
     document.body.classList.remove('has-rest-timer');
@@ -1441,20 +1435,6 @@ const APP_VERSION = (() => {
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden && state.restTimer) renderRestTimerBar();
     });
-    /* 네이티브에서 오는 두 가지 소식을 받습니다. 끝났다는 소식은 없어도
-       250ms 뒤 틱이 알아서 알아채지만, 알림을 눌러 앱이 막 깨어난 순간에는
-       이걸 받아야 화면이 곧바로 맞습니다. 껐다는 소식은 반드시 필요합니다 —
-       네이티브 알림에서 끈 휴식이 웹 화면에만 계속 남아 있으면 안 됩니다. */
-    if (window.FitLogNative && window.FitLogNative.ok) {
-      window.FitLogNative.onFinish(() => { if (state.restTimer) renderRestTimerBar(); });
-      window.FitLogNative.onCancel(() => {
-        /* 이미 네이티브가 스스로 끈 상태라 stopRest 를 되쏘지 않습니다. */
-        state.restTimer = null;
-        saveRestTimer();
-        document.querySelector('.rest-timer-bar')?.remove();
-        document.body.classList.remove('has-rest-timer');
-      });
-    }
   }
 
   /* ── Navigation ─────────────────────────── */
@@ -1611,7 +1591,11 @@ const APP_VERSION = (() => {
     openSwipeRow = null;
     gesture = null;
     if (!state.authReady) { appEl.innerHTML = renderSplash(); return; }
-    if (!state.user && !state.guest) {
+    /* state.offline: 인증을 확인할 수 없어(네트워크 없음) 이 기기에 마지막으로
+       들어왔던 계정의 기록만 열어 준 상태입니다. 로그인한 것도 게스트도
+       아니지만, 로그인 화면을 띄우면 안 됩니다 — 신호가 없어서 로그인이
+       불가능한 상황이 바로 여기이기 때문입니다. */
+    if (!state.user && !state.guest && !state.offline) {
       appEl.innerHTML = (state.authMode === 'signup' ? renderSignup()
                       : state.authMode === 'reset'  ? renderReset()
                       : renderLogin())
@@ -2395,7 +2379,7 @@ const APP_VERSION = (() => {
 
     const weekStrip = weekDays.map((iso, i) => {
       const [, , d] = iso.split('-').map(Number);
-      const hasSess = state.sessions.some(s => s.date === iso && hasAnyWork(s));
+      const hasSess = state.sessions.some(s => s.date === iso);
       const isToday = iso === today;
       return `<div class="week-day${hasSess?' done':''}${isToday?' today':''}">
         <div class="ring">${hasSess ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : d}</div>
@@ -2404,11 +2388,7 @@ const APP_VERSION = (() => {
     }).join('');
 
     /* week stats */
-    /* 세트를 하나도 찍지 않은 날은 운동한 날이 아닙니다 — hasAnyWork 의 주석과
-       streakDays() 가 쓰는 기준을 여기서도 그대로 씁니다. 부위 칩만 눌러 둔
-       날에 ✓ 가 칠해지면 '연속 기록 0일' 과 '이번 주 운동 1일' 이 같은 화면에서
-       서로 다른 말을 합니다. */
-    const weekSessions = state.sessions.filter(s => weekDays.includes(s.date) && hasAnyWork(s));
+    const weekSessions = state.sessions.filter(s => weekDays.includes(s.date));
     const weekCount = weekSessions.length;
     const weekKm = weekSessions.reduce((a,s)=>a+(Number(s.run?.km)||0),0);
     /* Running only earns a slot once there is running to show — an eternal
@@ -2980,85 +2960,6 @@ const APP_VERSION = (() => {
   }
 
   /* ── Exercise Info Sheet ──────────────────── */
-  /* ── 근육 지도 ────────────────────────────────────────────────────────────
-     운동마다 어느 근육을 쓰는지는 exercises.js 의 primary/secondary 에 이미
-     적혀 있습니다. 그동안 그 값을 글자로만 보여 줬는데("가슴, 삼두근"),
-     초보자에게 그건 몸의 어디인지 알려 주지 않습니다. 같은 데이터로 사람
-     그림에 색을 칠하면 한눈에 들어옵니다 — 새 그림 파일 없이 이 함수 하나로,
-     운동 98개 전부와 앞으로 추가할 운동까지 자동으로 됩니다.
-
-     드물게 쓰이는 세부 근육(소흉근·능형근 등)은 그릴 칸이 따로 없어서 가장
-     가까운 큰 부위로 접어 넣습니다. 안 그러면 그 운동만 아무 데도 칠해지지
-     않아 고장난 것처럼 보입니다. */
-  const MUSCLE_REGION = {
-    pecs_minor: 'chest',   chest_wall: 'back',    rhomboids: 'back',
-    levator:    'traps',   quads_rf:   'quads',   hip_flexor: 'quads',
-    adductors:  'quads',
-  };
-
-  function renderBodyMap(primary, secondary) {
-    const P = new Set(), S = new Set();
-    (primary   || []).forEach(m => P.add(MUSCLE_REGION[m] || m));
-    (secondary || []).forEach(m => { const r = MUSCLE_REGION[m] || m; if (!P.has(r)) S.add(r); });
-    const cls = m => P.has(m) ? ' p' : S.has(m) ? ' s' : '';
-    const r = (m, d, o) => `<path class="bm${cls(m)}" d="${d}"${o ? ' opacity=".5"' : ''}/>`;
-    const n = d => `<path class="bm-n" d="${d}"/>`;
-
-    /* 앞면 */
-    const front = `
-      <ellipse class="bm-n" cx="55" cy="16" rx="10" ry="12.5"/>
-      ${n('M49 27q6 2 12 0l1 8H48z')}
-      ${r('traps',     'M46 35q9 2 18 0l6 9q-15-3-30 0z')}
-      ${r('shoulders', 'M40 43q-11 2-14 15 -1 5 3 6l9-3q0-11 2-18z')}
-      ${r('shoulders', 'M70 43q11 2 14 15 1 5-3 6l-9-3q0-11-2-18z')}
-      ${r('chest',     'M39 45q8-2 16-1v25q-11-1-17-8 -2-9 1-16z')}
-      ${r('chest',     'M71 45q-8-2-16-1v25q11-1 17-8 2-9-1-16z')}
-      ${r('biceps',    'M29 64l8-3 -1 25q-5 2-9 0z')}
-      ${r('biceps',    'M81 64l-8-3 1 25q5 2 9 0z')}
-      ${n('M27 88q5 2 9 0l-2 27q-4 2-7 0z')}
-      ${n('M83 88q-5 2-9 0l2 27q4 2 7 0z')}
-      ${r('abs',       'M42 69q13 3 26 0l-4 39q-9 3-18 0z')}
-      ${n('M45 110q10 3 20 0l2 20q-12 3-24 0z')}
-      ${r('quads',     'M43 131q6 2 11 1l-1 46q-6 2-11 0z')}
-      ${r('quads',     'M67 131q-6 2-11 1l1 46q6 2 11 0z')}
-      ${n('M42 180q6 2 11 0v7q-6 2-11 0z')}
-      ${n('M68 180q-6 2-11 0v7q6 2 11 0z')}
-      ${r('calves',    'M43 189q5 2 10 0l-2 33q-4 2-8 0z')}
-      ${r('calves',    'M67 189q-5 2-10 0l2 33q4 2 8 0z')}
-      ${n('M43 224q4 2 8 0l1 8H42z')}
-      ${n('M67 224q-4 2-8 0l-1 8h10z')}`;
-
-    /* 뒷면 */
-    const back = `
-      <ellipse class="bm-n" cx="55" cy="16" rx="10" ry="12.5"/>
-      ${n('M49 27q6 2 12 0l1 8H48z')}
-      ${r('traps',      'M46 32q9 3 18 0l6 11q-4 18-15 24 -11-6-15-24z')}
-      ${r('shoulders',  'M40 43q-11 2-14 15 -1 5 3 6l9-3q0-11 2-18z')}
-      ${r('shoulders',  'M70 43q11 2 14 15 1 5-3 6l-9-3q0-11-2-18z')}
-      ${r('triceps',    'M29 64l8-3 -1 25q-5 2-9 0z')}
-      ${r('triceps',    'M81 64l-8-3 1 25q5 2 9 0z')}
-      ${n('M27 88q5 2 9 0l-2 27q-4 2-7 0z')}
-      ${n('M83 88q-5 2-9 0l2 27q4 2 7 0z')}
-      ${r('lats',       'M42 58q7 4 13 6v28q-10-3-16-11 -1-13 3-23z')}
-      ${r('lats',       'M68 58q-7 4-13 6v28q10-3 16-11 1-13-3-23z')}
-      ${r('back',       'M46 60q9 3 18 0v32q-9 2-18 0z')}
-      ${r('lower_back', 'M44 94q11 3 22 0l-1 16q-10 3-20 0z')}
-      ${r('glutes',     'M43 112q12 3 24 0l1 20q-13 3-26 0z')}
-      ${r('hamstrings', 'M43 134q6 2 11 1l-1 44q-6 2-11 0z')}
-      ${r('hamstrings', 'M67 134q-6 2-11 1l1 44q6 2 11 0z')}
-      ${n('M42 180q6 2 11 0v7q-6 2-11 0z')}
-      ${n('M68 180q-6 2-11 0v7q6 2 11 0z')}
-      ${r('calves',     'M43 189q5 2 10 0l-2 33q-4 2-8 0z')}
-      ${r('calves',     'M67 189q-5 2-10 0l2 33q4 2 8 0z')}
-      ${n('M43 224q4 2 8 0l1 8H42z')}
-      ${n('M67 224q-4 2-8 0l-1 8h10z')}`;
-
-    return `<div class="bodymap">
-      <figure><svg viewBox="0 0 110 236" role="img" aria-label="앞에서 본 사용 근육">${front}</svg><figcaption>앞</figcaption></figure>
-      <figure><svg viewBox="0 0 110 236" role="img" aria-label="뒤에서 본 사용 근육">${back}</svg><figcaption>뒤</figcaption></figure>
-    </div>`;
-  }
-
   function renderExerciseInfoSheet(exId) {
     const libEx = findExercise(exId) || state.customExercises.find(e => e.id === exId || e.name === exId);
     if (!libEx) return '';
@@ -3111,12 +3012,9 @@ const APP_VERSION = (() => {
         </div>
         ${photo}
         <div class="muscle-legend">
-          ${renderBodyMap(primary, secondary)}
-          <div class="muscle-legend-text">
-            <div class="muscle-legend-title">주동근</div>
-            <div class="muscle-legend-row">${primaryPills}</div>
-            ${secondary.length ? `<div class="muscle-legend-title" style="margin-top:8px">협력근</div><div class="muscle-legend-row">${secondaryPills}</div>` : ''}
-          </div>
+          <div class="muscle-legend-title">주동근</div>
+          <div class="muscle-legend-row">${primaryPills}</div>
+          ${secondary.length ? `<div class="muscle-legend-title" style="margin-top:8px">협력근</div><div class="muscle-legend-row">${secondaryPills}</div>` : ''}
         </div>
         ${renderExerciseTrend(libEx.name)}
         ${libEx.description ? `<p class="info-desc">${esc(libEx.description)}</p>` : ''}
@@ -3989,22 +3887,38 @@ const APP_VERSION = (() => {
       </main>`;
   }
 
-  /* ── 손짓: 세트 옆으로 밀어 지우기 ───────────────────────────────────────
-     새로고침은 아래 bindPullRefresh 가 따로 받습니다. 한 포인터 핸들러에
-     섞어 두면, 세로로 움직이는 순간 스와이프가 제스처를 삼켜 버려
-     당기기가 시작조차 못 했습니다. */
+  /* ── 손짓: 세트 옆으로 밀어 지우기 · 당겨서 동기화 ────────────────────────
+     둘 다 같은 포인터 이벤트 한 벌로 처리합니다. 손을 뗄 때까지는 아직 뭘
+     하려는 건지 모르니, 처음 몇 픽셀만 보고 판단합니다 — 가로로 크게
+     움직였고 세트 줄 위에서 시작했으면 스와이프, 화면 맨 위에서 세로
+     아래로 당겼으면 새로고침, 둘 다 아니면 그냥 평소 스크롤입니다. */
   let gesture = null;
   function onSwipePointerDown(e) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    /* 스와이프로 드러난 삭제 버튼은 원래 제 클릭으로 동작해야 하니 건드리지
+       않습니다. */
     if (e.target.closest('.set-swipe-action')) { gesture = null; return; }
     const row = e.target.closest('.set-row');
     if (openSwipeRow && row !== openSwipeRow) closeOpenSwipe();
+    /* 당겨서 새로고침은 탭 화면 맨 위, 그리고 로그인해서 클라우드가 있을
+       때만 후보로 둡니다 — 게스트는 동기화할 데가 없고, 요약 화면(day
+       summary)·루틴 편집처럼 전체 화면 오버레이(.detail-screen)는 자기
+       스크롤을 따로 가지고 있어 문서 스크롤 값으로 "맨 위" 를 판단하면
+       엉뚱하게 걸립니다.
+       .topbar 도 후보에 포함합니다 — 헤더가 sticky 로 화면 맨 위에 붙어
+       있어서, 실제로 아래로 당길 때 손가락이 자연스럽게 그 위에서
+       시작되는 경우가 많습니다. .screen 안에서만 받으면 정작 가장 자연스러운
+       시작 지점에서는 안 먹히는 셈이라 헤더도 같이 받아 줍니다. */
+    const inTabScreen = (!!e.target.closest('.screen') || !!e.target.closest('.topbar'))
+      && !e.target.closest('.detail-screen');
+    const atTop = (document.scrollingElement || document.documentElement).scrollTop <= 0;
     gesture = {
       mode: null,
       row: row || null,
       wasOpen: !!row && row === openSwipeRow,
       startX: e.clientX, startY: e.clientY,
       pointerId: e.pointerId,
+      pullCandidate: !row && inTabScreen && atTop && !!state.user && !state.syncing,
     };
   }
   function onSwipePointerMove(e) {
@@ -4017,8 +3931,11 @@ const APP_VERSION = (() => {
         gesture.mode = 'swipe';
         gesture.row.classList.add('swiping');
         try { gesture.row.setPointerCapture(e.pointerId); } catch (_) {}
+      } else if (gesture.pullCandidate && dy > 0 && dy > Math.abs(dx)) {
+        gesture.mode = 'pull';
+        ensurePullEl().classList.add('dragging');
       } else {
-        gesture = null;
+        gesture = null; /* 둘 다 아니면 손을 떼고 원래 스크롤에 맡깁니다 */
         return;
       }
     }
@@ -4027,10 +3944,16 @@ const APP_VERSION = (() => {
       const base = gesture.wasOpen ? -SWIPE_REVEAL : 0;
       gesture.dx = Math.max(-SWIPE_REVEAL, Math.min(0, base + dx));
       gesture.row.style.transform = `translateX(${gesture.dx}px)`;
+    } else if (gesture.mode === 'pull') {
+      e.preventDefault();
+      /* 당길수록 점점 뻑뻑해지게(0.5배) — 끝없이 따라오면 얼마나 당겨야
+         새로고침되는지 손끝으로 가늠할 수 없습니다. */
+      gesture.pullDist = Math.min(90, Math.max(0, dy) * 0.5);
+      ensurePullEl().style.transform = `translateY(${gesture.pullDist}px)`;
     }
   }
   function onSwipePointerUp(e) {
-    if (!gesture || (e.pointerId != null && gesture.pointerId !== e.pointerId)) return;
+    if (!gesture || gesture.pointerId !== e.pointerId) return;
     const g = gesture;
     gesture = null;
     if (g.mode === 'swipe') {
@@ -4043,7 +3966,13 @@ const APP_VERSION = (() => {
         g.row.style.transform = '';
         if (openSwipeRow === g.row) openSwipeRow = null;
       }
+    } else if (g.mode === 'pull') {
+      ensurePullEl().classList.remove('dragging');
+      if ((g.pullDist || 0) >= 40) syncInBackground();
+      else hideSyncIndicator();
     } else if (!g.mode && g.row && g.wasOpen) {
+      /* 열려 있던 스와이프를 그냥 탭 한 번으로 닫으려던 것 — 그 탭이 바로
+         밑 버튼(완료 체크 등)까지 같이 누르면 안 됩니다. */
       g.row.classList.remove('swiping');
       g.row.style.transform = '';
       if (openSwipeRow === g.row) openSwipeRow = null;
@@ -4085,10 +4014,7 @@ const APP_VERSION = (() => {
   /* 당겨서 새로고침 표시. render() 가 지울 수 있는 appEl 안이 아니라
      body 에 직접 붙여 둡니다 — 휴식 타이머 바와 같은 이유로, 동기화가
      도는 동안 어딜 누르든(탭을 옮기든) 표시가 끊기면 안 됩니다. */
-  const PULL_TABS = { home: 1, workout: 1, history: 1 };
-  const PULL_FIRE = 36;
   let pullEl = null;
-  let pull = null;
   function ensurePullEl() {
     if (pullEl) return pullEl;
     pullEl = document.createElement('div');
@@ -4097,147 +4023,17 @@ const APP_VERSION = (() => {
     document.body.appendChild(pullEl);
     return pullEl;
   }
-  function updatePullVisual(dist) {
-    const el = ensurePullEl();
-    el.classList.toggle('armed', dist >= PULL_FIRE);
-    el.style.transform = `translateY(${dist}px)`;
-    const svg = el.querySelector('svg');
-    if (svg) svg.style.transform = `rotate(${Math.min(180, dist * 3)}deg)`;
-  }
   function showSyncIndicator() {
     const el = ensurePullEl();
-    el.classList.remove('dragging', 'armed');
+    el.classList.remove('dragging');
     el.classList.add('loading');
-    el.style.transform = 'translateY(52px)';
-    const svg = el.querySelector('svg');
-    if (svg) svg.style.transform = '';
+    el.style.transform = 'translateY(64px)';
   }
   function hideSyncIndicator() {
     if (!pullEl) return;
-    pullEl.classList.remove('dragging', 'loading', 'armed');
+    pullEl.classList.remove('dragging', 'loading');
     pullEl.style.transform = '';
-    const svg = pullEl.querySelector('svg');
-    if (svg) svg.style.transform = '';
   }
-  function pageScrollTop() {
-    const tops = [
-      window.scrollY || 0,
-      window.pageYOffset || 0,
-      document.documentElement.scrollTop || 0,
-      document.body.scrollTop || 0,
-    ];
-    const se = document.scrollingElement;
-    if (se) tops.push(se.scrollTop || 0);
-    let el = appEl;
-    while (el) {
-      tops.push(el.scrollTop || 0);
-      el = el.parentElement;
-    }
-    return Math.max.apply(null, tops);
-  }
-  function isPageAtTop() {
-    /* iOS 바운스·주소창 때문에 맨 위인데도 몇 px 남는 경우가 있습니다. */
-    return pageScrollTop() <= 16;
-  }
-  function canPullFrom(target) {
-    if (!PULL_TABS[state.tab] || state.syncing || !state.authReady) return false;
-    /* 로그인·가입 화면은 빼고, 앱 안에 들어온 뒤(계정·게스트)만. */
-    if (!state.user && !state.guest) return false;
-    if (target && target.closest('.detail-screen, .sheet-backdrop, .dialog, .bottom-nav, .set-swipe-action')) return false;
-    return isPageAtTop();
-  }
-  async function refreshFromPull() {
-    if (state.syncing) return;
-    if (state.user) {
-      syncInBackground(true);
-      return;
-    }
-    showSyncIndicator();
-    const shownAt = Date.now();
-    try {
-      /* 저장 큐를 먼저 비웁니다. 안 그러면 방금 체크한 세트가 디스크에
-         닿기도 전에 옛 목록을 읽어 화면을 덮습니다. 열린 기록은 디스크
-         것으로 갈아끼우지 않습니다 — 그게 기록을 지우던 경로입니다. */
-      try { await persist(); } catch (_) {}
-      state.sessions = await WorkoutDB.getAllSessions();
-      state.customExercises = await WorkoutDB.getCustomExercises();
-      applyOpenSessionToList();
-      render();
-    } catch (err) {
-      console.warn('local refresh failed', err);
-    } finally {
-      const wait = Math.max(0, 420 - (Date.now() - shownAt));
-      setTimeout(hideSyncIndicator, wait);
-    }
-  }
-  function pullStart(x, y, target) {
-    if (!canPullFrom(target)) { pull = null; return; }
-    pull = { startX: x, startY: y, dist: 0, armed: false };
-  }
-  function pullMove(x, y, prevent) {
-    if (!pull) return;
-    const dy = y - pull.startY;
-    const dx = x - pull.startX;
-    if (!pull.armed) {
-      if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) { pull = null; return; }
-      if (dy < -10) { pull = null; return; }
-      if (dy > 6 && dy >= Math.abs(dx) && isPageAtTop()) {
-        pull.armed = true;
-        ensurePullEl().classList.add('dragging');
-      } else {
-        return;
-      }
-    }
-    if (prevent) prevent();
-    pull.dist = Math.min(100, Math.max(0, dy) * 0.65);
-    updatePullVisual(pull.dist);
-  }
-  function pullEnd() {
-    if (!pull) return;
-    const armed = pull.armed;
-    const dist = pull.dist;
-    pull = null;
-    if (!armed) return;
-    ensurePullEl().classList.remove('dragging');
-    if (dist >= PULL_FIRE) refreshFromPull();
-    else hideSyncIndicator();
-  }
-  /* 터치로만 받습니다. iOS 는 pointermove 의 preventDefault 로 스크롤을
-     막지 못하고, 스와이프 핸들러에 섞으면 세로 움직임이 바로 버려집니다.
-     document 에 한 번만 묶습니다. 홈·기록·히스토리, 맨 위에서 아래로
-     당기면(일반 앱과 같습니다) 동그라미가 따라옵니다. */
-  (function bindPullRefresh() {
-    document.addEventListener('touchstart', e => {
-      if (e.touches.length !== 1) { pull = null; return; }
-      const t = e.touches[0];
-      pullStart(t.clientX, t.clientY, e.target);
-    }, { passive: true });
-    document.addEventListener('touchmove', e => {
-      if (!pull || e.touches.length !== 1) return;
-      const t = e.touches[0];
-      pullMove(t.clientX, t.clientY, () => e.preventDefault());
-    }, { passive: false });
-    document.addEventListener('touchend', pullEnd);
-    document.addEventListener('touchcancel', pullEnd);
-    /* 마우스로 확인할 때. 터치 기기는 위에서 이미 받으므로 건너뜁니다. */
-    document.addEventListener('pointerdown', e => {
-      if (e.pointerType === 'touch') return;
-      if (e.pointerType === 'mouse' && e.button !== 0) return;
-      pullStart(e.clientX, e.clientY, e.target);
-    });
-    document.addEventListener('pointermove', e => {
-      if (e.pointerType === 'touch' || !pull) return;
-      pullMove(e.clientX, e.clientY, () => e.preventDefault());
-    });
-    document.addEventListener('pointerup', e => {
-      if (e.pointerType === 'touch') return;
-      pullEnd();
-    });
-    document.addEventListener('pointercancel', e => {
-      if (e.pointerType === 'touch') return;
-      pullEnd();
-    });
-  })();
 
   /* ── Event Binding ────────────────────────── */
   function bindEvents() {
@@ -5159,6 +4955,17 @@ const APP_VERSION = (() => {
     return true;
   }
 
+  async function handlePickEx(partId, name, exId) {
+    const before = new Set(state.session.exercises.map(e => e.id));
+    if (!addExerciseToSession(partId, name, exId)) { toast('이미 추가된 운동입니다'); return; }
+    await persist();
+    closeAllSheets();
+    const added = state.session.exercises.find(e => !before.has(e.id));
+    if (added) flashExercise(added.id);
+    render();
+    toast('운동을 추가했습니다');
+  }
+
   /* Commit every exercise queued in the picker in one shot. */
   async function handleCommitPicks(partId) {
     const picks = state.pickSelection.slice();
@@ -5600,45 +5407,6 @@ const APP_VERSION = (() => {
     if (file) await importJson(file);
   });
 
-  /* 지금 화면에 열린 기록은 메모리가 최신입니다. 디스크/클라우드 합친
-     결과 위에 덮어, replaceAll 이 방금 입력한 세트를 지우지 않게 합니다.
-     과거 편집(editingPast)은 아직 저장 전이라 디스크에 올리지 않습니다. */
-  function overlayOpenSession(rows) {
-    if (!state.session || !state.session.date || state.editingPast) return rows;
-    const live = clone(state.session);
-    /* 저장할 것이 없는 세션은 얹지 않습니다 — doSave() 가 지우는 것과 같은
-       기준입니다. 얹으면 이 결과가 그대로 replaceAll 로 디스크에, pushAll 로
-       클라우드에 올라가서, 앱을 열어보기만 해도 오늘이 '운동한 날' 로 남고
-       새로고침할 때마다 되살아납니다.
-       rows 를 그대로 돌려줍니다 — 여기서 live.date 를 지우면, 다른 기기에서
-       오늘 운동했고 이 기기는 아직 못 받은 경우에 그 기록을 지웁니다. */
-    if (!worthSaving(live)) return rows;
-    if (!live.updatedAt) live.updatedAt = Date.now();
-    const map = new Map();
-    for (const row of rows || []) {
-      if (row && typeof row.date === 'string') map.set(row.date, row);
-    }
-    map.set(live.date, live);
-    return [...map.values()].sort((a, b) => b.date.localeCompare(a.date));
-  }
-  function applyOpenSessionToList() {
-    if (!state.session || !state.session.date || state.editingPast) return;
-    const copy = clone(state.session);
-    const idx = state.sessions.findIndex(x => x.date === copy.date);
-    /* doSave() 는 worthSaving 이 아닌 세션을 디스크에서도 목록에서도 지웁니다.
-       같은 목록을 여기서만 검사 없이 밀어넣으면, 디스크에 없는 날이 화면에는
-       남습니다 — 갓 가입한 사람의 홈에서 오늘이 '운동한 날' 로 체크되고,
-       최근 기록에 빈 줄이 뜨고, '기록하는 중' 카드가 아무것도 없는 세션을
-       가리키던 것이 전부 이 한 줄에서 나왔습니다. */
-    if (!worthSaving(copy)) {
-      if (idx >= 0) state.sessions.splice(idx, 1);
-      return;
-    }
-    if (idx >= 0) state.sessions[idx] = copy;
-    else state.sessions.push(copy);
-    state.sessions.sort((a, b) => b.date.localeCompare(a.date));
-  }
-
   function mergeByDate(localRows, cloudRows) {
     const map = new Map();
     for (const row of localRows || []) {
@@ -5766,7 +5534,12 @@ const APP_VERSION = (() => {
     state.authError = '';
     if (state.guest) localStorage.setItem('fitlog-guest', '1');
     else localStorage.removeItem('fitlog-guest');
-    WorkoutDB.setScope(user ? user.uid : 'guest');
+    if (user) rememberLastUid(user.uid);
+
+    /* offlineUid: 인증을 확인할 수 없어(네트워크 없음) 이 기기에 마지막으로
+       들어왔던 사람의 저장소만 여는 경우입니다. */
+    state.offline = !user && !!opts.offlineUid;
+    WorkoutDB.setScope(user ? user.uid : (opts.offlineUid || 'guest'));
     await WorkoutDB.open();
 
     if (!user) {
@@ -5838,6 +5611,28 @@ const APP_VERSION = (() => {
   }
   function rememberedUsername(uid) {
     try { return localStorage.getItem('fitlog-id:' + uid) || ''; } catch (_) { return ''; }
+  }
+
+  /* ── 오프라인으로 들어오기 ────────────────────────────────────────────────
+     파이어베이스 SDK 는 gstatic.com 에서 받아오고, 서비스워커는 그 주소를
+     일부러 건드리지 않습니다(캐시하면 로그인이 깨집니다). 그래서 신호가 없는
+     지하 헬스장에서 앱을 열면 SDK 가 안 받아지고, 인증을 물어볼 방법 자체가
+     없어집니다. 예전에는 그 상태에서 로그인 화면을 띄웠습니다 — 기록은 전부
+     이 기기 안에 있는데, 로그인은 네트워크가 없어 절대 안 되고, 게스트 버튼은
+     없앴으니 들어갈 문이 하나도 없었습니다. 오늘 운동을 못 적습니다.
+
+     그래서 마지막으로 들어왔던 uid 를 기억해 두고, 인증을 확인할 수 없을 때는
+     그 사람의 기기 저장소를 열어 줍니다. 클라우드는 건드리지 않습니다 —
+     토큰이 없으니 애초에 불가능하고, 여기서 여는 건 이미 이 기기에 있는
+     데이터뿐입니다. 신호가 돌아오면 평소대로 로그인해 동기화됩니다. */
+  function rememberLastUid(uid) {
+    try {
+      if (uid) localStorage.setItem('fitlog-last-uid', uid);
+      else localStorage.removeItem('fitlog-last-uid');
+    } catch (_) {}
+  }
+  function lastUid() {
+    try { return localStorage.getItem('fitlog-last-uid') || ''; } catch (_) { return ''; }
   }
 
   /* Fetches the profile after entry rather than before it, for the same reason
@@ -5956,56 +5751,31 @@ const APP_VERSION = (() => {
      state.syncing 도 finally 에서 반드시 풉니다 — 예전에는 로그아웃으로
      중간에 버려진 동기화가 이 깃발을 켠 채로 남아, 다음 사람의 동기화가
      통째로 건너뛰어졌습니다. */
-  async function syncInBackground(fromPull) {
+  async function syncInBackground() {
     if (state.syncing) return;
     const myUid = state.user && state.user.uid;
     if (!myUid) return;
     const stillMe = () => !!state.user && state.user.uid === myUid;
     state.syncing = true;
-    /* 동그라미는 당겨서 새로고침할 때만 보여 줍니다. 로그인 직후 자동
-       동기화까지 띄우면 상단에 계속 앉아 있는 것처럼 보입니다. */
-    if (fromPull) showSyncIndicator();
+    /* 이 동기화가 당겨서 시작한 게 아니어도(로그인 직후 자동 동기화 등)
+       도는 동안은 똑같이 보여 줍니다 — 지금까지는 아무 표시가 없어서
+       클라우드에 올라가는지 자체를 알 방법이 없었습니다. */
+    showSyncIndicator();
     try {
-      /* 클라우드를 받기 전·후에 저장 큐를 비우고, 디스크는 네트워크가
-         끝난 뒤에 다시 읽습니다. 예전에 시작 시점 스냅샷으로 replaceAll
-         하면, 그 사이 persist 된 세트가 통째로 사라졌습니다. */
-      try { await persist(); } catch (_) {}
-      if (!stillMe()) return;
       await withTimeout(Cloud.touchProfile(), 8000, '프로필');
       if (!stillMe()) return;
       let cloudData = await withTimeout(Cloud.pullAll(), 12000, '불러오기');
       if (!stillMe()) return;
       /* Detect only — importing is the user's call, made from the home screen. */
       state.pendingImport = await detectImportableLocal(cloudData);
-      try { await persist(); } catch (_) {}
-      if (!stillMe()) return;
       const localSessions = await WorkoutDB.getAllSessions();
       const localCustom = await WorkoutDB.getCustomExercises();
       if (!stillMe()) return;
-      let sessions = mergeByDate(localSessions, cloudData.sessions);
-      sessions = overlayOpenSession(sessions);
-      /* 빈 껍데기 기록을 털어냅니다 — doSave() 가 저장하지 않는 것과 같은
-         기준입니다. 옛 버전이 클라우드에 올려 둔 빈 기록은 pullAll 로 매번
-         다시 내려오는데 pushAll 은 덮어쓰기만 하고 지우지는 않아서, 그냥 두면
-         새로고침할 때마다 오늘이 '운동한 날' 로 되살아납니다. */
-      const junkDates = sessions.filter(s => !worthSaving(s)).map(s => s.date);
-      if (junkDates.length) sessions = sessions.filter(worthSaving);
+      const sessions = mergeByDate(localSessions, cloudData.sessions);
       const customExercises = mergeCustom(localCustom, cloudData.customExercises);
-      if (!stillMe()) return;
       await WorkoutDB.replaceAll(sessions, customExercises);
       if (!stillMe()) return;
       await withTimeout(Cloud.pushAll(sessions, customExercises), 15000, '저장');
-      if (!stillMe()) return;
-      /* pushAll 은 덮어쓰기만 하므로, 위에서 걸러낸 빈 기록은 여기서 직접
-         지워야 계정에서 사라집니다. 실패해도 동기화를 무너뜨릴 일은 아니라
-         각각 감쌉니다 — 다음 동기화에서 다시 시도합니다. */
-      for (const date of junkDates) {
-        /* 지우는 사이에 그 날짜가 되살아났다면(동기화 도중 세트를 찍었다면)
-           건너뜁니다. */
-        if (state.session && state.session.date === date && worthSaving(state.session)) continue;
-        try { await withTimeout(Cloud.deleteSession(date), 8000, '정리'); }
-        catch (err) { console.warn('[fitlog] 빈 기록 정리 실패', date, err); }
-      }
       if (!stillMe()) return;
 
       /* 루틴과 몸무게도 같이 맞춥니다. 예전에는 저장만 올려보내고 내려받는
@@ -6031,10 +5801,14 @@ const APP_VERSION = (() => {
       state.sessions = await WorkoutDB.getAllSessions();
       state.customExercises = await WorkoutDB.getCustomExercises();
       /* 과거 기록을 고치는 중이면 손대지 않습니다. 그 편집은 일부러 저장을
-         미뤄 state.session 에만 있고 디스크에는 없습니다. 오늘 기록도
-         디스크 것으로 덮지 않습니다 — 동기화 중에 입력한 세트가 화면에서
-         사라집니다. 목록만 열린 세션과 맞춥니다. */
-      applyOpenSessionToList();
+         미뤄 state.session 에만 있고 디스크에는 없습니다(persist 가 pastDirty
+         만 세우고 돌아갑니다). 여기서 디스크 것으로 덮으면 방금 고친 무게가
+         화면에서 사라지고, 저장 바는 여전히 "저장하지 않은 변경이 있습니다"
+         라고 하며, 저장을 누르면 되돌아간 값이 그대로 기록됩니다. */
+      if (!state.editingPast) {
+        const saved = await WorkoutDB.getSession(state.date);
+        if (saved) state.session = normalizeSession(saved);
+      }
 
       render();
     } catch (err) {
@@ -6230,8 +6004,12 @@ const APP_VERSION = (() => {
     state.syncing = false;
     hideSyncIndicator();
     state.pendingImport = null;
+    state.offline = false;
     resetSignup();
     localStorage.removeItem('fitlog-guest');
+    /* 로그아웃했으면 오프라인 자동 진입도 더는 하지 않습니다 — 그러지 않으면
+       나간 계정의 기록이 다음에 앱을 열 때 그냥 열립니다. */
+    rememberLastUid('');
 
     /* Nothing about the local workspace may be allowed to stop the sign-out.
 
@@ -6528,6 +6306,16 @@ const APP_VERSION = (() => {
       return;
     }
 
+    /* 인증을 확인할 방법이 없었는데(파이어베이스가 아예 안 떴거나 응답이
+       없었음) 이 기기에 마지막으로 들어온 계정이 있다면, 그 사람의 기록을
+       열어 줍니다. 로그인 화면에 세워 두면 신호 없는 곳에서는 영영 못
+       들어갑니다. 신호가 돌아오면 평소대로 인증되고 동기화됩니다. */
+    const last = lastUid();
+    if (last && !Cloud.configured()) {
+      await enterApp(null, { offlineUid: last });
+      toast('오프라인입니다 — 기록은 이 기기에 저장되고 나중에 동기화됩니다');
+      return;
+    }
     state.authReady = true;
     render();
   }
