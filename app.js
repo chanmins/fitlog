@@ -93,9 +93,6 @@ const APP_VERSION = (() => {
     saveBroken: false,
     /* 피커에서 '나만의 운동 직접 추가' 칸에 적고 있는 이름 */
     customName: '',
-    /* 인증을 확인할 수 없어(오프라인) 이 기기 기록만 열어 준 상태.
-       클라우드에는 아무것도 쓰지 않습니다. */
-    offline: false,
     authMode: 'signin',       /* 'signin' | 'signup' */
     authId: '',               /* 아이디 (or email) typed on the sign-in screen */
     authPassword: '',
@@ -1614,11 +1611,7 @@ const APP_VERSION = (() => {
     openSwipeRow = null;
     gesture = null;
     if (!state.authReady) { appEl.innerHTML = renderSplash(); return; }
-    /* state.offline: 인증을 확인할 수 없어(네트워크 없음) 이 기기에 마지막으로
-       들어왔던 계정의 기록만 열어 준 상태입니다. 로그인한 것도 게스트도
-       아니지만, 로그인 화면을 띄우면 안 됩니다 — 신호가 없어서 로그인이
-       불가능한 상황이 바로 여기이기 때문입니다. */
-    if (!state.user && !state.guest && !state.offline) {
+    if (!state.user && !state.guest) {
       appEl.innerHTML = (state.authMode === 'signup' ? renderSignup()
                       : state.authMode === 'reset'  ? renderReset()
                       : renderLogin())
@@ -2987,6 +2980,85 @@ const APP_VERSION = (() => {
   }
 
   /* ── Exercise Info Sheet ──────────────────── */
+  /* ── 근육 지도 ────────────────────────────────────────────────────────────
+     운동마다 어느 근육을 쓰는지는 exercises.js 의 primary/secondary 에 이미
+     적혀 있습니다. 그동안 그 값을 글자로만 보여 줬는데("가슴, 삼두근"),
+     초보자에게 그건 몸의 어디인지 알려 주지 않습니다. 같은 데이터로 사람
+     그림에 색을 칠하면 한눈에 들어옵니다 — 새 그림 파일 없이 이 함수 하나로,
+     운동 98개 전부와 앞으로 추가할 운동까지 자동으로 됩니다.
+
+     드물게 쓰이는 세부 근육(소흉근·능형근 등)은 그릴 칸이 따로 없어서 가장
+     가까운 큰 부위로 접어 넣습니다. 안 그러면 그 운동만 아무 데도 칠해지지
+     않아 고장난 것처럼 보입니다. */
+  const MUSCLE_REGION = {
+    pecs_minor: 'chest',   chest_wall: 'back',    rhomboids: 'back',
+    levator:    'traps',   quads_rf:   'quads',   hip_flexor: 'quads',
+    adductors:  'quads',
+  };
+
+  function renderBodyMap(primary, secondary) {
+    const P = new Set(), S = new Set();
+    (primary   || []).forEach(m => P.add(MUSCLE_REGION[m] || m));
+    (secondary || []).forEach(m => { const r = MUSCLE_REGION[m] || m; if (!P.has(r)) S.add(r); });
+    const cls = m => P.has(m) ? ' p' : S.has(m) ? ' s' : '';
+    const r = (m, d, o) => `<path class="bm${cls(m)}" d="${d}"${o ? ' opacity=".5"' : ''}/>`;
+    const n = d => `<path class="bm-n" d="${d}"/>`;
+
+    /* 앞면 */
+    const front = `
+      <ellipse class="bm-n" cx="55" cy="16" rx="10" ry="12.5"/>
+      ${n('M49 27q6 2 12 0l1 8H48z')}
+      ${r('traps',     'M46 35q9 2 18 0l6 9q-15-3-30 0z')}
+      ${r('shoulders', 'M40 43q-11 2-14 15 -1 5 3 6l9-3q0-11 2-18z')}
+      ${r('shoulders', 'M70 43q11 2 14 15 1 5-3 6l-9-3q0-11-2-18z')}
+      ${r('chest',     'M39 45q8-2 16-1v25q-11-1-17-8 -2-9 1-16z')}
+      ${r('chest',     'M71 45q-8-2-16-1v25q11-1 17-8 2-9-1-16z')}
+      ${r('biceps',    'M29 64l8-3 -1 25q-5 2-9 0z')}
+      ${r('biceps',    'M81 64l-8-3 1 25q5 2 9 0z')}
+      ${n('M27 88q5 2 9 0l-2 27q-4 2-7 0z')}
+      ${n('M83 88q-5 2-9 0l2 27q4 2 7 0z')}
+      ${r('abs',       'M42 69q13 3 26 0l-4 39q-9 3-18 0z')}
+      ${n('M45 110q10 3 20 0l2 20q-12 3-24 0z')}
+      ${r('quads',     'M43 131q6 2 11 1l-1 46q-6 2-11 0z')}
+      ${r('quads',     'M67 131q-6 2-11 1l1 46q6 2 11 0z')}
+      ${n('M42 180q6 2 11 0v7q-6 2-11 0z')}
+      ${n('M68 180q-6 2-11 0v7q6 2 11 0z')}
+      ${r('calves',    'M43 189q5 2 10 0l-2 33q-4 2-8 0z')}
+      ${r('calves',    'M67 189q-5 2-10 0l2 33q4 2 8 0z')}
+      ${n('M43 224q4 2 8 0l1 8H42z')}
+      ${n('M67 224q-4 2-8 0l-1 8h10z')}`;
+
+    /* 뒷면 */
+    const back = `
+      <ellipse class="bm-n" cx="55" cy="16" rx="10" ry="12.5"/>
+      ${n('M49 27q6 2 12 0l1 8H48z')}
+      ${r('traps',      'M46 32q9 3 18 0l6 11q-4 18-15 24 -11-6-15-24z')}
+      ${r('shoulders',  'M40 43q-11 2-14 15 -1 5 3 6l9-3q0-11 2-18z')}
+      ${r('shoulders',  'M70 43q11 2 14 15 1 5-3 6l-9-3q0-11-2-18z')}
+      ${r('triceps',    'M29 64l8-3 -1 25q-5 2-9 0z')}
+      ${r('triceps',    'M81 64l-8-3 1 25q5 2 9 0z')}
+      ${n('M27 88q5 2 9 0l-2 27q-4 2-7 0z')}
+      ${n('M83 88q-5 2-9 0l2 27q4 2 7 0z')}
+      ${r('lats',       'M42 58q7 4 13 6v28q-10-3-16-11 -1-13 3-23z')}
+      ${r('lats',       'M68 58q-7 4-13 6v28q10-3 16-11 1-13-3-23z')}
+      ${r('back',       'M46 60q9 3 18 0v32q-9 2-18 0z')}
+      ${r('lower_back', 'M44 94q11 3 22 0l-1 16q-10 3-20 0z')}
+      ${r('glutes',     'M43 112q12 3 24 0l1 20q-13 3-26 0z')}
+      ${r('hamstrings', 'M43 134q6 2 11 1l-1 44q-6 2-11 0z')}
+      ${r('hamstrings', 'M67 134q-6 2-11 1l1 44q6 2 11 0z')}
+      ${n('M42 180q6 2 11 0v7q-6 2-11 0z')}
+      ${n('M68 180q-6 2-11 0v7q6 2 11 0z')}
+      ${r('calves',     'M43 189q5 2 10 0l-2 33q-4 2-8 0z')}
+      ${r('calves',     'M67 189q-5 2-10 0l2 33q4 2 8 0z')}
+      ${n('M43 224q4 2 8 0l1 8H42z')}
+      ${n('M67 224q-4 2-8 0l-1 8h10z')}`;
+
+    return `<div class="bodymap">
+      <figure><svg viewBox="0 0 110 236" role="img" aria-label="앞에서 본 사용 근육">${front}</svg><figcaption>앞</figcaption></figure>
+      <figure><svg viewBox="0 0 110 236" role="img" aria-label="뒤에서 본 사용 근육">${back}</svg><figcaption>뒤</figcaption></figure>
+    </div>`;
+  }
+
   function renderExerciseInfoSheet(exId) {
     const libEx = findExercise(exId) || state.customExercises.find(e => e.id === exId || e.name === exId);
     if (!libEx) return '';
@@ -3039,9 +3111,12 @@ const APP_VERSION = (() => {
         </div>
         ${photo}
         <div class="muscle-legend">
-          <div class="muscle-legend-title">주동근</div>
-          <div class="muscle-legend-row">${primaryPills}</div>
-          ${secondary.length ? `<div class="muscle-legend-title" style="margin-top:8px">협력근</div><div class="muscle-legend-row">${secondaryPills}</div>` : ''}
+          ${renderBodyMap(primary, secondary)}
+          <div class="muscle-legend-text">
+            <div class="muscle-legend-title">주동근</div>
+            <div class="muscle-legend-row">${primaryPills}</div>
+            ${secondary.length ? `<div class="muscle-legend-title" style="margin-top:8px">협력근</div><div class="muscle-legend-row">${secondaryPills}</div>` : ''}
+          </div>
         </div>
         ${renderExerciseTrend(libEx.name)}
         ${libEx.description ? `<p class="info-desc">${esc(libEx.description)}</p>` : ''}
@@ -4066,14 +4141,14 @@ const APP_VERSION = (() => {
   }
   function canPullFrom(target) {
     if (!PULL_TABS[state.tab] || state.syncing || !state.authReady) return false;
-    /* 로그인·가입 화면은 빼고, 앱 안에 들어온 뒤(계정·게스트·오프라인)만. */
-    if (!state.user && !state.guest && !state.offline) return false;
+    /* 로그인·가입 화면은 빼고, 앱 안에 들어온 뒤(계정·게스트)만. */
+    if (!state.user && !state.guest) return false;
     if (target && target.closest('.detail-screen, .sheet-backdrop, .dialog, .bottom-nav, .set-swipe-action')) return false;
     return isPageAtTop();
   }
   async function refreshFromPull() {
     if (state.syncing) return;
-    if (state.user && !state.offline) {
+    if (state.user) {
       syncInBackground(true);
       return;
     }
@@ -5691,12 +5766,7 @@ const APP_VERSION = (() => {
     state.authError = '';
     if (state.guest) localStorage.setItem('fitlog-guest', '1');
     else localStorage.removeItem('fitlog-guest');
-    if (user) rememberLastUid(user.uid);
-
-    /* offlineUid: 인증을 확인할 수 없어(네트워크 없음) 이 기기에 마지막으로
-       들어왔던 사람의 저장소만 여는 경우입니다. */
-    state.offline = !user && !!opts.offlineUid;
-    WorkoutDB.setScope(user ? user.uid : (opts.offlineUid || 'guest'));
+    WorkoutDB.setScope(user ? user.uid : 'guest');
     await WorkoutDB.open();
 
     if (!user) {
@@ -5768,28 +5838,6 @@ const APP_VERSION = (() => {
   }
   function rememberedUsername(uid) {
     try { return localStorage.getItem('fitlog-id:' + uid) || ''; } catch (_) { return ''; }
-  }
-
-  /* ── 오프라인으로 들어오기 ────────────────────────────────────────────────
-     파이어베이스 SDK 는 gstatic.com 에서 받아오고, 서비스워커는 그 주소를
-     일부러 건드리지 않습니다(캐시하면 로그인이 깨집니다). 그래서 신호가 없는
-     지하 헬스장에서 앱을 열면 SDK 가 안 받아지고, 인증을 물어볼 방법 자체가
-     없어집니다. 예전에는 그 상태에서 로그인 화면을 띄웠습니다 — 기록은 전부
-     이 기기 안에 있는데, 로그인은 네트워크가 없어 절대 안 되고, 게스트 버튼은
-     없앴으니 들어갈 문이 하나도 없었습니다. 오늘 운동을 못 적습니다.
-
-     그래서 마지막으로 들어왔던 uid 를 기억해 두고, 인증을 확인할 수 없을 때는
-     그 사람의 기기 저장소를 열어 줍니다. 클라우드는 건드리지 않습니다 —
-     토큰이 없으니 애초에 불가능하고, 여기서 여는 건 이미 이 기기에 있는
-     데이터뿐입니다. 신호가 돌아오면 평소대로 로그인해 동기화됩니다. */
-  function rememberLastUid(uid) {
-    try {
-      if (uid) localStorage.setItem('fitlog-last-uid', uid);
-      else localStorage.removeItem('fitlog-last-uid');
-    } catch (_) {}
-  }
-  function lastUid() {
-    try { return localStorage.getItem('fitlog-last-uid') || ''; } catch (_) { return ''; }
   }
 
   /* Fetches the profile after entry rather than before it, for the same reason
@@ -6182,12 +6230,8 @@ const APP_VERSION = (() => {
     state.syncing = false;
     hideSyncIndicator();
     state.pendingImport = null;
-    state.offline = false;
     resetSignup();
     localStorage.removeItem('fitlog-guest');
-    /* 로그아웃했으면 오프라인 자동 진입도 더는 하지 않습니다 — 그러지 않으면
-       나간 계정의 기록이 다음에 앱을 열 때 그냥 열립니다. */
-    rememberLastUid('');
 
     /* Nothing about the local workspace may be allowed to stop the sign-out.
 
@@ -6484,16 +6528,6 @@ const APP_VERSION = (() => {
       return;
     }
 
-    /* 인증을 확인할 방법이 없었는데(파이어베이스가 아예 안 떴거나 응답이
-       없었음) 이 기기에 마지막으로 들어온 계정이 있다면, 그 사람의 기록을
-       열어 줍니다. 로그인 화면에 세워 두면 신호 없는 곳에서는 영영 못
-       들어갑니다. 신호가 돌아오면 평소대로 인증되고 동기화됩니다. */
-    const last = lastUid();
-    if (last && !Cloud.configured()) {
-      await enterApp(null, { offlineUid: last });
-      toast('오프라인입니다 — 기록은 이 기기에 저장되고 나중에 동기화됩니다');
-      return;
-    }
     state.authReady = true;
     render();
   }
