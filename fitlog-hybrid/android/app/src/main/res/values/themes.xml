@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- 웹앱이 항상 어두운 화면이라 껍데기도 어둡게 고정합니다. 시스템이
+         밝은 테마여도 앱 안은 그대로여야 상태표시줄만 하얗게 뜨는 사고가
+         안 납니다. -->
+    <style name="Theme.FitLog" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@color/app_background</item>
+        <item name="android:statusBarColor">@color/app_background</item>
+        <item name="android:navigationBarColor">@color/app_background</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">false</item>
+        <item name="android:colorAccent">@color/app_accent</item>
+    </style>
+</resources>

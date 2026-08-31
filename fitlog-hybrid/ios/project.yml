@@ -1,0 +1,36 @@
+# XcodeGen 용 정의 — FitLog.xcodeproj 를 다시 만들고 싶을 때 씁니다.
+#
+# 저장소에는 이미 만들어진 FitLog.xcodeproj 가 들어 있으므로 평소에는 필요
+# 없습니다. Xcode 버전 차이로 프로젝트 파일이 열리지 않거나, 파일을 추가한 뒤
+# 프로젝트를 깨끗하게 다시 생성하고 싶을 때만:
+#
+#   brew install xcodegen
+#   cd ios && xcodegen generate
+#
+name: FitLog
+options:
+  bundleIdPrefix: com.fitlog
+  deploymentTarget:
+    iOS: "15.0"
+  developmentLanguage: ko
+
+targets:
+  FitLog:
+    type: application
+    platform: iOS
+    sources:
+      - path: FitLog
+    info:
+      path: FitLog/Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.fitlog.app
+        MARKETING_VERSION: 1.0.0
+        CURRENT_PROJECT_VERSION: 1
+        TARGETED_DEVICE_FAMILY: 1
+        SWIFT_VERSION: "5.0"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        GENERATE_INFOPLIST_FILE: NO
+        # 애플 개발자 계정의 팀 ID 를 넣으세요 (Xcode → Settings → Accounts).
+        DEVELOPMENT_TEAM: ""

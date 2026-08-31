@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- index.html 의 theme-color 와 같은 값입니다. 웹뷰가 그려지기 전
+         한순간 흰 화면이 번쩍이는 걸 막습니다. -->
+    <color name="app_background">#FF09090D</color>
+    <!-- 웹앱 아이콘의 라임색. 알림 배지 색으로도 씁니다. -->
+    <color name="app_accent">#FFC8F542</color>
+</resources>

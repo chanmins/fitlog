@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Android 13+ 는 알림도 런타임 권한입니다. 휴식 타이머를 처음 쓸 때 물어봅니다. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!--
+      SCHEDULE_EXACT_ALARM / USE_EXACT_ALARM 은 일부러 넣지 않았습니다.
+      휴식 알림은 AlarmManager.setAlarmClock() 으로 겁니다. 그 API 는 특별
+      권한 없이도 정확하고, 도즈(절전) 중에도 기기를 깨웁니다 — 사용자가
+      "알람" 으로 인식하는 용도라 시스템이 그렇게 대우해 주기 때문입니다.
+      대신 휴식 중에는 상태표시줄에 알람 아이콘이 하나 뜹니다.
+    -->
+
+    <application
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:hardwareAccelerated="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="false"
+        android:theme="@style/Theme.FitLog"
+        android:usesCleartextTraffic="false">
+
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|uiMode|density|fontScale"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- 휴식이 끝나는 시각에 깨어나 알림을 띄우는 곳. 앱이 완전히 닫혀
+             있어도 시스템이 이 리시버만 따로 살려 줍니다. -->
+        <receiver
+            android:name=".RestAlarmReceiver"
+            android:exported="false" />
+
+        <!-- 백업 JSON 내보내기용. 앱 캐시에 쓴 파일을 다른 앱(드라이브,
+             카톡, 파일)에 넘길 때만 씁니다. 저장소 권한이 필요 없습니다. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+</manifest>

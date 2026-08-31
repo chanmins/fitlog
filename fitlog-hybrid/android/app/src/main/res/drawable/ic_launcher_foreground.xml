@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 웹앱 아이콘(icons/icon.svg)의 바벨을 적응형 아이콘 전경으로 옮긴 것.
+     바깥 둥근 사각형 두 겹은 배경 레이어가 대신하므로 여기서는 뺐습니다 —
+     적응형 아이콘은 런처가 모양(원/사각/물방울)을 직접 잘라 냅니다. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+
+    <path
+        android:fillColor="#9BC22A"
+        android:pathData="M100,214 H112 A8,8 0 0 1 120,222 V290 A8,8 0 0 1 112,298 H100 A8,8 0 0 1 92,290 V222 A8,8 0 0 1 100,214 Z M400,214 H412 A8,8 0 0 1 420,222 V290 A8,8 0 0 1 412,298 H400 A8,8 0 0 1 392,290 V222 A8,8 0 0 1 400,214 Z" />
+    <path
+        android:fillColor="#C8F542"
+        android:pathData="M168,236 H344 A12,12 0 0 1 356,248 V264 A12,12 0 0 1 344,276 H168 A12,12 0 0 1 156,264 V248 A12,12 0 0 1 168,236 Z M132,198 H156 A14,14 0 0 1 170,212 V300 A14,14 0 0 1 156,314 H132 A14,14 0 0 1 118,300 V212 A14,14 0 0 1 132,198 Z M356,198 H380 A14,14 0 0 1 394,212 V300 A14,14 0 0 1 380,314 H356 A14,14 0 0 1 342,300 V212 A14,14 0 0 1 356,198 Z" />
+</vector>
