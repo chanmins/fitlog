@@ -279,10 +279,6 @@ const APP_VERSION = (() => {
     return unitWeight() === 'lb' ? Math.round((n / LB_PER_KG) * 100) / 100 : n;
   }
   function weightUnitLabel() { return unitWeight(); }
-  function fmtWeight(kg) {
-    if (kg === '' || kg == null || !Number.isFinite(Number(kg))) return '';
-    return `${toDisplayWeight(kg)}${weightUnitLabel()}`;
-  }
   function toDisplayHeight(cm) {
     if (cm === '' || cm == null || !Number.isFinite(Number(cm))) return cm;
     const n = Number(cm);
@@ -525,12 +521,6 @@ const APP_VERSION = (() => {
       });
   }
 
-  function fmtSets(sets) {
-    return (sets||[])
-      .filter(s => s.kg!==''||s.reps!=='')
-      .map(s => `${s.kg??'-'}kg×${s.reps??'-'}`)
-      .join(' · ');
-  }
   function exVolume(ex) {
     /* Warm-up sets don't count toward working volume — matches how lifters
        actually think about volume, and keeps the number meaningful. */
@@ -615,9 +605,6 @@ const APP_VERSION = (() => {
   function analysisParts() {
     return PARTS.filter(p => p.kind === 'weight' && p.id !== 'stretch');
   }
-
-  /* 설정의 주 시작 요일(월/일)을 따릅니다 — weekStartOf 가 그 기준입니다. */
-  function weekStartDate(d) { return weekStartOf(d); }
 
   /* 최근 n주 / 그 직전 n주의 부위별 세트·볼륨·최대중량 */
   /* 두 창은 반드시 같은 길이여야 합니다.
@@ -5055,17 +5042,6 @@ const APP_VERSION = (() => {
     });
     if (!s.parts.includes(partId)) s.parts.push(partId);
     return true;
-  }
-
-  async function handlePickEx(partId, name, exId) {
-    const before = new Set(state.session.exercises.map(e => e.id));
-    if (!addExerciseToSession(partId, name, exId)) { toast('이미 추가된 운동입니다'); return; }
-    await persist();
-    closeAllSheets();
-    const added = state.session.exercises.find(e => !before.has(e.id));
-    if (added) flashExercise(added.id);
-    render();
-    toast('운동을 추가했습니다');
   }
 
   /* Commit every exercise queued in the picker in one shot. */

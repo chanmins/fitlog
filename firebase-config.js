@@ -63,4 +63,4 @@ function isFirebaseConfigured() {
         App Check → Firestore / Authentication → "Enforce" 로 전환.
         (Leave it un-enforced while testing — enforcing with a bad/missing
         key locks out every real user too.) */
-const RECAPTCHA_V3_SITE_KEY = "";
+const RECAPTCHA_V3_SITE_KEY = "6LfvGqEtAAAAAFIT_2F6HTlRdOhljTmCvTXTlYRG";
