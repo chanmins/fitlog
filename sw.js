@@ -1,4 +1,4 @@
-const CACHE = "fitlog-v74";
+const CACHE = "fitlog-v75";
 /* Photos live in their own cache that version bumps do NOT clear. They never
    change once published, and re-downloading 2MB of them on every update would
    spend the free tier's daily transfer for nothing. */

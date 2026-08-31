@@ -407,6 +407,51 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 }
 .sec-title { font-size: 16px; font-weight: 800; letter-spacing: -0.03em; }
 .sec-sub   { font-size: 12px; color: var(--muted); font-weight: 600; }
+
+/* 기록 화면의 부위 제목 — 스크롤을 따라 상단바 바로 밑에 붙습니다.
+   목록 한가운데에서 "지금 이게 가슴인가 등인가" 를 찾으러 위로 되돌아갈
+   일이 없어집니다. 화면 양옆 여백(.screen 의 18px)을 음수 마진으로 되찾아,
+   붙어 있는 동안 배경이 화면 끝까지 이어지게 합니다 — 안 그러면 흐릿한
+   띠 양옆으로 본문이 그대로 비쳐 지나갑니다. */
+.sec-head.part-head {
+  position: sticky; top: calc(56px + var(--safe-top)); z-index: 15;
+  justify-content: flex-start; gap: 8px;
+  margin: 22px -18px 12px; padding: 9px 18px 8px;
+  background: color-mix(in srgb, var(--bg) 86%, transparent);
+  backdrop-filter: saturate(180%) blur(14px);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  /* 칩을 눌러 이 자리로 굴러올 때 상단바 밑에 숨지 않도록 */
+  scroll-margin-top: calc(56px + var(--safe-top));
+}
+.part-head-prog {
+  margin-left: auto; font-size: 12px; font-weight: 800; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 부위 칩 줄 — 부위를 고른 뒤에 8칸 그리드를 대신합니다. 자리를 아끼는
+   동시에 긴 목록의 목차 노릇을 합니다(누르면 그 부위로 스크롤). */
+.pchip-row {
+  display: flex; gap: 6px; overflow-x: auto;
+  margin: 16px -18px 0; padding: 4px 18px 4px;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.pchip-row::-webkit-scrollbar { display: none; }
+.pchip {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 6px;
+  height: 34px; padding: 0 13px; border-radius: 999px;
+  background: var(--surface); border: 1.5px solid var(--line);
+  font-size: 13px; font-weight: 800; color: var(--sub);
+  transition: transform .12s;
+}
+.pchip:active { transform: scale(.94); }
+.pchip i { width: 7px; height: 7px; border-radius: 50%; background: var(--pc); }
+.pchip b { font-size: 11px; font-weight: 800; opacity: .65; }
+.pchip:not(.add) {
+  border-color: color-mix(in srgb, var(--pc) 42%, var(--line));
+  background: color-mix(in srgb, var(--pc) 9%, var(--surface));
+  color: color-mix(in srgb, var(--pc) var(--part-mix, 100%), var(--part-ink, transparent));
+}
+.pchip.add { border-style: dashed; color: var(--muted); }
 .eyebrow {
   font-size: 11px; font-weight: 800; color: var(--muted);
   text-transform: uppercase; letter-spacing: .08em;
@@ -642,6 +687,9 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   box-shadow: var(--sh-card); transition: border-color .2s;
 }
 .ex-card.all-done { border-color: var(--accent-line); }
+/* 접힌 카드는 '끝난 일' 이라 더 얇게 눕습니다. 남은 운동과 같은 덩치를
+   유지할 이유가 없습니다. */
+.ex-card:not(.expanded) { padding: 12px 15px; margin-bottom: 8px; }
 
 /* 아코디언 헤더 — 제목 전체가 펼침/접힘 버튼이고, ⓘ·✕ 는 그 오른쪽에
    그대로 남습니다(버튼 안에 버튼을 넣으면 안 되므로 형제로 둡니다). */
@@ -652,12 +700,32 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   text-align: left; padding: 0; background: none;
 }
 .ex-card-titles { flex: 1; min-width: 0; }
+/* 화살표는 '버튼처럼' 생겨야 합니다. 회색 선 하나만 떠 있으면 그게 눌러서
+   접는 자리인지, 그냥 장식인지 알 방법이 없습니다. 동그란 바탕과 테두리를
+   주면 나머지 아이콘 버튼(ⓘ·✕)과 같은 언어가 되어, 별도 설명 없이도
+   누를 수 있는 것으로 읽힙니다. */
 .ex-card-chev {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
-  width: 18px; height: 22px; color: var(--muted); transition: transform .2s;
+  flex-shrink: 0; display: grid; place-items: center;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--surface-2); border: 1px solid var(--line);
+  color: var(--sub);
+  transition: transform .22s cubic-bezier(.22,.9,.32,1), background .15s, color .15s;
 }
 .ex-card.expanded .ex-card-chev { transform: rotate(180deg); }
-.ex-card-toggle:active .ex-card-chev { color: var(--accent); }
+/* 제목 어디를 눌러도 반응이 옵니다 — 누를 수 있는 범위가 화살표만이
+   아니라는 걸 손으로 알게 되는 자리입니다. 레이아웃을 건드리지 않는
+   색 변화만 씁니다(마진을 주면 아래 세트 표와 왼쪽 줄이 어긋납니다). */
+.ex-card-toggle:active .ex-card-chev { background: var(--surface-3); color: var(--accent); }
+.ex-card-toggle:active .ex-card-name { opacity: .62; }
+
+/* 마지막 세트를 채워 카드가 스스로 접힌 직후 한 번만. 위에서 눌러 접히는
+   방향으로 짧게 움직여, 마지막으로 눈에 남는 인상이 '사라졌다' 가 아니라
+   '접혔다' 가 되게 합니다. */
+@keyframes cardFold {
+  from { transform: scaleY(.88); opacity: .3; }
+  to   { transform: scaleY(1); opacity: 1; }
+}
+.ex-card.just-folded { animation: cardFold .32s cubic-bezier(.22,.9,.32,1); transform-origin: top center; }
 
 .ex-card-name { font-size: 16px; font-weight: 800; letter-spacing: -0.03em; display: flex; align-items: center; gap: 6px; }
 .ex-done-tick { color: var(--accent); }

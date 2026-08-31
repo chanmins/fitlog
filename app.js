@@ -218,8 +218,15 @@ const APP_VERSION = (() => {
     /* Theme mode: 'auto' | 'light' | 'dark' */
     themeMode: 'auto',
 
-    /* Accordion states for exercise cards — { exId: true/false } */
+    /* 운동 카드 아코디언 — { exId: true/false }. 값이 없으면 기본값을
+       씁니다(다 끝낸 운동은 접힘). exIsExpanded() 참고. */
     expandedExercises: {},
+
+    /* '＋ 부위' 로 여는 부위 선택 시트 */
+    partSheet: false,
+
+    /* 방금 마지막 세트를 채운 운동 — 접히기 전 잠깐 더 펼쳐 두는 유예. */
+    justCompletedExId: null,
   };
 
   const REST_PRESETS = [30, 60, 90, 120, 180];
@@ -381,6 +388,10 @@ const APP_VERSION = (() => {
      들고 있다가 한 번만 써먹는 수밖에 없습니다. */
   let pendingEnterExIds = new Set();
   let pendingEnterSetIds = new Set();
+  /* 같은 방식으로, '방금 접힌' 운동. 접히는 순간 짧은 움직임을 한 번 주려고
+     둡니다 — 움직임이 없으면 카드가 줄어든 게 아니라 내용이 사라진 것처럼
+     보입니다. */
+  let pendingFoldExIds = new Set();
 
   /* ── Data helpers ───────────────────────── */
   function emptySession(date) {
@@ -1483,6 +1494,7 @@ const APP_VERSION = (() => {
     state.pickSelection = [];
     state.customName = '';
     state.routineSheet = false;
+    state.partSheet = false;
     /* routineEdit 는 시트가 아니라 화면이므로 여기서 닫지 않습니다 —
        운동을 고르고 나면 만들던 자리로 돌아와야 합니다. */
     state.exerciseInfoId = null;
@@ -1629,11 +1641,13 @@ const APP_VERSION = (() => {
     navDir = null;
     pendingEnterExIds = new Set();
     pendingEnterSetIds = new Set();
+    pendingFoldExIds = new Set();
 
     if (state.profileEditing) html += renderProfileSheet();
     if (state.yearPicker)     html += renderYearPickerSheet();
     if (state.weightPicker)   html += renderWeightPickerSheet();
     if (state.repsPicker)     html += renderRepsPickerSheet();
+    if (state.partSheet)      html += renderPartSheet();
     if (state.pickerPart)     html += renderExercisePickerSheet(state.pickerPart);
     /* 정보 시트는 피커보다 뒤에 그립니다 — 운동을 고르는 도중에 "이게 무슨
        동작이지?" 하고 열었을 때 피커 밑에 깔리면 아무것도 안 보입니다. */
@@ -2511,14 +2525,10 @@ const APP_VERSION = (() => {
       </main>`;
   }
 
-  /* ── Workout Tab ──────────────────────────── */
-  function renderWorkout() {
-    const s = state.session;
-    if (!s) return `<header class="topbar"><div class="topbar-title">기록</div></header>
-      <main class="screen${navDir ? ' nav-' + navDir : ''}"><div class="empty-state"><div class="empty-icon">🏋️</div>오늘의 운동을 시작하세요</div>
-      <button class="btn-hero" data-act="today">오늘 기록 시작하기</button></main>`;
-
-    const partTiles = PARTS.map(p => {
+  /* 8칸 부위 그리드. 아직 부위를 안 고른 날의 본문이자, 고르고 난 뒤에는
+     '＋ 부위' 시트의 내용물입니다 — 같은 그리드를 두 곳에서 씁니다. */
+  function renderPartTiles(s) {
+    return PARTS.map(p => {
       const on = s.parts.includes(p.id);
       const count = p.kind === 'weight' ? s.exercises.filter(e => e.part === p.id).length : 0;
       const sub = on
@@ -2531,11 +2541,79 @@ const APP_VERSION = (() => {
         <span class="pt-count">${sub}</span>
       </button>`;
     }).join('');
+  }
+
+  /* 부위를 고른 뒤의 축약형. 칩을 누르면 그 부위 자리로 스크롤합니다 —
+     칩 줄이 자리를 아끼는 동시에 긴 목록의 목차 노릇을 합니다. 부위를
+     더하거나 빼는 건 '＋ 부위' 시트에서만 되도록 갈라 놨습니다. 여기서
+     탭이 '이동' 과 '해제' 두 가지 뜻을 가지면, 다음 운동을 보려고 누른
+     손끝이 그 부위를 통째로 지워 버릴 수 있습니다. */
+  function renderPartChips(s, ids) {
+    const chips = ids.map(id => {
+      const p = PARTS.find(x => x.id === id);
+      if (!p) return '';
+      const n = p.kind === 'weight' ? s.exercises.filter(e => e.part === id).length : 0;
+      return `<button class="pchip" style="--pc:${p.color}" data-act="jump-part" data-part="${esc(id)}">
+        <i></i>${esc(p.label)}${n ? `<b>${n}</b>` : ''}
+      </button>`;
+    }).join('');
+    return `<div class="pchip-row">${chips}
+      <button class="pchip add" data-act="open-part-sheet">＋ 부위</button>
+    </div>`;
+  }
+
+  function renderPartSheet() {
+    const s = state.session;
+    if (!s) return '';
+    return `<div class="sheet-backdrop">
+      <div class="sheet-panel">
+        <div class="sheet-grab"></div>
+        <div class="sheet-head">
+          <div><div class="sheet-title">부위 선택</div><div class="sheet-title-sub">고른 부위가 기록 화면에 나타납니다</div></div>
+          <button class="sheet-x" data-act="close-sheet" aria-label="닫기">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="part-grid">${renderPartTiles(s)}</div>
+        <button class="btn-ghost" style="margin-top:14px" data-act="open-routines">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+          루틴 불러오기${state.routines.length ? ` (${state.routines.length})` : ''}
+        </button>
+      </div>
+    </div>`;
+  }
+
+  /* ── Workout Tab ──────────────────────────── */
+  function renderWorkout() {
+    const s = state.session;
+    if (!s) return `<header class="topbar"><div class="topbar-title">기록</div></header>
+      <main class="screen${navDir ? ' nav-' + navDir : ''}"><div class="empty-state"><div class="empty-icon">🏋️</div>오늘의 운동을 시작하세요</div>
+      <button class="btn-hero" data-act="today">오늘 기록 시작하기</button></main>`;
+
+    /* 부위 선택기는 두 얼굴을 갖습니다.
+
+       아직 아무 부위도 안 고른 날에는 이게 이 화면의 유일한 할 일이므로
+       8칸 그리드를 그대로 펼쳐 둡니다. 하지만 하나라도 고르고 나면 그때부터
+       이건 '이미 끝난 결정' 입니다 — 그런데도 210px 짜리 두 줄이 화면 맨
+       위에 계속 남아, 운동하는 내내 스크롤을 위로 올릴 때마다 첫 화면의
+       4분의 1을 차지했습니다. 그래서 고른 뒤에는 34px 짜리 칩 한 줄로
+       접고, 부위를 더하거나 빼는 일은 '＋ 부위' 로 여는 시트에 맡깁니다. */
+    const chosenIds = orderedParts(sessionPartIds(s)).map(p => p.id);
+    const partPicker = chosenIds.length
+      ? renderPartChips(s, chosenIds)
+      : `<div class="sec-head" style="margin-top:18px">
+           <div class="sec-title">부위 선택</div>
+           <button class="routine-btn" data-act="open-routines">
+             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+             루틴${state.routines.length ? ` ${state.routines.length}` : ''}
+           </button>
+         </div>
+         <div class="part-grid">${renderPartTiles(s)}</div>`;
 
     let blocks = '';
 
     if (s.parts.includes('run')) {
-      blocks += `<div class="run-card">
+      blocks += `<div class="run-card" id="part-run">
         <div class="run-card-title">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="14" cy="5" r="2"/><path d="M13 8l-3 3 2 2 1 5M12 13l-2 2-5-1M15 10l2-1 3 2 1-1"/></svg>
           러닝
@@ -2564,8 +2642,15 @@ const APP_VERSION = (() => {
       if (part.kind !== 'weight') continue;
       if (!shown.includes(part.id)) continue;
       const exercises = s.exercises.filter(e => e.part === part.id);
-      blocks += `<div class="sec-head">
+      const pdone = exercises.reduce((a, e) => a + (e.sets||[]).filter(st => st.done).length, 0);
+      const ptotal = exercises.reduce((a, e) => a + (e.sets||[]).length, 0);
+      /* 부위 제목은 스크롤을 따라 위에 붙습니다(.part-head). 목록 한가운데
+         에서 "지금 보는 게 가슴인가 등인가" 를 다시 찾아 올라갈 일이
+         없어집니다. 세트 진행도 같이 붙여 두면, 붙어 있는 그 한 줄이
+         '이 부위는 얼마나 남았나' 까지 답합니다. */
+      blocks += `<div class="sec-head part-head" id="part-${part.id}">
         <div class="sec-title part-title" style="--pc:${part.color}">${part.label}</div>
+        ${ptotal ? `<span class="part-head-prog">${pdone}/${ptotal}</span>` : ''}
         <button class="btn-add-sm" data-act="open-picker" data-part="${part.id}">+ 운동 추가</button>
       </div>`;
       if (exercises.length) {
@@ -2674,14 +2759,7 @@ const APP_VERSION = (() => {
           </button>
         </div>
         ${summary}
-        <div class="sec-head" style="margin-top:18px">
-          <div class="sec-title">부위 선택</div>
-          <button class="routine-btn" data-act="open-routines">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
-            루틴${state.routines.length ? ` ${state.routines.length}` : ''}
-          </button>
-        </div>
-        <div class="part-grid">${partTiles}</div>
+        ${partPicker}
 
         ${blocks}
         ${finishBar}
@@ -2818,10 +2896,72 @@ const APP_VERSION = (() => {
     </div>`;
   }
 
+  /* 접힌 카드에 남길 한 줄 — 그날 이 운동에서 가장 무겁게 든 완료 세트.
+     "4/4 세트" 만 남으면 무엇을 했는지가 사라집니다. 평균이 아니라 최고
+     세트를 쓰는 이유는, 다음에 이 운동을 볼 때 기준이 되는 숫자가 그거라서
+     입니다. 웜업은 뺍니다 — 오늘의 성과가 아닙니다. */
+  function topSetLine(ex) {
+    const done = (ex.sets || []).filter(s => s.done && !s.warmup);
+    if (!done.length) return '';
+    if (isHoldExercise(ex)) {
+      const best = Math.max(...done.map(s => Number(s.reps) || 0), 0);
+      return best ? `${best}초` : '';
+    }
+    let best = null;
+    for (const s of done) {
+      const kg = Number(s.kg), reps = Number(s.reps);
+      if (!Number.isFinite(kg) || !Number.isFinite(reps) || !kg) continue;
+      if (!best || kg > best.kg) best = { kg, reps };
+    }
+    return best ? `${toDisplayWeight(best.kg)}${weightUnitLabel()} × ${best.reps}` : '';
+  }
+
+  /* 이 운동이 기본으로 펼쳐져 있어야 하는지. 다 끝낸 운동은 접습니다 —
+     끝난 일이 남은 일과 같은 자리를 차지할 이유가 없습니다. 사용자가 직접
+     펼치거나 접은 적이 있으면(expandedExercises 에 값이 있으면) 그 선택이
+     항상 이깁니다. */
+  function exDefaultExpanded(ex) {
+    const p = exProgress(ex);
+    return !(p.total > 0 && p.done === p.total);
+  }
+  function exIsExpanded(ex) {
+    const v = state.expandedExercises[ex.id];
+    if (v !== undefined) return v;              /* 직접 접거나 편 적이 있으면 그게 이깁니다 */
+    if (state.justCompletedExId === ex.id) return true;  /* 접히기 직전의 유예 */
+    return exDefaultExpanded(ex);
+  }
+
+  /* 마지막 세트를 채웠을 때 카드가 접히는 시점을 잠깐 미룹니다.
+
+     체크한 손가락 밑에서 카드가 그 자리에서 접히면, 처음 겪는 사람에게는
+     방금 적은 세트가 통째로 사라진 것처럼 보입니다 — 접힌 게 아니라 지워진
+     걸로 읽힙니다. 그래서 ✓ 가 켜지고 테두리가 초록으로 바뀌는 걸 먼저
+     보여 준 다음(0.9초), 그때 접습니다. 접히는 렌더에는 짧은 움직임을
+     붙여서, 마지막으로 눈에 남는 게 '사라짐' 이 아니라 '접힘' 이 되게 합니다.
+
+     0.9초는 세트를 끝내고 손을 떼는 데 걸리는 시간쯤입니다. 더 짧으면
+     여전히 손가락 밑에서 움직이고, 더 길면 접히는 이유가 방금 그 체크
+     때문이라는 게 연결되지 않습니다. */
+  let foldTimer = 0;
+  function scheduleAutoFold(ex) {
+    clearTimeout(foldTimer);
+    state.justCompletedExId = ex.id;
+    foldTimer = setTimeout(() => {
+      if (state.justCompletedExId !== ex.id) return;
+      state.justCompletedExId = null;
+      pendingFoldExIds.add(ex.id);
+      render();
+    }, 900);
+  }
+  function cancelAutoFold(exId) {
+    if (state.justCompletedExId !== exId) return;
+    clearTimeout(foldTimer);
+    state.justCompletedExId = null;
+  }
+
   /* ── Exercise Card ────────────────────────── */
   function renderExerciseCard(ex) {
     const libEx = findExercise(ex.id) || state.customExercises.find(e => e.id === ex.id);
-    const last = lastLog(ex.name, state.session.date);
     const primary = libEx?.primary || [];
     const secondary = libEx?.secondary || [];
     const allMuscles = [...primary, ...secondary];
@@ -2830,12 +2970,15 @@ const APP_VERSION = (() => {
       `<span class="muscle-tag${primary.includes(m)?' primary':''}">${esc(MUSCLE_GROUPS[m]||m)}</span>`
     ).join('');
 
+    const prog = exProgress(ex);
+    const allDone = prog.total > 0 && prog.done === prog.total;
+    const isExpanded = exIsExpanded(ex);
+    const hold = isHoldExercise(ex);
 
     /* Warm-ups are labelled W and don't consume a number, so the working sets
        still read 1, 2, 3 — which is how a lifter counts them. */
     let workingNo = 0;
-    const hold = isHoldExercise(ex);
-    const sets = ex.sets.map((set) => {
+    const sets = !isExpanded ? '' : ex.sets.map((set) => {
       const done = set.done;
       const warmup = !!set.warmup;
       if (!warmup) workingNo++;
@@ -2868,23 +3011,22 @@ const APP_VERSION = (() => {
       </div>`;
     }).join('');
 
-    const prog = exProgress(ex);
-    const allDone = prog.total > 0 && prog.done === prog.total;
+    /* 접었을 때는 근육 태그 대신 "무엇을 했는지" 한 줄이 옵니다. 접힌 카드가
+       차지하는 두 줄은 '이 운동은 끝났다' 와 '얼마로 끝냈다' 에 쓰는 게
+       맞습니다 — 무슨 근육을 쓰는지는 지금 할 일이 아닙니다. */
     const metaBits = [];
     if (prog.total) metaBits.push(`${prog.done}/${prog.total} 세트`);
+    if (!isExpanded) { const t = topSetLine(ex); if (t) metaBits.push(t); }
     const exEnter = pendingEnterExIds.has(ex.id) ? ' enter' : '';
+    const exFold  = pendingFoldExIds.has(ex.id) ? ' just-folded' : '';
 
-    /* 아코디언: 기본은 펼침. 접으면 이름과 "2/3 세트" 만 남아 한 화면에
-       운동이 여러 개 들어옵니다. 화살표는 SVG 하나를 CSS 로 뒤집습니다. */
-    const isExpanded = state.expandedExercises[ex.id] !== false;
-
-    return `<article class="ex-card${allDone?' all-done':''}${exEnter}${isExpanded?' expanded':''}" data-exid="${esc(ex.id)}">
+    return `<article class="ex-card${allDone?' all-done':''}${exEnter}${exFold}${isExpanded?' expanded':''}" data-exid="${esc(ex.id)}">
       <div class="ex-card-head">
         <button class="ex-card-toggle" data-act="toggle-ex-accordion" data-ex="${esc(ex.id)}" aria-expanded="${isExpanded}">
           <span class="ex-card-chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
           <div class="ex-card-titles">
             <div class="ex-card-name">${allDone?'<span class="ex-done-tick"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>':''}${esc(ex.name)}</div>
-            ${muscleTags ? `<div class="ex-card-sub">${muscleTags}</div>` : ''}
+            ${(isExpanded && muscleTags) ? `<div class="ex-card-sub">${muscleTags}</div>` : ''}
             ${metaBits.length ? `<div class="ex-card-meta">${esc(metaBits.join(' · '))}</div>` : ''}
           </div>
         </button>
@@ -4274,7 +4416,17 @@ const APP_VERSION = (() => {
     if (act === 'hist-all')  { state.histAll = !state.histAll; render(); return; }
     if (act === 'add-weight') { await handleAddWeight(); return; }
     if (act === 'vol-info')   { await showVolumeInfo(); return; }
-    if (act === 'open-routines') { state.routineSheet = true; render(); return; }
+    if (act === 'open-routines') { state.partSheet = false; state.routineSheet = true; render(); return; }
+    if (act === 'open-part-sheet') { state.partSheet = true; render(); return; }
+    if (act === 'jump-part') {
+      /* 칩 줄은 긴 목록의 목차입니다. 부드럽게 굴러가야 지금 화면이 어디로
+         옮겨 갔는지 눈이 따라옵니다 — 순간이동하면 같은 화면이 그냥 다른
+         내용으로 바뀐 것처럼 보입니다. 붙어 있는 제목에 가려지지 않도록
+         스크롤 여백은 CSS 의 scroll-margin-top 이 잡습니다. */
+      const el = document.getElementById('part-' + btn.dataset.part);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
     if (act === 'new-routine')   { openRoutineEditor(null); return; }
     if (act === 'edit-routine')  { openRoutineEditor(btn.dataset.id); return; }
     if (act === 'apply-routine') { await handleApplyRoutine(btn.dataset.id); return; }
@@ -4449,7 +4601,13 @@ const APP_VERSION = (() => {
 
     if (act === 'toggle-ex-accordion') {
       const exId = btn.dataset.ex;
-      state.expandedExercises[exId] = state.expandedExercises[exId] !== false ? false : true;
+      const ex = state.session?.exercises.find(e => e.id === exId);
+      if (!ex) return;
+      /* 지금 보이는 상태의 반대로 뒤집습니다. 아직 아무것도 안 누른 운동이면
+         '지금 보이는 상태' 는 기본값이므로, 첫 탭이 눈에 보이는 것과 반대로
+         움직이는 일이 없습니다. */
+      state.expandedExercises[exId] = !exIsExpanded(ex);
+      cancelAutoFold(exId);   /* 직접 골랐으면 예약된 자동 접기는 없던 일로 */
       render();
       return;
     }
@@ -5446,13 +5604,9 @@ const APP_VERSION = (() => {
   /* ── 세트 완료 처리는 여기 한 곳에서만 ──────────────────────────────────
      세트를 끝내는 길이 두 개입니다: ✓ 를 직접 누르는 길, 그리고 횟수를 입력
      하는 길(횟수를 적는 게 곧 세트를 끝낸다는 뜻이라 자동으로 완료됩니다).
-     예전에는 두 길이 각자 코드를 갖고 있었고, 횟수 입력 쪽에 완료 시각과
-     기록 판정이 빠져 있었습니다. 그래서 횟수를 적어 기록하는 사람에게는
-     운동 시간·세트 사이 휴식이 영영 안 나오고(지나간 시간은 되돌려 적을 수
-     없습니다), 개인 기록 알림도 뜨지 않았습니다.
-
-     PR 판정을 저장 '전에' 하는 이유: 저장하고 나면 방금 그 세트도 과거
-     기록에 섞여, 자기 자신과 비교해 늘 "기록 아님" 이 됩니다. */
+     예전에는 두 길이 각자 코드를 갖고 있었고, 횟수 입력 쪽에 완료 시각이
+     빠져 있었습니다. 그래서 횟수를 적어 기록하는 사람에게는 운동 시간·세트
+     사이 휴식이 영영 안 나왔습니다 — 지나간 시간은 되돌려 적을 수 없습니다. */
   function markSetDone(ex, set, done) {
     set.done = done;
     /* 과거 기록을 고치는 중이면 '지금' 과 아무 상관이 없습니다.
@@ -5467,8 +5621,16 @@ const APP_VERSION = (() => {
         set.doneAt = Date.now();
         startRestTimer(restDurationFor(set), ex?.name || '', set.id);
       }
+      /* 이 체크로 운동이 다 끝났으면, 잠시 뒤 카드를 접습니다. */
+      if (ex) {
+        const p = exProgress(ex);
+        if (p.total > 0 && p.done === p.total) scheduleAutoFold(ex);
+      }
       return null;
     }
+    /* 체크를 다시 풀면 접을 이유가 없어집니다 — 예약해 둔 접기를 취소합니다.
+       안 그러면 방금 되살린 세트가 0.9초 뒤에 접혀 버립니다. */
+    if (ex) cancelAutoFold(ex.id);
     delete set.doneAt;
     /* 지금 돌아가는 휴식이 '이 세트' 가 시작한 것일 때만 끕니다.
        예전에는 무조건 껐습니다 — 3세트를 끝내 90초를 재는 중에 1세트를
