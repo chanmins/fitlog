@@ -87,6 +87,8 @@ html, body {
   height: 100%;
   background: var(--bg);
   color: var(--text);
+  /* 맨 위에서 아래로 당길 때 브라우저 기본 새로고침·바운스가 앱 손짓을
+     가로채지 않게 합니다. */
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Pretendard",
                "Apple SD Gothic Neo", "Segoe UI", Roboto, "Noto Sans KR", sans-serif;
   font-size: 15px;
@@ -100,6 +102,7 @@ html, body {
      긴 운동 이름)이 칸을 넘칠 수 있어, 그때만 아무 데서나 끊게 함께 겁니다. */
   word-break: keep-all;
   overflow-wrap: anywhere;
+  overscroll-behavior-y: contain;
 }
 
 body { background: var(--bg-grad); background-attachment: fixed; }
@@ -527,7 +530,12 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .set-table-head span:nth-child(2), .set-table-head span:nth-child(3), .set-table-head span:nth-child(4) { text-align: center; }
 .set-row {
   display: grid; grid-template-columns: 26px 1fr 1fr 38px 40px; gap: 6px; align-items: center;
-  background: var(--surface); position: relative; z-index: 1; touch-action: pan-y;
+  background: var(--surface); position: relative; z-index: 1;
+  /* pan-y 로 두면 브라우저가 세로 팬을 독점해서, 맨 위에서 아래로 당기는
+     새로고침의 preventDefault 가 무시됩니다. manipulation 은 더블탭 줌만
+     끄고, 세로 스크롤·가로 밀기는 그대로 두되 JS 가 세로 제스처를 가로챌
+     수 있게 합니다. */
+  touch-action: manipulation;
   transition: transform .18s cubic-bezier(.2,.8,.3,1);
 }
 .set-row.swiping { transition: none; }
@@ -561,6 +569,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   pointer-events: none;
 }
 .pull-refresh.dragging { transition: none; }
+.pull-refresh.armed { color: var(--accent); border-color: var(--accent-line); }
 .pull-refresh.loading svg { animation: spin .8s linear infinite; }
 .set-num {
   width: 26px; height: 30px; border-radius: 9px; display: grid; place-items: center;
