@@ -3887,56 +3887,22 @@ const APP_VERSION = (() => {
       </main>`;
   }
 
-  /* ── 손짓: 세트 옆으로 밀어 지우기 · 당겨서 동기화 ────────────────────────
-     둘 다 같은 포인터 이벤트 한 벌로 처리합니다. 손을 뗄 때까지는 아직 뭘
-     하려는 건지 모르니, 처음 몇 픽셀만 보고 판단합니다 — 가로로 크게
-     움직였고 세트 줄 위에서 시작했으면 스와이프, 화면 맨 위에서 세로
-     아래로 당겼으면 새로고침, 둘 다 아니면 그냥 평소 스크롤입니다. */
+  /* ── 손짓: 세트 옆으로 밀어 지우기 ───────────────────────────────────────
+     새로고침은 아래 bindPullRefresh 가 따로 받습니다. 한 포인터 핸들러에
+     섞어 두면, 세로로 움직이는 순간 스와이프가 제스처를 삼켜 버려
+     당기기가 시작조차 못 했습니다. */
   let gesture = null;
-  function pageScrollTop() {
-    const se = document.scrollingElement;
-    return Math.max(
-      window.scrollY || 0,
-      window.pageYOffset || 0,
-      (se && se.scrollTop) || 0,
-      document.documentElement.scrollTop || 0,
-      document.body.scrollTop || 0
-    );
-  }
-  function isPageAtTop() {
-    /* iOS 바운스·주소창 때문에 맨 위인데도 scrollTop 이 1~2px 로 남는
-       경우가 있어, 딱 0 만 보면 후보에서 빠집니다. */
-    return pageScrollTop() <= 4;
-  }
   function onSwipePointerDown(e) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
-    /* 스와이프로 드러난 삭제 버튼은 원래 제 클릭으로 동작해야 하니 건드리지
-       않습니다. */
     if (e.target.closest('.set-swipe-action')) { gesture = null; return; }
     const row = e.target.closest('.set-row');
     if (openSwipeRow && row !== openSwipeRow) closeOpenSwipe();
-    /* 당겨서 새로고침은 탭 화면 맨 위, 그리고 로그인해서 클라우드가 있을
-       때만 후보로 둡니다 — 게스트는 동기화할 데가 없고, 요약 화면(day
-       summary)·루틴 편집처럼 전체 화면 오버레이(.detail-screen)는 자기
-       스크롤을 따로 가지고 있어 문서 스크롤 값으로 "맨 위" 를 판단하면
-       엉뚱하게 걸립니다. 시트·하단 탭도 자기 제스처가 있어 빼 둡니다.
-       .topbar 도 후보에 포함합니다 — 헤더가 sticky 로 화면 맨 위에 붙어
-       있어서, 실제로 아래로 당길 때 손가락이 자연스럽게 그 위에서
-       시작되는 경우가 많습니다. .screen 안에서만 받으면 정작 가장 자연스러운
-       시작 지점에서는 안 먹히는 셈이라 헤더도 같이 받아 줍니다.
-       세트 줄(.set-row) 위에서 시작해도 후보로 둡니다. 운동 탭은 화면
-       대부분이 세트라, 줄을 빼고 받으면 정작 당기는 손짓이 거의 무시됩니다.
-       가로로 밀면 아래 분기에서 스와이프가 이깁니다. */
-    const blocked = e.target.closest('.detail-screen, .sheet-backdrop, .dialog, .bottom-nav');
-    const inTabScreen = !blocked
-      && (!!e.target.closest('.screen') || !!e.target.closest('.topbar'));
     gesture = {
       mode: null,
       row: row || null,
       wasOpen: !!row && row === openSwipeRow,
       startX: e.clientX, startY: e.clientY,
       pointerId: e.pointerId,
-      pullCandidate: inTabScreen && isPageAtTop() && !!state.user && !state.syncing,
     };
   }
   function onSwipePointerMove(e) {
@@ -3944,22 +3910,13 @@ const APP_VERSION = (() => {
     const dx = e.clientX - gesture.startX;
     const dy = e.clientY - gesture.startY;
     if (!gesture.mode) {
-      /* 8px 을 기다리기 전에 브라우저가 오버스크롤을 먹어 버리면 당기기가
-         시작조차 못 합니다. 아래로 당기는 후보면 먼저 스크롤을 막습니다. */
-      if (gesture.pullCandidate && dy > 0 && dy >= Math.abs(dx)) {
-        e.preventDefault();
-      }
       if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
       if (gesture.row && Math.abs(dx) > Math.abs(dy)) {
         gesture.mode = 'swipe';
         gesture.row.classList.add('swiping');
         try { gesture.row.setPointerCapture(e.pointerId); } catch (_) {}
-      } else if (gesture.pullCandidate && dy > 0 && dy > Math.abs(dx)) {
-        gesture.mode = 'pull';
-        ensurePullEl().classList.add('dragging');
-        try { appEl.setPointerCapture(e.pointerId); } catch (_) {}
       } else {
-        gesture = null; /* 둘 다 아니면 손을 떼고 원래 스크롤에 맡깁니다 */
+        gesture = null;
         return;
       }
     }
@@ -3968,26 +3925,6 @@ const APP_VERSION = (() => {
       const base = gesture.wasOpen ? -SWIPE_REVEAL : 0;
       gesture.dx = Math.max(-SWIPE_REVEAL, Math.min(0, base + dx));
       gesture.row.style.transform = `translateX(${gesture.dx}px)`;
-    } else if (gesture.mode === 'pull') {
-      e.preventDefault();
-      /* 당길수록 점점 뻑뻑해지게(0.55배) — 끝없이 따라오면 얼마나 당겨야
-         새로고침되는지 손끝으로 가늠할 수 없습니다. */
-      gesture.pullDist = Math.min(96, Math.max(0, dy) * 0.55);
-      updatePullVisual(gesture.pullDist);
-    }
-  }
-  /* iOS 는 pointermove 의 preventDefault 로 스크롤을 막지 못합니다.
-     touchmove 를 non-passive 로 받아서, 당기는 중에만 기본 동작(바운스·
-     브라우저 새로고침)을 끊습니다. 위로 쓸어 목록을 내리는 손짓은 그대로
-     둡니다. */
-  function onPullTouchMove(e) {
-    if (!gesture || e.touches.length !== 1) return;
-    const t = e.touches[0];
-    if (gesture.mode === 'pull') { e.preventDefault(); return; }
-    if (!gesture.mode && gesture.pullCandidate) {
-      const dy = t.clientY - gesture.startY;
-      const dx = t.clientX - gesture.startX;
-      if (dy > 0 && dy >= Math.abs(dx)) e.preventDefault();
     }
   }
   function onSwipePointerUp(e) {
@@ -4004,13 +3941,7 @@ const APP_VERSION = (() => {
         g.row.style.transform = '';
         if (openSwipeRow === g.row) openSwipeRow = null;
       }
-    } else if (g.mode === 'pull') {
-      ensurePullEl().classList.remove('dragging');
-      if ((g.pullDist || 0) >= 36) syncInBackground();
-      else hideSyncIndicator();
     } else if (!g.mode && g.row && g.wasOpen) {
-      /* 열려 있던 스와이프를 그냥 탭 한 번으로 닫으려던 것 — 그 탭이 바로
-         밑 버튼(완료 체크 등)까지 같이 누르면 안 됩니다. */
       g.row.classList.remove('swiping');
       g.row.style.transform = '';
       if (openSwipeRow === g.row) openSwipeRow = null;
@@ -4052,7 +3983,10 @@ const APP_VERSION = (() => {
   /* 당겨서 새로고침 표시. render() 가 지울 수 있는 appEl 안이 아니라
      body 에 직접 붙여 둡니다 — 휴식 타이머 바와 같은 이유로, 동기화가
      도는 동안 어딜 누르든(탭을 옮기든) 표시가 끊기면 안 됩니다. */
+  const PULL_TABS = { home: 1, workout: 1, history: 1 };
+  const PULL_FIRE = 36;
   let pullEl = null;
+  let pull = null;
   function ensurePullEl() {
     if (pullEl) return pullEl;
     pullEl = document.createElement('div');
@@ -4063,7 +3997,7 @@ const APP_VERSION = (() => {
   }
   function updatePullVisual(dist) {
     const el = ensurePullEl();
-    el.classList.toggle('armed', dist >= 36);
+    el.classList.toggle('armed', dist >= PULL_FIRE);
     el.style.transform = `translateY(${dist}px)`;
     const svg = el.querySelector('svg');
     if (svg) svg.style.transform = `rotate(${Math.min(180, dist * 3)}deg)`;
@@ -4072,7 +4006,7 @@ const APP_VERSION = (() => {
     const el = ensurePullEl();
     el.classList.remove('dragging', 'armed');
     el.classList.add('loading');
-    el.style.transform = 'translateY(64px)';
+    el.style.transform = 'translateY(52px)';
     const svg = el.querySelector('svg');
     if (svg) svg.style.transform = '';
   }
@@ -4083,9 +4017,126 @@ const APP_VERSION = (() => {
     const svg = pullEl.querySelector('svg');
     if (svg) svg.style.transform = '';
   }
+  function pageScrollTop() {
+    const tops = [
+      window.scrollY || 0,
+      window.pageYOffset || 0,
+      document.documentElement.scrollTop || 0,
+      document.body.scrollTop || 0,
+    ];
+    const se = document.scrollingElement;
+    if (se) tops.push(se.scrollTop || 0);
+    let el = appEl;
+    while (el) {
+      tops.push(el.scrollTop || 0);
+      el = el.parentElement;
+    }
+    return Math.max.apply(null, tops);
+  }
+  function isPageAtTop() {
+    /* iOS 바운스·주소창 때문에 맨 위인데도 몇 px 남는 경우가 있습니다. */
+    return pageScrollTop() <= 16;
+  }
+  function canPullFrom(target) {
+    if (!PULL_TABS[state.tab] || state.syncing || !state.authReady) return false;
+    /* 로그인·가입 화면은 빼고, 앱 안에 들어온 뒤(계정·게스트·오프라인)만. */
+    if (!state.user && !state.guest && !state.offline) return false;
+    if (target && target.closest('.detail-screen, .sheet-backdrop, .dialog, .bottom-nav, .set-swipe-action')) return false;
+    return isPageAtTop();
+  }
+  async function refreshFromPull() {
+    if (state.syncing) return;
+    if (state.user && !state.offline) {
+      syncInBackground();
+      return;
+    }
+    showSyncIndicator();
+    const shownAt = Date.now();
+    try {
+      state.sessions = await WorkoutDB.getAllSessions();
+      state.customExercises = await WorkoutDB.getCustomExercises();
+      if (!state.editingPast) {
+        const saved = await WorkoutDB.getSession(state.date);
+        if (saved) state.session = normalizeSession(saved);
+      }
+      render();
+    } catch (err) {
+      console.warn('local refresh failed', err);
+    } finally {
+      const wait = Math.max(0, 420 - (Date.now() - shownAt));
+      setTimeout(hideSyncIndicator, wait);
+    }
+  }
+  function pullStart(x, y, target) {
+    if (!canPullFrom(target)) { pull = null; return; }
+    pull = { startX: x, startY: y, dist: 0, armed: false };
+  }
+  function pullMove(x, y, prevent) {
+    if (!pull) return;
+    const dy = y - pull.startY;
+    const dx = x - pull.startX;
+    if (!pull.armed) {
+      if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) { pull = null; return; }
+      if (dy < -10) { pull = null; return; }
+      if (dy > 6 && dy >= Math.abs(dx) && isPageAtTop()) {
+        pull.armed = true;
+        ensurePullEl().classList.add('dragging');
+      } else {
+        return;
+      }
+    }
+    if (prevent) prevent();
+    pull.dist = Math.min(100, Math.max(0, dy) * 0.65);
+    updatePullVisual(pull.dist);
+  }
+  function pullEnd() {
+    if (!pull) return;
+    const armed = pull.armed;
+    const dist = pull.dist;
+    pull = null;
+    if (!armed) return;
+    ensurePullEl().classList.remove('dragging');
+    if (dist >= PULL_FIRE) refreshFromPull();
+    else hideSyncIndicator();
+  }
+  /* 터치로만 받습니다. iOS 는 pointermove 의 preventDefault 로 스크롤을
+     막지 못하고, 스와이프 핸들러에 섞으면 세로 움직임이 바로 버려집니다.
+     document 에 한 번만 묶습니다. 홈·기록·히스토리, 맨 위에서 아래로
+     당기면(일반 앱과 같습니다) 동그라미가 따라옵니다. */
+  (function bindPullRefresh() {
+    document.addEventListener('touchstart', e => {
+      if (e.touches.length !== 1) { pull = null; return; }
+      const t = e.touches[0];
+      pullStart(t.clientX, t.clientY, e.target);
+    }, { passive: true });
+    document.addEventListener('touchmove', e => {
+      if (!pull || e.touches.length !== 1) return;
+      const t = e.touches[0];
+      pullMove(t.clientX, t.clientY, () => e.preventDefault());
+    }, { passive: false });
+    document.addEventListener('touchend', pullEnd);
+    document.addEventListener('touchcancel', pullEnd);
+    /* 마우스로 확인할 때. 터치 기기는 위에서 이미 받으므로 건너뜁니다. */
+    document.addEventListener('pointerdown', e => {
+      if (e.pointerType === 'touch') return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      pullStart(e.clientX, e.clientY, e.target);
+    });
+    document.addEventListener('pointermove', e => {
+      if (e.pointerType === 'touch' || !pull) return;
+      pullMove(e.clientX, e.clientY, () => e.preventDefault());
+    });
+    document.addEventListener('pointerup', e => {
+      if (e.pointerType === 'touch') return;
+      pullEnd();
+    });
+    document.addEventListener('pointercancel', e => {
+      if (e.pointerType === 'touch') return;
+      pullEnd();
+    });
+  })();
 
   /* ── Event Binding ────────────────────────── */
-  let pullListenersBound = false;
   function bindEvents() {
     appEl.onclick  = onClick;
     appEl.oninput  = onInput;
@@ -4094,16 +4145,6 @@ const APP_VERSION = (() => {
     appEl.onpointermove = onSwipePointerMove;
     appEl.onpointerup = onSwipePointerUp;
     appEl.onpointercancel = onSwipePointerUp;
-    appEl.onlostpointercapture = onSwipePointerUp;
-    /* document 쪽은 render() 마다 다시 묶지 않습니다. touchmove 는
-       passive:false 여야 iOS 에서 당기기를 막을 수 있고, 손을 #app 밖에서
-       떼도 pointerup 이 와야 인디케이터가 매달리지 않습니다. */
-    if (!pullListenersBound) {
-      pullListenersBound = true;
-      document.addEventListener('touchmove', onPullTouchMove, { passive: false });
-      document.addEventListener('pointerup', onSwipePointerUp);
-      document.addEventListener('pointercancel', onSwipePointerUp);
-    }
   }
 
   async function onClick(e) {

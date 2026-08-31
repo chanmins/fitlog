@@ -557,14 +557,16 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .set-row.enter, .ex-card.enter { animation: listItemIn .22s cubic-bezier(.22,.9,.32,1); }
 @keyframes listItemIn { from { opacity: 0; transform: scale(.95) translateY(6px); } to { opacity: 1; transform: none; } }
 
-/* 당겨서 새로고침 표시. #app 밖(body)에 떠 있는 원형 아이콘입니다. */
+/* 당겨서 새로고침 표시. #app 밖(body)에 떠 있는 원형 아이콘입니다.
+   top 을 안전영역 아래로 두어, 노치/상태바에 가리지 않게 합니다.
+   예전에는 top:0 이라 당기는 동안 동그라미가 안 보였습니다. */
 .pull-refresh {
-  position: fixed; top: 0; left: 50%; z-index: 45;
+  position: fixed; top: calc(var(--safe-top) + 10px); left: 50%; z-index: 80;
   width: 38px; height: 38px; margin-left: -19px;
   display: flex; align-items: center; justify-content: center;
   border-radius: 50%; background: var(--surface); border: 1px solid var(--line);
   box-shadow: var(--sh-pop); color: var(--accent);
-  transform: translateY(-56px);
+  transform: translateY(-72px);
   transition: transform .25s cubic-bezier(.2,.9,.3,1);
   pointer-events: none;
 }
