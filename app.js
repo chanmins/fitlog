@@ -2366,7 +2366,7 @@ const APP_VERSION = (() => {
 
     const weekStrip = weekDays.map((iso, i) => {
       const [, , d] = iso.split('-').map(Number);
-      const hasSess = state.sessions.some(s => s.date === iso);
+      const hasSess = state.sessions.some(s => s.date === iso && hasAnyWork(s));
       const isToday = iso === today;
       return `<div class="week-day${hasSess?' done':''}${isToday?' today':''}">
         <div class="ring">${hasSess ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : d}</div>
@@ -2375,7 +2375,11 @@ const APP_VERSION = (() => {
     }).join('');
 
     /* week stats */
-    const weekSessions = state.sessions.filter(s => weekDays.includes(s.date));
+    /* 세트를 하나도 찍지 않은 날은 운동한 날이 아닙니다 — hasAnyWork 의 주석과
+       streakDays() 가 쓰는 기준을 여기서도 그대로 씁니다. 부위 칩만 눌러 둔
+       날에 ✓ 가 칠해지면 '연속 기록 0일' 과 '이번 주 운동 1일' 이 같은 화면에서
+       서로 다른 말을 합니다. */
+    const weekSessions = state.sessions.filter(s => weekDays.includes(s.date) && hasAnyWork(s));
     const weekCount = weekSessions.length;
     const weekKm = weekSessions.reduce((a,s)=>a+(Number(s.run?.km)||0),0);
     /* Running only earns a slot once there is running to show — an eternal
@@ -5503,6 +5507,15 @@ const APP_VERSION = (() => {
     if (!state.session || !state.session.date || state.editingPast) return;
     const copy = clone(state.session);
     const idx = state.sessions.findIndex(x => x.date === copy.date);
+    /* doSave() 는 worthSaving 이 아닌 세션을 디스크에서도 목록에서도 지웁니다.
+       같은 목록을 여기서만 검사 없이 밀어넣으면, 디스크에 없는 날이 화면에는
+       남습니다 — 갓 가입한 사람의 홈에서 오늘이 '운동한 날' 로 체크되고,
+       최근 기록에 빈 줄이 뜨고, '기록하는 중' 카드가 아무것도 없는 세션을
+       가리키던 것이 전부 이 한 줄에서 나왔습니다. */
+    if (!worthSaving(copy)) {
+      if (idx >= 0) state.sessions.splice(idx, 1);
+      return;
+    }
     if (idx >= 0) state.sessions[idx] = copy;
     else state.sessions.push(copy);
     state.sessions.sort((a, b) => b.date.localeCompare(a.date));
