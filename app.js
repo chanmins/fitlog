@@ -5495,6 +5495,13 @@ const APP_VERSION = (() => {
   function overlayOpenSession(rows) {
     if (!state.session || !state.session.date || state.editingPast) return rows;
     const live = clone(state.session);
+    /* 저장할 것이 없는 세션은 얹지 않습니다 — doSave() 가 지우는 것과 같은
+       기준입니다. 얹으면 이 결과가 그대로 replaceAll 로 디스크에, pushAll 로
+       클라우드에 올라가서, 앱을 열어보기만 해도 오늘이 '운동한 날' 로 남고
+       새로고침할 때마다 되살아납니다.
+       rows 를 그대로 돌려줍니다 — 여기서 live.date 를 지우면, 다른 기기에서
+       오늘 운동했고 이 기기는 아직 못 받은 경우에 그 기록을 지웁니다. */
+    if (!worthSaving(live)) return rows;
     if (!live.updatedAt) live.updatedAt = Date.now();
     const map = new Map();
     for (const row of rows || []) {
@@ -5893,11 +5900,28 @@ const APP_VERSION = (() => {
       if (!stillMe()) return;
       let sessions = mergeByDate(localSessions, cloudData.sessions);
       sessions = overlayOpenSession(sessions);
+      /* 빈 껍데기 기록을 털어냅니다 — doSave() 가 저장하지 않는 것과 같은
+         기준입니다. 옛 버전이 클라우드에 올려 둔 빈 기록은 pullAll 로 매번
+         다시 내려오는데 pushAll 은 덮어쓰기만 하고 지우지는 않아서, 그냥 두면
+         새로고침할 때마다 오늘이 '운동한 날' 로 되살아납니다. */
+      const junkDates = sessions.filter(s => !worthSaving(s)).map(s => s.date);
+      if (junkDates.length) sessions = sessions.filter(worthSaving);
       const customExercises = mergeCustom(localCustom, cloudData.customExercises);
       if (!stillMe()) return;
       await WorkoutDB.replaceAll(sessions, customExercises);
       if (!stillMe()) return;
       await withTimeout(Cloud.pushAll(sessions, customExercises), 15000, '저장');
+      if (!stillMe()) return;
+      /* pushAll 은 덮어쓰기만 하므로, 위에서 걸러낸 빈 기록은 여기서 직접
+         지워야 계정에서 사라집니다. 실패해도 동기화를 무너뜨릴 일은 아니라
+         각각 감쌉니다 — 다음 동기화에서 다시 시도합니다. */
+      for (const date of junkDates) {
+        /* 지우는 사이에 그 날짜가 되살아났다면(동기화 도중 세트를 찍었다면)
+           건너뜁니다. */
+        if (state.session && state.session.date === date && worthSaving(state.session)) continue;
+        try { await withTimeout(Cloud.deleteSession(date), 8000, '정리'); }
+        catch (err) { console.warn('[fitlog] 빈 기록 정리 실패', date, err); }
+      }
       if (!stillMe()) return;
 
       /* 루틴과 몸무게도 같이 맞춥니다. 예전에는 저장만 올려보내고 내려받는
