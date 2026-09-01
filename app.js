@@ -380,7 +380,11 @@ const APP_VERSION = (() => {
   /* .set-swipe-action 너비와 맞춥니다. 세트 줄이 좁아서(6칸이 빽빽합니다),
      너무 많이 밀면 세트 번호까지 왼쪽 밖으로 밀려 나가 뭘 지우는 중인지
      안 보입니다 — 삭제 버튼이 겨우 들어갈 만큼만 잡아 둡니다. */
-  const SWIPE_REVEAL = 60;
+  /* 밀었을 때 드러나는 거리. 삭제 버튼 자체는 60px 이고, 6px 은 완료(✓)
+     버튼과 삭제 버튼 사이의 틈으로 남습니다 — 틈이 없으면 초록 ✓ 와 빨간
+     삭제가 맞붙어 하나의 덩어리로 읽혀서, 어디까지가 어느 버튼인지 손이
+     알 수 없습니다. */
+  const SWIPE_REVEAL = 66;
   let openSwipeRow = null;
   /* 방금 추가된 운동·세트의 id. renderExerciseCard 가 이번 렌더에서 한 번
      읽어 살짝 커지며 나타나는 클래스를 붙이고, render() 가 곧바로 비웁니다
@@ -489,24 +493,14 @@ const APP_VERSION = (() => {
     }
     return null;
   }
-  /* ── 개인 기록 (PR) ──────────────────────────────────────────────────────
-     "이번 세트가 지금까지 중 최고인가" 를 판단합니다. 기준은 두 가지입니다.
-
-       · 최고 중량   그 운동에서 들어본 가장 무거운 무게
-       · 추정 1RM    한 번에 들 수 있는 무게의 추정치 (Epley: kg × (1 + 회수/30))
-
-     중량만 보면 100kg×1 이 90kg×10 을 이깁니다. 실제로는 후자가 훨씬 강한
-     수행인데도요. 그래서 둘 다 봅니다. 웜업 세트는 제외합니다 — 가볍게 몸을
-     푼 것을 기록이라고 부르면 기록이라는 말이 값을 잃습니다. */
-  function epley1RM(kg, reps) {
-    if (!Number.isFinite(kg) || !Number.isFinite(reps) || kg <= 0 || reps <= 0) return 0;
-    return kg * (1 + reps / 30);
-  }
-
+  /* ── 개인 기록 ───────────────────────────────────────────────────────────
+     기록으로 셀 수 있는 세트인지 가려내고, 그 무게와 횟수를 돌려줍니다.
+     웜업은 제외합니다 — 가볍게 몸을 푼 것을 기록이라고 부르면 기록이라는
+     말이 값을 잃습니다. 무게나 횟수가 비어 있는 세트도 셀 수 없습니다. */
   function setScore(st) {
     const kg = Number(st.kg), reps = Number(st.reps);
     if (st.warmup || !Number.isFinite(kg) || !Number.isFinite(reps) || kg <= 0 || reps <= 0) return null;
-    return { kg, reps, orm: epley1RM(kg, reps) };
+    return { kg, reps };
   }
 
   /* 세트를 완료할 때 하던 실시간 PR 판정(personalBest / bestOrm / checkPR)은
@@ -750,10 +744,6 @@ const APP_VERSION = (() => {
     }
     return { done, total, volume };
   }
-  function fmtNum(n) {
-    return Math.round(n).toLocaleString('ko-KR');
-  }
-
   /* Korean subject particle: 이 after a final consonant, 가 after a vowel.
      Needed because the phrase it follows is assembled at runtime — it can end
      in "기록" (consonant → 이) or "3개" (vowel → 가), and a hard-coded particle
@@ -1704,7 +1694,7 @@ const APP_VERSION = (() => {
     requestAnimationFrame(() => {
       const el = document.querySelector(`.ex-card[data-exid="${CSS.escape(id)}"]`);
       if (!el) return;
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      scrollElIntoView(el, 'center');
       el.classList.add('just-added');
       setTimeout(() => el.classList.remove('just-added'), 1500);
     });
@@ -2405,8 +2395,13 @@ const APP_VERSION = (() => {
       const [, , d] = iso.split('-').map(Number);
       const hasSess = state.sessions.some(s => s.date === iso && hasAnyWork(s));
       const isToday = iso === today;
+      /* 날짜 숫자는 운동한 날에도 그대로 둡니다. 예전에는 체크 표시로
+         바꿨는데, 그러면 한 주가 "✓ ✓ 11 ✓ 13 ✓ 15" 처럼 읽혀 며칠인지
+         가늠이 안 됐습니다 — 오늘 날짜조차 체크에 가렸습니다. 완료했다는
+         사실은 링을 강조색으로 채워서 이미 충분히 말하고 있으니, 숫자
+         자리를 뺏을 필요가 없습니다. */
       return `<div class="week-day${hasSess?' done':''}${isToday?' today':''}">
-        <div class="ring">${hasSess ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : d}</div>
+        <div class="ring">${d}</div>
         <span class="wd-label">${wdLabels[i]}</span>
       </div>`;
     }).join('');
@@ -2451,9 +2446,10 @@ const APP_VERSION = (() => {
         ${preview ? `<div class="today-card-ex">${esc(preview)}</div>` : ''}
         <div class="today-card-stats">
           <span><b>${(todaySess.exercises || []).length}</b>개 운동</span>
-          <span><b>${tStats.done}</b>세트 완료</span>
+          <span><b>${tStats.done}</b>${tStats.total ? `<i>/${tStats.total}</i>` : ''} 세트</span>
           ${Number.isFinite(tRun) && tRun ? `<span><b>${tRun}</b>km</span>` : ''}
         </div>
+        ${tStats.total ? `<div class="today-card-bar"><span style="width:${Math.round(tStats.done / tStats.total * 100)}%"></span></div>` : ''}
       </button>
       <button class="btn-ghost today-edit" data-act="today">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4v16h16v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
@@ -2500,17 +2496,18 @@ const APP_VERSION = (() => {
              기록 ${state.sessions.length}개 전체 보기
            </button>` : ''}` : '';
 
-    const hour = td.getHours();
-    const greet = hour < 5 ? '늦은 밤이네요' : hour < 12 ? '좋은 아침이에요' : hour < 18 ? '좋은 오후예요' : '좋은 저녁이에요';
-
+    /* 예전에는 시간대에 맞춘 인사말("좋은 저녁이에요")이 이 자리에서 가장 큰
+       글씨였습니다. 하루에 두 번째로 열 때부터는 읽을 것이 없는 문장인데
+       화면 맨 위를 차지했습니다. 대신 날짜를 그 자리로 올립니다 — 매일
+       바뀌고, 아래 주간 스트립이 날짜만 보여 주니 '몇 월인지' 를 여기서
+       받아 줍니다. */
     return `
       <header class="topbar">
         <div class="topbar-brand">FIT<span>LOG</span></div>
       </header>
       <main class="screen${navDir ? ' nav-' + navDir : ''}">
         <div class="home-hero">
-          <div class="home-date">${td.getMonth()+1}월 ${td.getDate()}일 (${WEEKDAYS[td.getDay()]})</div>
-          <div class="home-title">${greet},<br><em>오늘도 가볍게</em> 시작해요</div>
+          <div class="home-title">${td.getMonth()+1}월 ${td.getDate()}일<span>${WEEKDAYS[td.getDay()]}요일</span></div>
         </div>
         <div class="week-strip">${weekStrip}</div>
         <div class="stat-row">
@@ -2737,7 +2734,7 @@ const APP_VERSION = (() => {
 
     return `
       <header class="topbar">
-        <button class="btn-icon ghost" data-act="go-tab" data-tab="home">
+        <button class="btn-icon ghost" data-act="go-tab" data-tab="home" aria-label="홈으로">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
         <div class="topbar-title">운동 기록</div>
@@ -3030,10 +3027,10 @@ const APP_VERSION = (() => {
             ${metaBits.length ? `<div class="ex-card-meta">${esc(metaBits.join(' · '))}</div>` : ''}
           </div>
         </button>
-        <button class="btn-icon ghost" data-act="show-ex-info" data-exid="${esc(ex.id)}" data-exname="${esc(ex.name)}">
+        <button class="btn-icon ghost" data-act="show-ex-info" data-exid="${esc(ex.id)}" data-exname="${esc(ex.name)}" aria-label="${esc(ex.name)} 운동 정보">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
         </button>
-        <button class="btn-icon ghost danger" data-act="del-ex" data-ex="${esc(ex.id)}">
+        <button class="btn-icon ghost danger" data-act="del-ex" data-ex="${esc(ex.id)}" aria-label="${esc(ex.name)} 삭제">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
@@ -4195,6 +4192,18 @@ const APP_VERSION = (() => {
      모습을 태울 대상이 없습니다 — 그래서 실제 노드를 먼저 움츠러들게 하고,
      그 트랜지션이 끝나야 상태를 바꿉니다. 대상이 없으면(이미 스크롤 밖으로
      사라졌거나 셀렉터가 못 찾은 경우) 그냥 곧바로 지웁니다. */
+  /* 기기에서 '동작 줄이기' 를 켠 사람에게는 화면이 미끄러지는 것 자체가
+     문제입니다. CSS 애니메이션은 미디어쿼리가 막아 주지만, JS 가 직접
+     시키는 부드러운 스크롤은 여기서 따로 물어봐야 합니다. */
+  function prefersReducedMotion() {
+    try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+    catch (_) { return false; }
+  }
+  function scrollElIntoView(el, block) {
+    if (!el) return;
+    el.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block });
+  }
+
   function animateRemoval(el) {
     return new Promise(resolve => {
       if (!el) { resolve(); return; }
@@ -4424,7 +4433,7 @@ const APP_VERSION = (() => {
          내용으로 바뀐 것처럼 보입니다. 붙어 있는 제목에 가려지지 않도록
          스크롤 여백은 CSS 의 scroll-margin-top 이 잡습니다. */
       const el = document.getElementById('part-' + btn.dataset.part);
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      scrollElIntoView(el, 'start');
       return;
     }
     if (act === 'new-routine')   { openRoutineEditor(null); return; }

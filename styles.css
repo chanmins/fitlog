@@ -13,10 +13,13 @@
   --line:      rgba(255,255,255,0.07);
   --line-2:    rgba(255,255,255,0.12);
 
-  /* Text */
+  /* Text
+     --muted 는 원래 #71757F 였는데 카드 배경 위 대비가 3.88:1 이었습니다
+     (WCAG 본문 기준 4.5:1). 하필 11px 짜리 작은 라벨에 주로 쓰이는 색이라,
+     같은 회색 계열을 유지한 채 기준을 넘기는 가장 가까운 값으로 올렸습니다. */
   --text: #F4F5F7;
   --sub:  #B3B7C2;
-  --muted:#71757F;
+  --muted:#7C808A;
 
   /* Brand / accent
      Pulled back from the original #C9F642: the same lime, a little deeper and
@@ -34,10 +37,7 @@
   --red:    #FF5B6E;
   --red-soft: rgba(255,91,110,0.13);
   --blue:   #4FA8FF;
-  --green:  #35D6A4;
   --orange: #FFB020;
-  --purple: #A98BFF;
-  --pink:   #FF6B9A;
 
   /* Radius */
   --r-2xl: 24px;
@@ -45,7 +45,6 @@
   --r-lg:  16px;
   --r-md:  13px;
   --r-sm:  11px;
-  --r-xs:  9px;
 
   /* Shadow */
   --sh-card: 0 1px 1px rgba(0,0,0,.28), 0 2px 8px rgba(0,0,0,.14);
@@ -105,7 +104,7 @@
 
     --text:  #171B2C;
     --sub:   #5B6273;
-    --muted: #868D9D;
+    --muted: #6F7686;
 
     --accent:      #5F7D14;
     --accent-2:    #4C6510;
@@ -116,11 +115,8 @@
     --red:    #D42A44;
     --red-soft: rgba(212,42,68,0.10);
     --blue:   #1567C8;
-    --green:  #0B8A62;
     --orange: #A56A00;
     --orange-line: rgba(165,106,0,0.32);
-    --purple: #6A45D4;
-    --pink:   #C2306A;
 
     --sh-card: 0 1px 1px rgba(16,20,35,.05), 0 2px 8px rgba(16,20,35,.05);
     --sh-pop:  0 -8px 40px rgba(16,20,35,.14);
@@ -143,7 +139,7 @@ html[data-theme="dark"] {
 
   --text:  #F4F5F7;
   --sub:   #B3B7C2;
-  --muted: #71757F;
+  --muted: #7C808A;
 
   --accent:      #B8E23C;
   --accent-2:    #9BD130;
@@ -154,11 +150,8 @@ html[data-theme="dark"] {
   --red:    #FF5B6E;
   --red-soft: rgba(255,91,110,0.13);
   --blue:   #4FA8FF;
-  --green:  #35D6A4;
   --orange: #FFB020;
   --orange-line: rgba(255,176,32,0.30);
-  --purple: #A98BFF;
-  --pink:   #FF6B9A;
 
   --sh-card: 0 1px 1px rgba(0,0,0,.28), 0 2px 8px rgba(0,0,0,.14);
   --sh-pop:  0 -8px 40px rgba(0,0,0,.55);
@@ -180,7 +173,7 @@ html[data-theme="light"] {
 
   --text:  #171B2C;
   --sub:   #5B6273;
-  --muted: #868D9D;
+  --muted: #6F7686;
 
   --accent:      #5F7D14;
   --accent-2:    #4C6510;
@@ -191,11 +184,8 @@ html[data-theme="light"] {
   --red:    #D42A44;
   --red-soft: rgba(212,42,68,0.10);
   --blue:   #1567C8;
-  --green:  #0B8A62;
   --orange: #A56A00;
   --orange-line: rgba(165,106,0,0.32);
-  --purple: #6A45D4;
-  --pink:   #C2306A;
 
   --sh-card: 0 1px 1px rgba(16,20,35,.05), 0 2px 8px rgba(16,20,35,.05);
   --sh-pop:  0 -8px 40px rgba(16,20,35,.14);
@@ -265,6 +255,46 @@ input { border: none; outline: none; }
 ul { list-style: none; }
 svg { display: block; }
 em { font-style: normal; }
+
+/* 키보드로 다니는 사람에게 지금 어디에 있는지 알려 줍니다.
+
+   여기에 규칙이 하나도 없는 채로 위의 input 에 outline:none 까지 걸려
+   있었습니다. 손가락으로 쓰는 사람에게는 아무 차이가 없지만, 외장 키보드나
+   스위치로 쓰는 사람에게는 커서가 사라진 것과 같습니다.
+
+   :focus 가 아니라 :focus-visible 을 쓰는 이유는, 탭했을 때까지 테두리가
+   남으면 손가락 사용자에게는 눌린 자국이 안 지워진 것처럼 보이기 때문입니다
+   — 브라우저가 '키보드로 왔는지' 를 판단해 이 상태만 켜 줍니다. */
+   border-radius 는 일부러 건드리지 않습니다 — 요즘 브라우저의 outline 은
+   요소가 이미 가진 둥근 모서리를 알아서 따라 그립니다. 여기서 값을 주면
+   포커스가 갔다는 이유만으로 버튼 모양이 바뀝니다. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── 손가락이 닿는 범위 ──────────────────────────────────────────────────
+   아래 버튼들은 눈에 보이는 높이가 30~38px 입니다. 권장치는 44px 인데,
+   그렇다고 실제로 키우면 안 됩니다 — 이것들은 대부분 촘촘한 줄(붙어 있는
+   부위 제목, 휴식 타이머 바, 달력 머리) 안에 있어서, 키우는 순간 방금
+   아껴 놓은 세로 공간을 도로 먹습니다.
+
+   그래서 보이는 크기는 그대로 두고 ::after 로 누를 수 있는 넓이만 넓힙니다.
+   이 가짜 판은 버튼 자신의 일부라, 여기를 눌러도 버튼이 눌립니다.
+
+   위아래로만 넓히는 이유: 좌우로 넓히면 바로 옆 버튼 위를 덮어서, 옆 것을
+   누르려던 손가락이 이 버튼에 잡힙니다. 목록에서 손가락이 빗나가는 방향은
+   대개 위아래이기도 하고요. */
+.btn-add-sm, .btn-today, .cal-nav, .pick-info, .pick-fav,
+.rest-timer-adj, .rest-timer-close, .rt-edit, .balance-go,
+.sheet-x, .btn-icon, .set-num, .signup-back { position: relative; }
+.btn-add-sm::after, .btn-today::after, .cal-nav::after, .pick-info::after,
+.pick-fav::after, .rest-timer-adj::after, .rest-timer-close::after,
+.rt-edit::after, .balance-go::after, .sheet-x::after, .btn-icon::after,
+.set-num::after, .signup-back::after {
+  content: ""; position: absolute; left: 0; right: 0;
+  top: 50%; height: 44px; transform: translateY(-50%);
+}
 
 #app { min-height: 100dvh; max-width: 480px; margin: 0 auto; position: relative; }
 
@@ -452,18 +482,18 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   color: color-mix(in srgb, var(--pc) var(--part-mix, 100%), var(--part-ink, transparent));
 }
 .pchip.add { border-style: dashed; color: var(--muted); }
-.eyebrow {
-  font-size: 11px; font-weight: 800; color: var(--muted);
-  text-transform: uppercase; letter-spacing: .08em;
-}
-
 /* ============================================================
    HOME
    ============================================================ */
-.home-hero { margin: 6px 2px 20px; }
-.home-date { font-size: 13px; color: var(--muted); font-weight: 700; margin-bottom: 6px; }
-.home-title { font-size: 26px; font-weight: 900; letter-spacing: -0.045em; line-height: 1.15; }
-.home-title em { color: var(--accent); }
+.home-hero { margin: 6px 2px 18px; }
+/* 날짜가 이 화면의 머리글입니다. 26px 이던 인사말보다 한 단계 낮춘 건,
+   이건 읽고 넘어가는 제목이지 화면의 주인공이 아니기 때문입니다 —
+   주인공은 바로 아래 '오늘 카드' 입니다. */
+.home-title {
+  font-size: 22px; font-weight: 900; letter-spacing: -0.04em; line-height: 1.2;
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+}
+.home-title span { font-size: 14px; font-weight: 700; color: var(--muted); letter-spacing: -0.01em; }
 
 .week-strip {
   display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px;
@@ -562,7 +592,21 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 }
 .today-card-stats { display: flex; gap: 14px; margin-top: 12px; }
 .today-card-stats span { font-size: 12px; font-weight: 600; color: var(--muted); }
-.today-card-stats b { font-size: 14px; font-weight: 900; color: var(--text); margin-right: 3px; }
+.today-card-stats b { font-size: 14px; font-weight: 900; color: var(--text); margin-right: 3px; font-variant-numeric: tabular-nums; }
+/* 분모. 완료 개수보다 한 단계 낮춰 놓아야 "10" 이 먼저 읽히고 "/32" 가
+   그 뒤를 따릅니다 — 둘이 같은 무게면 분수 전체를 한 번에 읽어야 합니다. */
+.today-card-stats i { font-style: normal; font-size: 12px; font-weight: 700; color: var(--muted); margin-left: -2px; }
+/* 오늘 얼마나 왔는지. 기록 화면에는 있는데 홈에는 숫자만 있어서, 정작
+   "얼마나 남았나" 를 홈에서 알 수 없었습니다. */
+.today-card-bar {
+  height: 4px; border-radius: 999px; background: var(--surface-3);
+  margin-top: 12px; overflow: hidden;
+}
+.today-card-bar span {
+  display: block; height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent));
+  transition: width .3s cubic-bezier(.22,.9,.32,1);
+}
 .today-edit { width: 100%; justify-content: center; margin-bottom: 20px; }
 
 /* recent list */
@@ -737,18 +781,6 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .muscle-tag.primary { background: var(--accent-soft); color: var(--accent); }
 .ex-card-meta { font-size: 12px; color: var(--muted); font-weight: 700; margin-top: 7px; }
 
-/* previous hint */
-.prev-hint {
-  display: flex; align-items: center; gap: 7px; width: 100%; text-align: left;
-  background: var(--surface-2); border: 1px dashed var(--line-2);
-  border-radius: var(--r-sm); padding: 9px 11px; margin-bottom: 12px;
-  font-size: 12px; color: var(--sub); font-weight: 600; line-height: 1.35;
-  transition: background .15s;
-}
-.prev-hint:active { background: var(--surface-3); }
-.prev-hint svg { color: var(--accent); flex-shrink: 0; }
-.prev-hint strong { color: var(--text); font-weight: 800; }
-
 /* set table */
 /* 세트 사이 간격을 넉넉히 둡니다 — X 버튼을 없애고 스와이프가 지우는
    유일한 길이 된 뒤로는, 줄 사이가 좁으면 스와이프를 시작한 손끝이 바로
@@ -776,10 +808,15 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
    .set-swipe 가 실제 목록 항목의 테두리입니다. 안 밀면 .set-row 배경이
    뒤에 깔린 삭제 버튼을 완전히 덮고, 밀면 오른쪽으로 그 버튼이 드러납니다. */
 .set-swipe { position: relative; border-radius: var(--r-sm); overflow: hidden; }
+/* 밀면 오른쪽에서 드러납니다. 자기 모서리를 둥글게 갖는 이유: 왼쪽이
+   각지면 바로 옆 완료(✓) 버튼의 둥근 모서리와 맞물려 한 덩어리로 보입니다.
+   SWIPE_REVEAL(66px)이 이 너비(60px)보다 6px 큰 것도 같은 이유로, 그 차이가
+   두 버튼 사이의 틈이 됩니다. */
 .set-swipe-action {
   position: absolute; top: 0; right: 0; bottom: 0; width: 60px; z-index: 0;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-  background: var(--red); color: #fff; border: none; font-size: 10px; font-weight: 800;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  background: var(--red); color: #fff; border: none; border-radius: var(--r-sm);
+  font-size: 11px; font-weight: 800; letter-spacing: -.01em;
 }
 .set-swipe.removing, .ex-card.removing {
   transition: height .2s ease, opacity .18s ease, margin .2s ease;
@@ -821,17 +858,6 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .set-row.done .set-num { background: var(--accent-soft); color: var(--accent); }
 .set-num.warmup { background: color-mix(in srgb, var(--orange) 18%, var(--surface-2)); color: var(--orange); }
 .set-row.warmup .val-chip { opacity: .78; }
-.rpe-chip {
-  height: 46px; border-radius: var(--r-sm); background: var(--surface-2);
-  border: 1px solid var(--line); display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 1px; transition: border-color .15s, background .15s, transform .1s;
-}
-.rpe-chip:active { transform: scale(.96); }
-.rpe-chip-lbl { font-size: 9px; font-weight: 800; color: var(--muted); letter-spacing: .04em; }
-.rpe-chip-num { font-size: 14px; font-weight: 800; color: var(--sub); }
-.rpe-chip.set { background: color-mix(in srgb, var(--purple) 14%, var(--surface-2)); border-color: color-mix(in srgb, var(--purple) 35%, transparent); }
-.rpe-chip.set .rpe-chip-num { color: var(--purple); }
-.rpe-hint { font-size: 12px; color: var(--muted); font-weight: 600; line-height: 1.5; margin: -6px 0 14px; }
 .val-chip {
   height: 46px; border-radius: var(--r-sm); background: var(--surface-2);
   border: 1px solid var(--line); display: flex; align-items: center;
@@ -1177,24 +1203,20 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 /* ============================================================
    CHARTS
    ============================================================ */
-.vol-chart-card, .trend-card {
+.trend-card {
   background: var(--surface); border: 1px solid var(--line);
   border-radius: var(--r-lg); padding: 16px; margin-bottom: 18px; box-shadow: var(--sh-card);
 }
-.vol-chart-header, .trend-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-.vol-chart-title, .trend-title { font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
-.vol-chart-info { font-size: 13px; font-weight: 800; color: var(--accent); }
+.trend-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.trend-title { font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .trend-pr { font-size: 13px; color: var(--sub); font-weight: 600; }
 .trend-pr strong { color: var(--accent); font-weight: 800; }
-.vol-chart-svg { width: 100%; height: 76px; display: block; }
 .trend-svg { width: 100%; height: 62px; display: block; overflow: visible; }
 .trend-dates { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 4px; font-weight: 600; }
 
 /* ============================================================
    HISTORY
    ============================================================ */
-.month-label { font-size: 13px; font-weight: 800; color: var(--muted); margin: 20px 2px 10px; letter-spacing: -0.01em; }
-.recent-vol { font-size: 12px; font-weight: 800; color: var(--sub); flex-shrink: 0; }
 
 /* ============================================================
    HISTORY CALENDAR
@@ -1250,10 +1272,6 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
    SETTINGS
    ============================================================ */
 .settings-label { font-size: 12px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 22px 2px 10px; }
-.account-card {
-  display: flex; align-items: center; gap: 13px; background: var(--surface);
-  border: 1px solid var(--line); border-radius: var(--r-lg); padding: 16px; margin-bottom: 8px; box-shadow: var(--sh-card);
-}
 .account-avatar { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
 .account-avatar.fallback { display: grid; place-items: center; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--accent-ink); font-weight: 900; font-size: 18px; }
 .settings-screen { padding-top: 8px; }
@@ -1471,13 +1489,6 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .field-hint.muted { color: var(--muted); }
 .field-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
 .field-grid .login-input { padding: 0 12px; }
-.field-static {
-  display: flex; align-items: center; justify-content: space-between;
-  height: 52px; padding: 0 16px; border-radius: var(--r-md);
-  background: var(--surface-3); border: 1px solid var(--line);
-  font-size: 15px; font-weight: 700; color: var(--sub); margin-bottom: 10px;
-}
-.field-static span { font-size: 12px; font-weight: 700; color: var(--muted); }
 
 /* ── Grouped form rows ─────────────────────────────────────────────────────
    Label on the left, value on the right, hairlines between — the same shape as
@@ -1514,11 +1525,6 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 /* The segmented control sits in the row instead of below it. */
 .form-row-seg { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 8px 0; }
 .form-row-seg .seg-btn { height: 38px; font-size: 13px; }
-.form-note {
-  font-size: 12px; color: var(--muted); font-weight: 600; line-height: 1.6;
-  margin: 14px 4px 0;
-}
-
 /* A field that opens a picker instead of a keyboard. Sized to match
    .login-input exactly so it sits in the same grid row without shimming. */
 .field-picker {
@@ -1838,7 +1844,22 @@ body.overlay-open { overflow: hidden; }
 @keyframes ex3-c { 0%,32% { opacity: 0 } 38%,62% { opacity: 1 } 68%,100% { opacity: 0 } }
 
 /* 움직임을 끈 사용자에게는 첫 장만 고정으로 보여줍니다. */
+/* ── 모션 축소 설정 존중 ─────────────────────────────────────────────────
+   기기 설정에서 '동작 줄이기' 를 켠 사람에게는 화면이 미끄러지고 카드가
+   접히고 시트가 올라오는 움직임이 어지럼증이나 두통으로 이어집니다.
+
+   0 이 아니라 0.01ms 로 두는 이유: 애니메이션이 끝나기를 기다리는 코드가
+   있을 때 duration 이 완전히 0 이면 끝났다는 신호(animationend)가 아예
+   안 오는 브라우저가 있어서, 그 코드가 영영 기다리게 됩니다. */
 @media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* 운동 그림은 세 장을 번갈아 보여 주는 방식이라, 애니메이션만 끄면
+     세 장이 겹쳐 보입니다. 첫 장만 남깁니다. */
   .ex-photo-img { animation: none !important; opacity: 0; }
   .ex-photo .ex-photo-img:first-child { opacity: 1; }
 }
@@ -1866,7 +1887,7 @@ body.overlay-open { overflow: hidden; }
    러닝(km)과 부위별 세트는 단위가 달라 그래프를 따로 둡니다. 한 그래프에
    축을 두 개 그리면 두 값이 서로 관계있는 것처럼 읽히는데, 실제로는
    아무 관계도 없습니다. */
-:root { --run-color: #4ecdc4; --vol-color: #B8E23C; }
+:root { --run-color: #4ecdc4; }
 
 .stats-card {
   background: var(--surface); border: 1px solid var(--line);
@@ -1886,7 +1907,7 @@ body.overlay-open { overflow: hidden; }
   padding: 9px 6px; text-align: center;
 }
 .stats-sum b { display: block; font-size: 17px; font-weight: 800; color: var(--text); }
-.stats-sum span { font-size: 10px; font-weight: 700; color: var(--muted); }
+.stats-sum span { font-size: 11px; font-weight: 700; color: var(--muted); }
 
 .ch-title {
   font-size: 11px; font-weight: 800; color: var(--sub);
@@ -1919,7 +1940,7 @@ body.overlay-open { overflow: hidden; }
 .pr-kg { font-size: 14px; font-weight: 800; color: var(--accent); }
 .pr-kg i { font-style: normal; font-size: 10px; font-weight: 700; color: var(--muted); }
 .pr-kg s { text-decoration: none; font-size: 11px; font-weight: 700; color: var(--muted); }
-.pr-date { font-size: 10px; font-weight: 700; color: var(--muted); }
+.pr-date { font-size: 11px; font-weight: 700; color: var(--muted); }
 
 /* ── 루틴 ───────────────────────────────────────────────────────────────── */
 .routine-btn {
@@ -1928,14 +1949,6 @@ body.overlay-open { overflow: hidden; }
   background: var(--surface-2); color: var(--sub);
   font-size: 12px; font-weight: 800; cursor: pointer;
 }
-.routine-save {
-  width: 100%; margin-top: 10px; padding: 11px;
-  display: flex; align-items: center; justify-content: center; gap: 7px;
-  border-radius: var(--r-md); border: 1px dashed var(--line);
-  background: transparent; color: var(--muted);
-  font-size: 13px; font-weight: 700; cursor: pointer;
-}
-.routine-save:active { background: var(--surface-2); }
 .routine-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
 .routine-main {
   flex: 1; min-width: 0; text-align: left; padding: 11px 12px;
@@ -2000,7 +2013,7 @@ body.overlay-open { overflow: hidden; }
 .pa-list { display: flex; flex-direction: column; gap: 13px; }
 .pa-head { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
 .pa-name { font-size: 13px; font-weight: 800; color: var(--text); }
-.pa-verdict { font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 999px;
+.pa-verdict { font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 999px;
   white-space: nowrap; flex: 0 0 auto; }
 .pa-verdict.good { background: var(--accent-soft); color: var(--accent); }
 .pa-verdict.ok   { background: color-mix(in srgb, var(--orange) 15%, transparent); color: var(--orange); }
