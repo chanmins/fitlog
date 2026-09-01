@@ -1,0 +1,2079 @@
+/* ============================================================
+   FITLOG — Design System
+   Premium dark theme, 8px grid, refined typography
+   ============================================================ */
+
+:root {
+  /* Surfaces */
+  --bg:        #090A0E;
+  --bg-grad:   radial-gradient(120% 80% at 50% -10%, #14161f 0%, #090a0e 60%);
+  --surface:   #15171F;
+  --surface-2: #1C1F29;
+  --surface-3: #252935;
+  --line:      rgba(255,255,255,0.07);
+  --line-2:    rgba(255,255,255,0.12);
+
+  /* Text
+     --muted 는 원래 #71757F 였는데 카드 배경 위 대비가 3.88:1 이었습니다
+     (WCAG 본문 기준 4.5:1). 하필 11px 짜리 작은 라벨에 주로 쓰이는 색이라,
+     같은 회색 계열을 유지한 채 기준을 넘기는 가장 가까운 값으로 올렸습니다. */
+  --text: #F4F5F7;
+  --sub:  #B3B7C2;
+  --muted:#7C808A;
+
+  /* Brand / accent
+     Pulled back from the original #C9F642: the same lime, a little deeper and
+     less saturated, so a screen full of completed sets reads as confident
+     rather than as a highlighter. The glow it casts is a hint now, not a halo —
+     every primary button carrying a 26px bright shadow was most of what made
+     the app look unfinished. */
+  --accent:      #B8E23C;
+  --accent-2:    #9BD130;
+  --accent-ink:  #0B0E05;
+  --accent-soft: rgba(184,226,60,0.12);
+  --accent-line: rgba(184,226,60,0.26);
+
+  /* Semantic */
+  --red:    #FF5B6E;
+  --red-soft: rgba(255,91,110,0.13);
+  --blue:   #4FA8FF;
+  --orange: #FFB020;
+
+  /* Radius */
+  --r-2xl: 24px;
+  --r-xl:  20px;
+  --r-lg:  16px;
+  --r-md:  13px;
+  --r-sm:  11px;
+
+  /* Shadow */
+  --sh-card: 0 1px 1px rgba(0,0,0,.28), 0 2px 8px rgba(0,0,0,.14);
+  --sh-pop:  0 -8px 40px rgba(0,0,0,.55);
+  --sh-glow: 0 3px 12px rgba(184,226,60,.14);
+  --orange-line: rgba(255,176,32,0.30);
+
+  /* Safe areas */
+  --safe-top: env(safe-area-inset-top, 0px);
+  /* Zero in a browser tab, on purpose.
+     With viewport-fit=cover a notched phone reports a bottom inset (~34px for
+     the home indicator) even inside Safari/Chrome — but there the browser's own
+     toolbar already sits in that strip, so reserving it again padded the nav
+     upward and left a visible gap under it on first load. Only an installed PWA
+     draws all the way to the hardware edge and actually needs the inset, so it
+     is scoped to standalone display modes below. */
+  --safe-bot: 0px;
+
+  --nav-h: 64px;
+
+  /* 부위 색을 얼마나 어둡게 섞을지 — 다크는 원색 그대로. 아래 라이트
+     테마 블록의 주석에 왜 이런 토큰이 필요한지 적어 두었습니다. */
+  --part-mix: 100%;
+  --part-ink: transparent;
+}
+
+/* ============================================================
+   라이트 테마
+   ------------------------------------------------------------
+   이 앱은 원래 다크 전용이라 위의 :root 값이 곧 다크입니다. 라이트에서는
+   표면·글자만 뒤집어서는 안 됩니다 — 강조색 라임(#B8E23C)은 흰 배경 위에서
+   대비가 1.7:1 이라 글자로 쓰면 사실상 안 보이는데, 이 파일에서만 52곳이
+   그 색을 글자색으로 씁니다. 그래서 라이트에서는 강조색과 의미색(빨강·파랑
+   ·초록…)을 전부 어두운 쪽으로 다시 잡습니다. 아래 값은 흰 배경 대비
+   4.5:1 이상이 나오는 것들입니다.
+
+   --accent 는 배경으로도 쓰이므로(주요 버튼) 짝이 되는 --accent-ink 를
+   흰색으로 뒤집습니다. 어두운 라임 위의 흰 글자가 같은 4.9:1 입니다.
+
+   --part-mix / --part-ink 는 부위 색(가슴·등·하체…) 전용입니다. 그 색들은
+   CSS 가 아니라 app.js 가 인라인으로 넘기기 때문에 여기서 값을 바꿀 수가
+   없습니다. 대신 '얼마나 어둡게 섞을지' 를 토큰으로 두고, 색을 쓰는 쪽에서
+   color-mix 로 섞습니다 — 다크에서는 100%(원색 그대로), 라이트에서는 62%를
+   남기고 나머지를 잉크로 채웁니다. 부위별 색 구분은 그대로 살아 있습니다.
+   ============================================================ */
+
+/* 시스템이 라이트일 때 — 단, 사용자가 다크를 직접 고른 경우는 제외 */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg:        #FAFBFC;
+    --bg-grad:   radial-gradient(120% 80% at 50% -10%, #F2F5FA 0%, #FAFBFC 60%);
+    --surface:   #FFFFFF;
+    --surface-2: #F4F6FB;
+    --surface-3: #E9EDF5;
+    --line:      rgba(16,20,35,0.09);
+    --line-2:    rgba(16,20,35,0.16);
+
+    --text:  #171B2C;
+    --sub:   #5B6273;
+    --muted: #6F7686;
+
+    --accent:      #5F7D14;
+    --accent-2:    #4C6510;
+    --accent-ink:  #FFFFFF;
+    --accent-soft: rgba(95,125,20,0.12);
+    --accent-line: rgba(95,125,20,0.32);
+
+    --red:    #D42A44;
+    --red-soft: rgba(212,42,68,0.10);
+    --blue:   #1567C8;
+    --orange: #A56A00;
+    --orange-line: rgba(165,106,0,0.32);
+
+    --sh-card: 0 1px 1px rgba(16,20,35,.05), 0 2px 8px rgba(16,20,35,.05);
+    --sh-pop:  0 -8px 40px rgba(16,20,35,.14);
+    --sh-glow: 0 3px 12px rgba(95,125,20,.16);
+
+    --part-mix: 62%;
+    --part-ink: #0B0E14;
+  }
+}
+
+/* 사용자가 직접 고른 다크 — 시스템이 라이트여도 이쪽이 이깁니다 */
+html[data-theme="dark"] {
+  --bg:        #090A0E;
+  --bg-grad:   radial-gradient(120% 80% at 50% -10%, #14161f 0%, #090a0e 60%);
+  --surface:   #15171F;
+  --surface-2: #1C1F29;
+  --surface-3: #252935;
+  --line:      rgba(255,255,255,0.07);
+  --line-2:    rgba(255,255,255,0.12);
+
+  --text:  #F4F5F7;
+  --sub:   #B3B7C2;
+  --muted: #7C808A;
+
+  --accent:      #B8E23C;
+  --accent-2:    #9BD130;
+  --accent-ink:  #0B0E05;
+  --accent-soft: rgba(184,226,60,0.12);
+  --accent-line: rgba(184,226,60,0.26);
+
+  --red:    #FF5B6E;
+  --red-soft: rgba(255,91,110,0.13);
+  --blue:   #4FA8FF;
+  --orange: #FFB020;
+  --orange-line: rgba(255,176,32,0.30);
+
+  --sh-card: 0 1px 1px rgba(0,0,0,.28), 0 2px 8px rgba(0,0,0,.14);
+  --sh-pop:  0 -8px 40px rgba(0,0,0,.55);
+  --sh-glow: 0 3px 12px rgba(184,226,60,.14);
+
+  --part-mix: 100%;
+  --part-ink: transparent;
+}
+
+/* 사용자가 직접 고른 라이트 — 시스템이 다크여도 이쪽이 이깁니다 */
+html[data-theme="light"] {
+  --bg:        #FAFBFC;
+  --bg-grad:   radial-gradient(120% 80% at 50% -10%, #F2F5FA 0%, #FAFBFC 60%);
+  --surface:   #FFFFFF;
+  --surface-2: #F4F6FB;
+  --surface-3: #E9EDF5;
+  --line:      rgba(16,20,35,0.09);
+  --line-2:    rgba(16,20,35,0.16);
+
+  --text:  #171B2C;
+  --sub:   #5B6273;
+  --muted: #6F7686;
+
+  --accent:      #5F7D14;
+  --accent-2:    #4C6510;
+  --accent-ink:  #FFFFFF;
+  --accent-soft: rgba(95,125,20,0.12);
+  --accent-line: rgba(95,125,20,0.32);
+
+  --red:    #D42A44;
+  --red-soft: rgba(212,42,68,0.10);
+  --blue:   #1567C8;
+  --orange: #A56A00;
+  --orange-line: rgba(165,106,0,0.32);
+
+  --sh-card: 0 1px 1px rgba(16,20,35,.05), 0 2px 8px rgba(16,20,35,.05);
+  --sh-pop:  0 -8px 40px rgba(16,20,35,.14);
+  --sh-glow: 0 3px 12px rgba(95,125,20,.16);
+
+  --part-mix: 62%;
+  --part-ink: #0B0E14;
+}
+
+/* 부위 색을 '글자·아이콘' 으로 쓰는 자리. 색 자체는 app.js 가 --pc /
+   --pt-color 로 넘기고, 어둡게 섞는 정도만 테마가 정합니다. */
+.muscle-tag.part {
+  background: color-mix(in srgb, var(--pc) 16%, var(--surface-2));
+  color: color-mix(in srgb, var(--pc) var(--part-mix, 100%), var(--part-ink, transparent));
+}
+.sec-title.part-title {
+  color: color-mix(in srgb, var(--pc) var(--part-mix, 100%), var(--part-ink, transparent));
+}
+
+@media (display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui) {
+  :root { --safe-bot: env(safe-area-inset-bottom, 0px); }
+}
+/* iOS < 16.4 has no display-mode media query; navigator.standalone is set on
+   the html element by app.js at boot so the same rule still applies there. */
+html.is-standalone { --safe-bot: env(safe-area-inset-bottom, 0px); }
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+/* 설정의 글씨 크기(실은 화면 전체) 배율. 기존 CSS 가 대부분 px 고정값이라
+   font-size 만 올리면 아이콘·여백·터치 영역은 그대로 남아 레이아웃이
+   깨집니다 — zoom 은 그 전부를 비율대로 같이 키워서 지금 레이아웃을
+   그대로 유지한 채 커집니다. --ui-scale 은 app.js 의 applyFontScale() 이
+   설정을 읽어 :root 에 씁니다. */
+html { zoom: var(--ui-scale, 1); }
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  /* 맨 위에서 아래로 당길 때 브라우저 기본 새로고침·바운스가 앱 손짓을
+     가로채지 않게 합니다. */
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Pretendard",
+               "Apple SD Gothic Neo", "Segoe UI", Roboto, "Noto Sans KR", sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  letter-spacing: -0.01em;
+  /* 한글은 기본값(word-break: normal)에서 음절 아무 데서나 줄이 바뀝니다 —
+     "기록이 없어요" 가 "기록이 없 / 어요" 로 쪼개집니다. keep-all 은 띄어쓰기
+     에서만 끊어 단어를 온전히 둡니다. 대신 띄어쓰기 없는 긴 문자열(URL, 아주
+     긴 운동 이름)이 칸을 넘칠 수 있어, 그때만 아무 데서나 끊게 함께 겁니다. */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  overscroll-behavior-y: contain;
+}
+
+body { background: var(--bg-grad); background-attachment: fixed; }
+
+button, input { font-family: inherit; color: inherit; }
+/* touch-action: manipulation app-wide — every control here is tap-to-act, and
+   none of them wants double-tap-to-zoom. Applied globally rather than per
+   component so a control added later can't reintroduce the zoom-on-fast-taps
+   bug. Pinch-zoom on the page itself is untouched. */
+button { cursor: pointer; border: none; background: none; touch-action: manipulation; }
+input { border: none; outline: none; }
+ul { list-style: none; }
+svg { display: block; }
+em { font-style: normal; }
+
+/* 키보드로 다니는 사람에게 지금 어디에 있는지 알려 줍니다.
+
+   여기에 규칙이 하나도 없는 채로 위의 input 에 outline:none 까지 걸려
+   있었습니다. 손가락으로 쓰는 사람에게는 아무 차이가 없지만, 외장 키보드나
+   스위치로 쓰는 사람에게는 커서가 사라진 것과 같습니다.
+
+   :focus 가 아니라 :focus-visible 을 쓰는 이유는, 탭했을 때까지 테두리가
+   남으면 손가락 사용자에게는 눌린 자국이 안 지워진 것처럼 보이기 때문입니다
+   — 브라우저가 '키보드로 왔는지' 를 판단해 이 상태만 켜 줍니다. */
+   border-radius 는 일부러 건드리지 않습니다 — 요즘 브라우저의 outline 은
+   요소가 이미 가진 둥근 모서리를 알아서 따라 그립니다. 여기서 값을 주면
+   포커스가 갔다는 이유만으로 버튼 모양이 바뀝니다. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── 손가락이 닿는 범위 ──────────────────────────────────────────────────
+   아래 버튼들은 눈에 보이는 높이가 30~38px 입니다. 권장치는 44px 인데,
+   그렇다고 실제로 키우면 안 됩니다 — 이것들은 대부분 촘촘한 줄(붙어 있는
+   부위 제목, 휴식 타이머 바, 달력 머리) 안에 있어서, 키우는 순간 방금
+   아껴 놓은 세로 공간을 도로 먹습니다.
+
+   그래서 보이는 크기는 그대로 두고 ::after 로 누를 수 있는 넓이만 넓힙니다.
+   이 가짜 판은 버튼 자신의 일부라, 여기를 눌러도 버튼이 눌립니다.
+
+   위아래로만 넓히는 이유: 좌우로 넓히면 바로 옆 버튼 위를 덮어서, 옆 것을
+   누르려던 손가락이 이 버튼에 잡힙니다. 목록에서 손가락이 빗나가는 방향은
+   대개 위아래이기도 하고요. */
+.btn-add-sm, .btn-today, .cal-nav, .pick-info, .pick-fav,
+.rest-timer-adj, .rest-timer-close, .rt-edit, .balance-go,
+.sheet-x, .btn-icon, .set-num, .signup-back { position: relative; }
+.btn-add-sm::after, .btn-today::after, .cal-nav::after, .pick-info::after,
+.pick-fav::after, .rest-timer-adj::after, .rest-timer-close::after,
+.rt-edit::after, .balance-go::after, .sheet-x::after, .btn-icon::after,
+.set-num::after, .signup-back::after {
+  content: ""; position: absolute; left: 0; right: 0;
+  top: 50%; height: 44px; transform: translateY(-50%);
+}
+
+#app { min-height: 100dvh; max-width: 480px; margin: 0 auto; position: relative; }
+
+/* Scrollbars (desktop) */
+::-webkit-scrollbar { width: 0; height: 0; }
+
+/* ============================================================
+   App shell
+   ============================================================ */
+.screen {
+  padding: 8px 18px calc(var(--nav-h) + var(--safe-bot) + 24px);
+  animation: screenIn .32s cubic-bezier(.22,.9,.32,1);
+}
+@keyframes screenIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* 하단 탭을 눌러 옮겨갈 때만 씁니다(render() 가 매번 화면을 통째로 다시
+   그리므로, 방향 표시가 없으면 체크박스 하나 누른 것도 탭 이동과 똑같이
+   보입니다). 탭 순서보다 오른쪽으로 가면 오른쪽에서, 왼쪽으로 가면
+   왼쪽에서 새 화면이 들어오고, 그 뒤를 옅게 따라 나갑니다. */
+.screen.nav-fwd { animation: screenSlideFwd .3s cubic-bezier(.22,.9,.32,1); }
+.screen.nav-back { animation: screenSlideBack .3s cubic-bezier(.22,.9,.32,1); }
+@keyframes screenSlideFwd { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes screenSlideBack { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+
+/* 상단바 높이는 반드시 '안전영역까지 더한' 값이어야 합니다.
+   box-sizing 이 border-box 라 height:56px 은 패딩을 포함한 전체 높이입니다.
+   아이폰의 위쪽 안전영역은 59px 안팎이라, 위아래 패딩만으로 이미 56px 을
+   넘어 내용이 들어갈 자리가 0 이 됩니다. 그래서 제목이 잘리고 내용이
+   상단바 밖으로 삐져나와 보였습니다 — 스크롤하면 뒤 내용이 그 틈으로
+   비쳐 크기가 변하는 것처럼 읽혔고요.
+   min-height 로 바꾸고 안전영역을 더해, 내용 자리를 항상 44px 확보합니다. */
+.topbar {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 10px;
+  min-height: calc(56px + var(--safe-top));
+  padding: calc(var(--safe-top) + 6px) 14px 6px;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: saturate(180%) blur(18px);
+  -webkit-backdrop-filter: saturate(180%) blur(18px);
+}
+/* 제목이 길어도 버튼을 밀어내지 않고 말줄임 처리합니다. */
+.topbar-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar-title { font-size: 18px; font-weight: 800; letter-spacing: -0.03em; }
+.topbar-brand { font-size: 21px; font-weight: 900; letter-spacing: -0.04em; }
+.topbar-brand span { color: var(--accent); }
+.topbar-spacer { flex: 1; }
+/* The wordmark doubles as a tap target on pre-login screens (login/signup/
+   reset) but stays a plain, non-interactive label on Home/Settings — only
+   the <button> variant needs the UA chrome stripped back to plain text. */
+button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
+
+/* ============================================================
+   Bottom nav
+   ============================================================ */
+.bottom-nav {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+  max-width: 480px; margin: 0 auto;
+  height: calc(var(--nav-h) + var(--safe-bot));
+  padding-bottom: var(--safe-bot);
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-top: 1px solid var(--line);
+}
+/* Belt and braces for the gap: mobile browsers animate their toolbar in and out
+   and can briefly expose a sliver under a bottom-fixed element mid-scroll. This
+   paints that sliver in the nav's own colour so a transient gap reads as part
+   of the bar rather than a hole punched through to the page behind it. */
+.bottom-nav::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 60px;
+  background: var(--surface); pointer-events: none;
+}
+.nav-tab {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px; color: var(--muted); font-size: 11px; font-weight: 700;
+  letter-spacing: -0.01em; transition: color .18s; position: relative;
+}
+.nav-tab svg { width: 23px; height: 23px; transition: transform .18s; }
+.nav-tab.active { color: var(--accent); }
+.nav-tab.active svg { transform: translateY(-1px); }
+.nav-tab.active::before {
+  content: ""; position: absolute; top: 7px; width: 34px; height: 30px;
+  background: var(--accent-soft); border-radius: 10px; z-index: -1;
+}
+.nav-tab:active { transform: scale(.92); }
+
+/* ============================================================
+   Buttons
+   ============================================================ */
+.btn-hero {
+  width: 100%; height: 56px; border-radius: var(--r-lg);
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: var(--accent-ink); font-size: 16px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  box-shadow: var(--sh-glow); transition: transform .12s, box-shadow .2s;
+  letter-spacing: -0.02em;
+}
+.btn-hero:active { transform: scale(.975); box-shadow: 0 2px 8px rgba(184,226,60,.12); }
+
+.btn-ghost {
+  height: 44px; padding: 0 16px; border-radius: var(--r-sm);
+  background: var(--surface-2); color: var(--sub); font-size: 14px; font-weight: 700;
+  border: 1px solid var(--line); display: inline-flex; align-items: center; gap: 6px;
+  transition: background .15s, transform .1s;
+}
+.btn-ghost:active { transform: scale(.96); background: var(--surface-3); }
+
+.btn-icon {
+  width: 38px; height: 38px; border-radius: 11px; flex-shrink: 0;
+  display: grid; place-items: center; color: var(--sub);
+  background: var(--surface-2); border: 1px solid var(--line);
+  transition: background .15s, transform .1s, color .15s;
+}
+.btn-icon:active { transform: scale(.9); }
+.btn-icon.danger { color: var(--red); }
+.btn-icon.ghost { background: transparent; border-color: transparent; }
+
+.btn-today {
+  height: 34px; padding: 0 14px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent);
+  font-size: 13px; font-weight: 800; border: 1px solid var(--accent-line);
+}
+.btn-today:active { transform: scale(.95); }
+
+.btn-add-sm {
+  height: 34px; padding: 0 13px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent);
+  font-size: 13px; font-weight: 800; border: 1px solid var(--accent-line);
+  transition: transform .1s;
+}
+.btn-add-sm:active { transform: scale(.95); }
+
+/* ============================================================
+   Section headers
+   ============================================================ */
+.sec-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin: 22px 2px 12px;
+}
+.sec-title { font-size: 16px; font-weight: 800; letter-spacing: -0.03em; }
+.sec-sub   { font-size: 12px; color: var(--muted); font-weight: 600; }
+
+/* 기록 화면의 부위 제목 — 스크롤을 따라 상단바 바로 밑에 붙습니다.
+   목록 한가운데에서 "지금 이게 가슴인가 등인가" 를 찾으러 위로 되돌아갈
+   일이 없어집니다. 화면 양옆 여백(.screen 의 18px)을 음수 마진으로 되찾아,
+   붙어 있는 동안 배경이 화면 끝까지 이어지게 합니다 — 안 그러면 흐릿한
+   띠 양옆으로 본문이 그대로 비쳐 지나갑니다. */
+.sec-head.part-head {
+  position: sticky; top: calc(56px + var(--safe-top)); z-index: 15;
+  justify-content: flex-start; gap: 8px;
+  margin: 22px -18px 12px; padding: 9px 18px 8px;
+  background: color-mix(in srgb, var(--bg) 86%, transparent);
+  backdrop-filter: saturate(180%) blur(14px);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  /* 칩을 눌러 이 자리로 굴러올 때 상단바 밑에 숨지 않도록 */
+  scroll-margin-top: calc(56px + var(--safe-top));
+}
+.part-head-prog {
+  margin-left: auto; font-size: 12px; font-weight: 800; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 부위 칩 줄 — 부위를 고른 뒤에 8칸 그리드를 대신합니다. 자리를 아끼는
+   동시에 긴 목록의 목차 노릇을 합니다(누르면 그 부위로 스크롤). */
+.pchip-row {
+  display: flex; gap: 6px; overflow-x: auto;
+  margin: 16px -18px 0; padding: 4px 18px 4px;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.pchip-row::-webkit-scrollbar { display: none; }
+.pchip {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 6px;
+  height: 34px; padding: 0 13px; border-radius: 999px;
+  background: var(--surface); border: 1.5px solid var(--line);
+  font-size: 13px; font-weight: 800; color: var(--sub);
+  transition: transform .12s;
+}
+.pchip:active { transform: scale(.94); }
+.pchip i { width: 7px; height: 7px; border-radius: 50%; background: var(--pc); }
+.pchip b { font-size: 11px; font-weight: 800; opacity: .65; }
+.pchip:not(.add) {
+  border-color: color-mix(in srgb, var(--pc) 42%, var(--line));
+  background: color-mix(in srgb, var(--pc) 9%, var(--surface));
+  color: color-mix(in srgb, var(--pc) var(--part-mix, 100%), var(--part-ink, transparent));
+}
+.pchip.add { border-style: dashed; color: var(--muted); }
+/* ============================================================
+   HOME
+   ============================================================ */
+.home-hero { margin: 6px 2px 18px; }
+/* 날짜가 이 화면의 머리글입니다. 26px 이던 인사말보다 한 단계 낮춘 건,
+   이건 읽고 넘어가는 제목이지 화면의 주인공이 아니기 때문입니다 —
+   주인공은 바로 아래 '오늘 카드' 입니다. */
+.home-title {
+  font-size: 22px; font-weight: 900; letter-spacing: -0.04em; line-height: 1.2;
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+}
+.home-title span { font-size: 14px; font-weight: 700; color: var(--muted); letter-spacing: -0.01em; }
+
+.week-strip {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); padding: 14px 10px; margin-bottom: 18px;
+  box-shadow: var(--sh-card);
+}
+.week-day { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.week-day .ring {
+  width: 34px; height: 34px; border-radius: 50%;
+  display: grid; place-items: center; position: relative;
+  background: var(--surface-2); border: 2px solid var(--line-2);
+  font-size: 12px; font-weight: 800; color: var(--muted);
+}
+.week-day.done .ring {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  border-color: transparent; color: var(--accent-ink);
+  box-shadow: none;
+}
+.week-day.today .ring { border-color: var(--accent); color: var(--accent); }
+.week-day.today.done .ring { color: var(--accent-ink); }
+.week-day .wd-label { font-size: 10px; font-weight: 800; color: var(--muted); letter-spacing: .03em; }
+.week-day.today .wd-label { color: var(--accent); }
+
+/* stat mini cards */
+.stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(0,1fr)); gap: 10px; margin-bottom: 20px; }
+.stat-card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-md); padding: 14px 12px; box-shadow: var(--sh-card);
+}
+.stat-val { font-size: 21px; font-weight: 900; letter-spacing: -0.04em; }
+.stat-val span { font-size: 12px; font-weight: 700; color: var(--muted); margin-left: 2px; }
+.stat-lbl { font-size: 12px; color: var(--muted); font-weight: 700; margin-top: 3px; }
+
+/* ── Training balance card ── */
+.balance-card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); padding: 16px; margin-bottom: 20px;
+  box-shadow: var(--sh-card);
+}
+.balance-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
+.balance-window { font-size: 12px; font-weight: 700; color: var(--muted); }
+.balance-empty { font-size: 13px; color: var(--muted); font-weight: 600; line-height: 1.6; }
+.balance-bars { display: flex; flex-direction: column; gap: 9px; }
+.balance-row { display: grid; grid-template-columns: 48px 1fr auto; align-items: center; gap: 10px; }
+/* 48px = '스트레칭' 이 12px/800 에서 차지하는 폭. 좁으면 두 줄로 깨집니다. */
+.balance-name { font-size: 12px; font-weight: 800; color: var(--sub); white-space: nowrap; }
+.balance-track { height: 7px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
+.balance-fill { display: block; height: 100%; border-radius: 4px; transition: width .3s ease; }
+.balance-meta { font-size: 12px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+/* Groups that have gone a week without work, and ones untouched all window */
+.balance-row.warn .balance-meta { color: var(--sub); }
+.balance-row.stale .balance-name { color: var(--red); }
+.balance-row.stale .balance-meta { color: var(--red); opacity: .85; }
+
+.balance-tip {
+  display: flex; align-items: center; gap: 10px; margin-top: 15px; padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.balance-tip-text { flex: 1; min-width: 0; font-size: 12px; font-weight: 600; color: var(--muted); line-height: 1.5; }
+.balance-tip-text strong { color: var(--text); font-weight: 800; }
+.balance-go {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 2px;
+  height: 36px; padding: 0 10px 0 13px; border-radius: 999px;
+  background: var(--accent); color: var(--accent-ink);
+  font-size: 12px; font-weight: 800; letter-spacing: -0.01em;
+  transition: transform .1s;
+}
+.balance-go:active { transform: scale(.95); }
+
+/* today card */
+.today-card {
+  display: block; width: 100%; text-align: left;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); padding: 16px; margin-bottom: 10px;
+  box-shadow: var(--sh-card); transition: transform .1s, border-color .15s;
+}
+.today-card:active { transform: scale(.99); }
+.today-card.done { border-color: var(--accent-line); }
+.today-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.today-card-arrow { color: var(--muted); flex-shrink: 0; }
+.badge-done {
+  display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 11px;
+  border-radius: 999px; background: var(--accent-soft); color: var(--accent);
+  font-size: 12px; font-weight: 800; border: 1px solid var(--accent-line);
+}
+/* In-progress reads as neutral, not as an achievement — the tick badge is
+   earned by finishing, so an unfinished day must not borrow its colour. */
+.badge-done.progress {
+  background: var(--surface-2); color: var(--muted); border-color: var(--line);
+}
+.today-card-parts { display: flex; flex-wrap: wrap; gap: 6px; }
+.today-card-ex {
+  margin-top: 10px; font-size: 13px; font-weight: 600; color: var(--sub);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.today-card-stats { display: flex; gap: 14px; margin-top: 12px; }
+.today-card-stats span { font-size: 12px; font-weight: 600; color: var(--muted); }
+.today-card-stats b { font-size: 14px; font-weight: 900; color: var(--text); margin-right: 3px; font-variant-numeric: tabular-nums; }
+/* 분모. 완료 개수보다 한 단계 낮춰 놓아야 "10" 이 먼저 읽히고 "/32" 가
+   그 뒤를 따릅니다 — 둘이 같은 무게면 분수 전체를 한 번에 읽어야 합니다. */
+.today-card-stats i { font-style: normal; font-size: 12px; font-weight: 700; color: var(--muted); margin-left: -2px; }
+/* 오늘 얼마나 왔는지. 기록 화면에는 있는데 홈에는 숫자만 있어서, 정작
+   "얼마나 남았나" 를 홈에서 알 수 없었습니다. */
+.today-card-bar {
+  height: 4px; border-radius: 999px; background: var(--surface-3);
+  margin-top: 12px; overflow: hidden;
+}
+.today-card-bar span {
+  display: block; height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent));
+  transition: width .3s cubic-bezier(.22,.9,.32,1);
+}
+.today-edit { width: 100%; justify-content: center; margin-bottom: 20px; }
+
+/* recent list */
+.recent-list { display: flex; flex-direction: column; gap: 8px; }
+.recent-more { margin-top: 10px; width: 100%; font-size: 13px; }
+.recent-row {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-md); padding: 13px 14px; transition: transform .1s, background .15s;
+  box-shadow: var(--sh-card);
+}
+.recent-row:active { transform: scale(.985); background: var(--surface-2); }
+.recent-daybox {
+  width: 46px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center;
+}
+.recent-day-d { font-size: 17px; font-weight: 900; letter-spacing: -0.04em; line-height: 1; }
+.recent-day-m { font-size: 10px; font-weight: 700; color: var(--muted); margin-top: 2px; }
+.recent-mid { flex: 1; min-width: 0; }
+.recent-parts { font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-meta { font-size: 12px; color: var(--muted); font-weight: 600; margin-top: 2px; }
+.recent-arrow { color: var(--muted); flex-shrink: 0; }
+.dotline { display: inline-flex; gap: 5px; align-items: center; }
+.pdot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+
+/* ============================================================
+   WORKOUT — date nav
+   ============================================================ */
+.day-nav {
+  display: flex; align-items: center; gap: 10px; margin: 4px 0 16px;
+}
+.day-nav-arrow {
+  width: 42px; height: 48px; border-radius: var(--r-sm); flex-shrink: 0;
+  display: grid; place-items: center; color: var(--sub);
+  background: var(--surface); border: 1px solid var(--line);
+  transition: transform .1s, background .15s;
+}
+.day-nav-arrow:active { transform: scale(.92); background: var(--surface-2); }
+.day-nav-arrow:disabled { opacity: .3; }
+.day-nav-mid {
+  flex: 1; position: relative; text-align: center;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-sm); padding: 7px 0; cursor: pointer;
+}
+.day-nav-date { font-size: 15px; font-weight: 800; letter-spacing: -0.02em; }
+.day-nav-rel  { font-size: 12px; color: var(--accent); font-weight: 800; margin-top: 1px; }
+.day-nav-mid input[type="date"] {
+  position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer;
+}
+
+/* summary card */
+.sum-card {
+  background: linear-gradient(160deg, var(--surface-2), var(--surface));
+  border: 1px solid var(--line-2); border-radius: var(--r-lg);
+  padding: 16px; margin-bottom: 8px; box-shadow: var(--sh-card);
+}
+.sum-grid { display: flex; align-items: stretch; gap: 8px; }
+.sum-item { flex: 1; text-align: center; }
+.sum-item + .sum-item { border-left: 1px solid var(--line); }
+/* Value and unit share one baseline instead of the unit floating next to a much
+   larger number. "16/16", "3개" and "2.5km" were each settling at a different
+   height, which is what made the row look off even though the sizes matched. */
+.sum-val {
+  display: flex; align-items: baseline; justify-content: center; gap: 2px;
+  font-size: 21px; font-weight: 900; letter-spacing: -0.03em; line-height: 1.15;
+}
+.sum-val span { font-size: 12px; color: var(--muted); font-weight: 800; letter-spacing: 0; }
+.sum-lbl { font-size: 11px; color: var(--muted); font-weight: 700; margin-top: 5px; letter-spacing: -0.01em; }
+.sum-bar { height: 7px; border-radius: 999px; background: var(--surface-3); margin-top: 14px; overflow: hidden; }
+.sum-bar-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .4s cubic-bezier(.3,.8,.3,1); }
+
+/* ============================================================
+   WORKOUT — body part selection (redesigned)
+   ============================================================ */
+.part-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px;
+  margin-bottom: 8px;
+}
+.part-tile {
+  position: relative; display: flex; flex-direction: column; align-items: center;
+  gap: 5px; padding: 8px 4px; border-radius: var(--r-md);
+  background: var(--surface); border: 1.5px solid var(--line);
+  transition: transform .12s, border-color .18s, background .18s;
+  overflow: hidden; text-align: center;
+}
+.part-tile:active { transform: scale(.95); }
+.part-tile .pt-icon {
+  width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+  background: var(--surface-2); color: var(--pt-color, var(--sub));
+  transition: background .18s, color .18s;
+}
+.part-tile .pt-icon svg { width: 17px; height: 17px; }
+.part-tile .pt-name { font-size: 12px; font-weight: 800; letter-spacing: -0.02em; }
+/* 개수는 선택된 부위에만 — 안 고른 타일의 "탭하여 추가"는 군더더기라 숨깁니다. */
+.part-tile .pt-count { display: none; }
+.part-tile.on .pt-count {
+  display: block; font-size: 11px; font-weight: 700; margin-top: -2px;
+}
+.part-tile .pt-check {
+  position: absolute; top: 5px; right: 5px; width: 15px; height: 15px; border-radius: 50%;
+  display: grid; place-items: center; opacity: 0; transform: scale(.5);
+  background: var(--pt-color, var(--accent)); color: #0b0e05;
+  transition: opacity .18s, transform .18s;
+}
+.part-tile .pt-check svg { width: 9px; height: 9px; }
+.part-tile.on {
+  border-color: var(--pt-color, var(--accent));
+  background: color-mix(in srgb, var(--pt-color, var(--accent)) 12%, var(--surface));
+}
+.part-tile.on .pt-icon {
+  background: var(--pt-color, var(--accent));
+  color: #0b0e05;
+}
+.part-tile.on .pt-check { opacity: 1; transform: scale(1); }
+.part-tile.on .pt-count { color: color-mix(in srgb, var(--pt-color, var(--accent)) var(--part-mix, 100%), var(--part-ink, transparent)); }
+
+/* ============================================================
+   WORKOUT — exercise cards
+   ============================================================ */
+.ex-card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); padding: 15px; margin-bottom: 12px;
+  box-shadow: var(--sh-card); transition: border-color .2s;
+}
+.ex-card.all-done { border-color: var(--accent-line); }
+/* 접힌 카드는 '끝난 일' 이라 더 얇게 눕습니다. 남은 운동과 같은 덩치를
+   유지할 이유가 없습니다. */
+.ex-card:not(.expanded) { padding: 12px 15px; margin-bottom: 8px; }
+
+/* 아코디언 헤더 — 제목 전체가 펼침/접힘 버튼이고, ⓘ·✕ 는 그 오른쪽에
+   그대로 남습니다(버튼 안에 버튼을 넣으면 안 되므로 형제로 둡니다). */
+.ex-card-head { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 12px; }
+.ex-card:not(.expanded) .ex-card-head { margin-bottom: 0; }
+.ex-card-toggle {
+  flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: 8px;
+  text-align: left; padding: 0; background: none;
+}
+.ex-card-titles { flex: 1; min-width: 0; }
+/* 화살표는 '버튼처럼' 생겨야 합니다. 회색 선 하나만 떠 있으면 그게 눌러서
+   접는 자리인지, 그냥 장식인지 알 방법이 없습니다. 동그란 바탕과 테두리를
+   주면 나머지 아이콘 버튼(ⓘ·✕)과 같은 언어가 되어, 별도 설명 없이도
+   누를 수 있는 것으로 읽힙니다. */
+.ex-card-chev {
+  flex-shrink: 0; display: grid; place-items: center;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--surface-2); border: 1px solid var(--line);
+  color: var(--sub);
+  transition: transform .22s cubic-bezier(.22,.9,.32,1), background .15s, color .15s;
+}
+.ex-card.expanded .ex-card-chev { transform: rotate(180deg); }
+/* 제목 어디를 눌러도 반응이 옵니다 — 누를 수 있는 범위가 화살표만이
+   아니라는 걸 손으로 알게 되는 자리입니다. 레이아웃을 건드리지 않는
+   색 변화만 씁니다(마진을 주면 아래 세트 표와 왼쪽 줄이 어긋납니다). */
+.ex-card-toggle:active .ex-card-chev { background: var(--surface-3); color: var(--accent); }
+.ex-card-toggle:active .ex-card-name { opacity: .62; }
+
+/* 마지막 세트를 채워 카드가 스스로 접힌 직후 한 번만. 위에서 눌러 접히는
+   방향으로 짧게 움직여, 마지막으로 눈에 남는 인상이 '사라졌다' 가 아니라
+   '접혔다' 가 되게 합니다. */
+@keyframes cardFold {
+  from { transform: scaleY(.88); opacity: .3; }
+  to   { transform: scaleY(1); opacity: 1; }
+}
+.ex-card.just-folded { animation: cardFold .32s cubic-bezier(.22,.9,.32,1); transform-origin: top center; }
+
+.ex-card-name { font-size: 16px; font-weight: 800; letter-spacing: -0.03em; display: flex; align-items: center; gap: 6px; }
+.ex-done-tick { color: var(--accent); }
+.ex-card-sub { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.muscle-tag {
+  font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+  background: var(--surface-2); color: var(--muted);
+}
+.muscle-tag.primary { background: var(--accent-soft); color: var(--accent); }
+.ex-card-meta { font-size: 12px; color: var(--muted); font-weight: 700; margin-top: 7px; }
+
+/* set table */
+/* 세트 사이 간격을 넉넉히 둡니다 — X 버튼을 없애고 스와이프가 지우는
+   유일한 길이 된 뒤로는, 줄 사이가 좁으면 스와이프를 시작한 손끝이 바로
+   위/아래 세트로 잘못 물릴 수 있습니다. */
+.set-table { display: flex; flex-direction: column; gap: 12px; }
+.set-table-head {
+  display: grid; grid-template-columns: 26px 1fr 1fr 40px; gap: 6px;
+  align-items: center; padding: 0 2px 2px; font-size: 11px; font-weight: 800;
+  color: var(--muted); text-transform: uppercase; letter-spacing: .05em;
+}
+.set-table-head span:nth-child(2), .set-table-head span:nth-child(3), .set-table-head span:nth-child(4) { text-align: center; }
+.set-row {
+  display: grid; grid-template-columns: 26px 1fr 1fr 40px; gap: 6px; align-items: center;
+  background: var(--surface); position: relative; z-index: 1;
+  /* pan-y 로 두면 브라우저가 세로 팬을 독점해서, 맨 위에서 아래로 당기는
+     새로고침의 preventDefault 가 무시됩니다. manipulation 은 더블탭 줌만
+     끄고, 세로 스크롤·가로 밀기는 그대로 두되 JS 가 세로 제스처를 가로챌
+     수 있게 합니다. */
+  touch-action: manipulation;
+  transition: transform .18s cubic-bezier(.2,.8,.3,1);
+}
+.set-row.swiping { transition: none; }
+
+/* ── 세트 왼쪽으로 밀어 지우기 ────────────────────────────────────────────
+   .set-swipe 가 실제 목록 항목의 테두리입니다. 안 밀면 .set-row 배경이
+   뒤에 깔린 삭제 버튼을 완전히 덮고, 밀면 오른쪽으로 그 버튼이 드러납니다. */
+.set-swipe { position: relative; border-radius: var(--r-sm); overflow: hidden; }
+/* 밀면 오른쪽에서 드러납니다. 자기 모서리를 둥글게 갖는 이유: 왼쪽이
+   각지면 바로 옆 완료(✓) 버튼의 둥근 모서리와 맞물려 한 덩어리로 보입니다.
+   SWIPE_REVEAL(66px)이 이 너비(60px)보다 6px 큰 것도 같은 이유로, 그 차이가
+   두 버튼 사이의 틈이 됩니다. */
+.set-swipe-action {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 60px; z-index: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  background: var(--red); color: #fff; border: none; border-radius: var(--r-sm);
+  font-size: 11px; font-weight: 800; letter-spacing: -.01em;
+}
+.set-swipe.removing, .ex-card.removing {
+  transition: height .2s ease, opacity .18s ease, margin .2s ease;
+}
+
+/* 새로 추가된 세트·운동이 목록 위로 순간이동하듯 나타나지 않도록. */
+.set-row.enter, .ex-card.enter { animation: listItemIn .22s cubic-bezier(.22,.9,.32,1); }
+@keyframes listItemIn { from { opacity: 0; transform: scale(.95) translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* 당겨서 새로고침 표시. #app 밖(body)에 떠 있는 원형 아이콘입니다.
+   평소에는 완전히 숨깁니다. top 을 안전영역 아래에 두면 -72px 만으로는
+   노치 있는 기기에서 동그라미가 상단에 항상 삐져 보였습니다. */
+.pull-refresh {
+  position: fixed; top: calc(var(--safe-top) + 10px); left: 50%; z-index: 80;
+  width: 38px; height: 38px; margin-left: -19px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; background: var(--surface); border: 1px solid var(--line);
+  box-shadow: var(--sh-pop); color: var(--accent);
+  transform: translateY(-200px);
+  opacity: 0; visibility: hidden;
+  transition: transform .25s cubic-bezier(.2,.9,.3,1), opacity .15s ease;
+  pointer-events: none;
+}
+.pull-refresh.dragging,
+.pull-refresh.loading { opacity: 1; visibility: visible; }
+.pull-refresh.dragging { transition: none; }
+.pull-refresh.armed { color: var(--accent); border-color: var(--accent-line); }
+.pull-refresh.loading svg { animation: spin .8s linear infinite; }
+.set-num {
+  width: 26px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+  background: var(--surface-2); font-size: 13px; font-weight: 800; color: var(--sub);
+  border: none; transition: background .15s, color .15s;
+}
+/* A held stretch has no kg chip, so the row would otherwise keep an empty
+   column and leave 완료/삭제 floating mid-row instead of at the right edge.
+   The header above it loses the same column so 시간/완료 stay over what they
+   label. */
+.set-row.hold, .set-table-head.hold { grid-template-columns: 26px 1fr 40px; }
+.set-row.done .set-num { background: var(--accent-soft); color: var(--accent); }
+.set-num.warmup { background: color-mix(in srgb, var(--orange) 18%, var(--surface-2)); color: var(--orange); }
+.set-row.warmup .val-chip { opacity: .78; }
+.val-chip {
+  height: 46px; border-radius: var(--r-sm); background: var(--surface-2);
+  border: 1px solid var(--line); display: flex; align-items: center;
+  justify-content: center; gap: 3px; transition: border-color .15s, background .15s, transform .1s;
+}
+/* 숫자와 단위의 시각적 균형만 살짝 맞춥니다 (정렬은 가운데 기준). */
+.val-chip-unit { transform: translateY(1px); }
+.val-chip:active { transform: scale(.96); border-color: var(--line-2); }
+.val-chip-num { font-size: 18px; font-weight: 800; letter-spacing: -0.03em; }
+.val-chip-unit { font-size: 11px; color: var(--muted); font-weight: 700; }
+.val-chip.done { background: var(--accent-soft); border-color: var(--accent-line); }
+.val-chip.done .val-chip-num { color: var(--accent); }
+.done-toggle {
+  width: 44px; height: 46px; border-radius: var(--r-sm);
+  background: var(--surface-2); border: 1px solid var(--line);
+  display: grid; place-items: center; color: var(--muted);
+  transition: all .15s, transform .1s;
+}
+.done-toggle:active { transform: scale(.9); }
+.done-toggle.done {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  border-color: transparent; color: var(--accent-ink);
+  box-shadow: none;
+}
+/* 세트 지우기. 손끝은 30px 보다 넓어서, 칸 자체는 좁게 두되 실제로 눌리는
+   범위를 좌우로 넓혀 옆 버튼과 겹치지 않는 선까지 키웁니다. 흐릿하게 두는
+   것은 의도적입니다 — 자주 쓰는 버튼이 아니고, 완료 체크 옆에서 눈에 띄면
+   잘못 누르기 쉽습니다. */
+.add-set-row {
+  margin-top: 4px; height: 42px; border-radius: var(--r-sm);
+  background: transparent; border: 1.5px dashed var(--line-2); color: var(--sub);
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  font-size: 13px; font-weight: 800; transition: all .15s;
+}
+.add-set-row:active { background: var(--surface-2); border-color: var(--accent-line); color: var(--accent); }
+
+/* add exercise CTA */
+.add-ex-cta {
+  width: 100%; height: 52px; border-radius: var(--r-md);
+  background: var(--surface); border: 1.5px dashed var(--line-2); color: var(--sub);
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  font-size: 14px; font-weight: 800; margin-bottom: 12px; transition: all .15s;
+}
+.add-ex-cta:active { background: var(--surface-2); border-color: var(--accent-line); color: var(--accent); }
+
+/* run card */
+.run-card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); padding: 16px; margin-bottom: 12px; box-shadow: var(--sh-card);
+}
+.run-card-title { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 800; color: var(--blue); margin-bottom: 14px; }
+.run-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.run-fields label { font-size: 12px; color: var(--muted); font-weight: 700; display: block; margin-bottom: 6px; }
+.run-input-wrap {
+  display: flex; align-items: baseline; gap: 4px; background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: var(--r-sm); padding: 11px 13px;
+}
+.run-input { flex: 1; width: 100%; background: none; font-size: 20px; font-weight: 800; letter-spacing: -0.03em; }
+.run-input::placeholder { color: var(--muted); }
+.run-unit { font-size: 12px; color: var(--muted); font-weight: 700; }
+
+/* empty prompt */
+.pick-prompt {
+  text-align: center; padding: 40px 24px; margin-top: 8px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
+}
+.pick-prompt-icon {
+  width: 60px; height: 60px; border-radius: 18px; margin: 0 auto 16px;
+  display: grid; place-items: center; background: var(--accent-soft); color: var(--accent);
+}
+.pick-prompt-title { font-size: 16px; font-weight: 800; margin-bottom: 6px; }
+.pick-prompt-sub { font-size: 13px; color: var(--muted); font-weight: 600; line-height: 1.5; }
+
+.empty-state {
+  text-align: center; padding: 70px 30px; color: var(--muted); font-weight: 600; line-height: 1.6;
+}
+.empty-icon { font-size: 44px; margin-bottom: 14px; }
+
+/* ============================================================
+   SHEETS
+   ============================================================ */
+/* Dark enough that the screen behind reads as "not this" rather than as
+   competing content. At .62 with a 3px blur the home screen stayed legible
+   through it, so a numpad looked like it was floating over a live page. */
+.sheet-backdrop {
+  position: fixed; inset: 0; z-index: 70;
+  background: rgba(0,0,0,.82); backdrop-filter: blur(14px) saturate(70%);
+  -webkit-backdrop-filter: blur(14px) saturate(70%);
+  display: flex; align-items: flex-end; justify-content: center;
+  animation: fadeIn .2s ease;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.sheet-panel {
+  width: 100%; max-width: 480px; max-height: 92dvh; overflow-y: auto;
+  background: var(--surface); border-radius: var(--r-2xl) var(--r-2xl) 0 0;
+  padding: 0 18px calc(20px + var(--safe-bot));
+  box-shadow: var(--sh-pop); border-top: 1px solid var(--line-2);
+  overscroll-behavior: contain; animation: sheetUp .34s cubic-bezier(.22,.9,.32,1);
+}
+@keyframes sheetUp { from { transform: translateY(100%); } to { transform: none; } }
+/* 시트가 떠 있는 채로 화면을 다시 그릴 때는 등장 애니메이션을 재생하지
+   않습니다. 시트 DOM 은 렌더마다 새로 만들어지므로, 그대로 두면 부위를
+   하나 더 고를 때마다 시트가 화면 밖으로 내려갔다 도로 올라옵니다.
+   app.js 의 sheetAttrs() 가 '이전 렌더에도 열려 있던 시트' 에만 붙입니다. */
+.sheet-backdrop.no-enter,
+.sheet-backdrop.no-enter > .sheet-panel { animation: none; }
+.sheet-grab { width: 40px; height: 5px; border-radius: 999px; background: var(--line-2); margin: 10px auto 0; }
+.sheet-head {
+  position: sticky; top: 0; z-index: 2;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 14px 0 14px; background: var(--surface);
+}
+.sheet-title { font-size: 18px; font-weight: 900; letter-spacing: -0.035em; }
+.sheet-title-sub { font-size: 12px; color: var(--muted); font-weight: 700; margin-top: 2px; }
+.sheet-x {
+  width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+  display: grid; place-items: center; color: var(--sub);
+  background: var(--surface-2); border: 1px solid var(--line);
+  transition: transform .12s, background .15s;
+}
+.sheet-x:active { transform: scale(.9); background: var(--surface-3); }
+
+/* ============================================================
+   PICKER (numpad)
+   ============================================================ */
+/* A framed readout rather than a number floating in space — it now reads as
+   the field being edited, and the unit sits with the value instead of below it. */
+.picker-big {
+  display: flex; align-items: baseline; justify-content: center; gap: 8px;
+  width: 100%; margin: 2px 0 12px; padding: 18px 0 16px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+.picker-big:active { background: var(--surface-3); }
+.picker-big-num { font-size: 52px; font-weight: 900; letter-spacing: -0.055em; line-height: 1; }
+/* Placeholder zero on an empty pad — dimmed so it never reads as a typed 0. */
+.picker-big-num.is-empty { color: var(--muted); opacity: .45; }
+/* The existing value, shown until the first digit replaces it. Tinted to say
+   "this is the old number, start typing to overwrite". */
+.picker-big-num.is-fresh { color: var(--accent); }
+.picker-big-unit { font-size: 18px; font-weight: 800; color: var(--muted); }
+
+.numpad { margin-bottom: 12px; }
+.numpad-row { display: grid; grid-template-columns: repeat(3,1fr); gap: 9px; margin-bottom: 9px; }
+.numpad-key {
+  height: 58px; border-radius: var(--r-md); background: var(--surface-2);
+  font-size: 24px; font-weight: 700; color: var(--text);
+  border: 1px solid var(--line); transition: background .1s, transform .07s;
+}
+.numpad-key:active { transform: scale(.93); background: var(--surface-3); }
+.numpad-key.back { color: var(--muted); }
+.numpad-key.clear { font-size: 14px; color: var(--muted); }
+/* Tapping "5" twice quickly is a double-tap, and a double-tap on a phone means
+   "zoom in" — which is why hammering the pad kept blowing up the layout.
+   touch-action: manipulation drops the double-tap-to-zoom gesture (and the
+   300ms click delay that comes with waiting for it) while leaving pinch-zoom
+   alone, so the page stays accessible. Selection is disabled too: fast repeat
+   taps otherwise start highlighting the key labels. */
+.numpad-key, .picker-big {
+  touch-action: manipulation;
+  -webkit-user-select: none; user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Nudge the value instead of retyping it — most changes between sets are one
+   plate or a rep or two. */
+.picker-adj-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-bottom: 14px; }
+.adj-btn {
+  height: 40px; border-radius: var(--r-sm); background: var(--surface-2);
+  font-size: 14px; font-weight: 800; color: var(--sub);
+  border: 1px solid var(--line); transition: transform .1s, background .12s;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.adj-btn:active { transform: scale(.94); background: var(--surface-3); }
+.adj-btn:active { transform: scale(.94); }
+
+.presets-scroll {
+  display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 14px;
+  scrollbar-width: none;
+}
+.presets-scroll::-webkit-scrollbar { display: none; }
+.preset-chip {
+  flex-shrink: 0; height: 40px; padding: 0 17px; border-radius: 999px;
+  background: var(--surface-2); font-size: 15px; font-weight: 800; color: var(--sub);
+  border: 1.5px solid transparent; transition: all .13s;
+}
+.preset-chip.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.preset-chip:active { transform: scale(.94); }
+
+.picker-confirm {
+  width: 100%; height: 54px; border-radius: var(--r-lg);
+  background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--accent-ink);
+  font-size: 16px; font-weight: 800; box-shadow: var(--sh-glow); transition: transform .1s;
+}
+.picker-confirm:active { transform: scale(.97); }
+.picker-confirm.ghost {
+  background: var(--surface-2); color: var(--sub); box-shadow: none; border: 1px solid var(--line);
+}
+
+/* ============================================================
+   EXERCISE PICKER
+   ============================================================ */
+/* .sheet-panel is normally overflow-y:auto on the whole panel, but the
+   picker needs the footer button held outside that scroll region (see the
+   .picker-footer comment below) — so this sheet scrolls only inside
+   .picker-scroll, and the panel itself just lays its children out top to
+   bottom. */
+.picker-sheet { display: flex; flex-direction: column; overflow: hidden; }
+.picker-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.search-bar { position: relative; margin-bottom: 14px; }
+.search-bar svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); }
+.search-bar input {
+  width: 100%; height: 48px; background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: var(--r-md); padding: 0 14px 0 42px; font-size: 15px; font-weight: 600;
+}
+.search-bar input::placeholder { color: var(--muted); }
+
+.pick-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px; }
+.pick-item {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--surface-2); border: 1.5px solid var(--line);
+  border-radius: var(--r-md); padding: 3px 12px 3px 4px; transition: border-color .15s, background .15s;
+  min-height: 56px;
+}
+.pick-item.on { border-color: var(--accent-line); background: color-mix(in srgb, var(--accent) 8%, var(--surface-2)); }
+/* Already in today's session: present but visually settled, not "selected". */
+.pick-item.added { border-color: transparent; background: var(--surface-3); opacity: .72; }
+.pick-added-tag {
+  font-size: 11px; font-weight: 800; color: var(--accent); flex-shrink: 0;
+  padding: 3px 9px; border-radius: 999px; background: var(--accent-soft);
+}
+.pick-item-name {
+  flex: 1; text-align: left; padding: 15px 8px; font-size: 15px; font-weight: 700;
+  display: flex; flex-direction: column; gap: 3px; min-width: 0;
+}
+.pick-item-en { font-size: 12px; color: var(--muted); font-weight: 600; }
+/* 고르기 전에 어떤 동작인지 볼 수 있어야 합니다. 44px 은 손가락 탭 최소 크기. */
+.pick-info {
+  flex-shrink: 0; width: 34px; height: 34px; display: grid; place-items: center;
+  border: none; background: none; color: var(--muted); border-radius: 999px;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.pick-info:active { background: var(--surface-3); color: var(--text); }
+.pick-fav {
+  flex-shrink: 0; width: 34px; height: 34px; display: grid; place-items: center;
+  border: none; background: none; color: var(--muted); border-radius: 999px;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.pick-fav:active { background: var(--surface-3); }
+.pick-fav.on { color: #ffc94d; }
+.pick-item-eq {
+  font-size: 11px; font-weight: 700; color: var(--sub); padding: 3px 8px;
+  border-radius: 999px; background: var(--surface-3); flex-shrink: 0;
+}
+.custom-del { font-size: 12px; font-weight: 700; color: var(--red); padding: 6px 8px; flex-shrink: 0; }
+.pick-check {
+  width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; margin-right: 4px;
+  display: grid; place-items: center; border: 2px solid var(--line-2); color: transparent;
+  transition: all .15s;
+}
+.pick-item.on .pick-check {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  border-color: transparent; color: var(--accent-ink);
+}
+.pick-item-name:disabled { opacity: .6; }
+/* .picker-sheet is a flex column: header stays put, .picker-scroll (search +
+   list + custom-add) scrolls in its own box, and this footer sits below it as
+   a normal flex child. It used to be position:sticky inside the same scroll
+   box as the list — sticky pins to the viewport regardless of real scroll
+   position, so even at scrollTop 0 it clamped to the bottom of the sheet and
+   visually collided with whatever list items happened to occupy that same
+   band (the next item's row showed through/under the button). Being a plain
+   flex sibling of an independently-scrolling box means there's no shared
+   space left to collide over. */
+.picker-footer {
+  flex-shrink: 0;
+  padding: 12px 0 calc(4px + var(--safe-bot));
+  background: var(--surface);
+}
+.picker-confirm:disabled { opacity: .75; }
+.custom-add-row { display: flex; gap: 8px; margin-top: 10px; padding-top: 14px; border-top: 1px solid var(--line); }
+.custom-add-row input {
+  flex: 1; height: 46px; background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: var(--r-sm); padding: 0 14px; font-size: 14px; font-weight: 600;
+}
+.custom-add-row input::placeholder { color: var(--muted); }
+.custom-add-row .btn-add-sm { height: 46px; padding: 0 18px; border-radius: var(--r-sm); }
+.help-text { text-align: center; color: var(--muted); font-size: 13px; font-weight: 600; padding: 30px 0; }
+
+/* ============================================================
+   EXERCISE INFO
+   ============================================================ */
+.info-hero { margin-bottom: 16px; }
+.info-name { font-size: 24px; font-weight: 900; letter-spacing: -0.04em; }
+.info-name-en { font-size: 13px; color: var(--muted); font-weight: 600; margin-top: 2px; }
+.info-meta { display: flex; gap: 7px; margin-top: 12px; }
+.info-badge {
+  height: 30px; padding: 0 12px; border-radius: 999px; display: inline-flex; align-items: center;
+  background: var(--surface-2); font-size: 12px; font-weight: 700; color: var(--sub);
+}
+.info-badge.eq { background: var(--accent-soft); color: var(--accent); }
+.diff-stars { color: var(--orange); font-size: 13px; letter-spacing: 1px; }
+
+/* ── 근육 지도 ──────────────────────────────────────────────────────────
+   "가슴, 삼두근" 이라고 적어 두는 것만으로는 그게 몸의 어디인지 모르는
+   사람이 많습니다. 같은 데이터로 사람 그림에 색을 칠하면 한눈에 들어옵니다.
+   그림 파일은 쓰지 않습니다 — app.js 의 renderBodyMap 이 그리는 SVG 입니다. */
+.muscle-legend { margin-bottom: 16px; display: flex; gap: 14px; align-items: flex-start; }
+.muscle-legend-text { flex: 1; min-width: 0; }
+.bodymap {
+  flex: none; display: flex; gap: 4px; padding: 10px 8px 6px;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md);
+}
+.bodymap figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.bodymap svg { display: block; height: 104px; width: auto; }
+.bodymap figcaption { font-size: 9px; font-weight: 700; color: var(--muted); letter-spacing: .06em; }
+/* 색은 바로 옆 pill 과 같은 것을 씁니다 — 주동근은 강조색, 협력근은 주황.
+   지도와 글자가 서로 다른 색으로 같은 걸 가리키면 둘을 잇지 못합니다. */
+.bm, .bm-n { fill: var(--surface-3); stroke: var(--line-2); stroke-width: .8; stroke-linejoin: round; }
+.bm-n { opacity: .55; }
+.bm.s { fill: color-mix(in srgb, var(--orange) 50%, var(--surface-3)); stroke: color-mix(in srgb, var(--orange) 62%, var(--line-2)); }
+.bm.p { fill: var(--accent); stroke: var(--accent-2); }
+/* 좁은 화면에서는 지도를 위로 올리고 글자를 아래로 내립니다. */
+@media (max-width: 380px) {
+  .muscle-legend { flex-direction: column; gap: 10px; }
+  .bodymap { align-self: center; }
+}
+.muscle-legend-title { font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+.muscle-legend-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.muscle-pill {
+  display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 12px;
+  border-radius: 999px; font-size: 12px; font-weight: 700; background: var(--surface-2); color: var(--sub);
+}
+.muscle-pill.primary { background: var(--accent-soft); color: var(--accent); }
+.muscle-pill.secondary { background: color-mix(in srgb, var(--orange) 13%, var(--surface)); color: var(--orange); }
+.muscle-pill-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+.info-desc { font-size: 14px; line-height: 1.7; color: var(--sub); margin: 16px 0; }
+.tips-list { display: flex; flex-direction: column; gap: 8px; }
+.tips-list li {
+  display: flex; gap: 10px; font-size: 13px; line-height: 1.55; color: var(--sub);
+  padding: 12px 13px; background: var(--surface-2); border-radius: var(--r-sm);
+}
+.tip-num {
+  width: 22px; height: 22px; border-radius: 7px; background: var(--accent-soft); color: var(--accent);
+  font-size: 11px; font-weight: 800; display: grid; place-items: center; flex-shrink: 0; margin-top: 1px;
+}
+
+/* ============================================================
+   CHARTS
+   ============================================================ */
+.trend-card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); padding: 16px; margin-bottom: 18px; box-shadow: var(--sh-card);
+}
+.trend-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.trend-title { font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.trend-pr { font-size: 13px; color: var(--sub); font-weight: 600; }
+.trend-pr strong { color: var(--accent); font-weight: 800; }
+.trend-svg { width: 100%; height: 62px; display: block; overflow: visible; }
+.trend-dates { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 4px; font-weight: 600; }
+
+/* ============================================================
+   HISTORY
+   ============================================================ */
+
+/* ============================================================
+   HISTORY CALENDAR
+   ============================================================ */
+.cal-card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); padding: 14px 12px 12px; box-shadow: var(--sh-card);
+  margin-bottom: 6px;
+}
+.cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.cal-title { font-size: 16px; font-weight: 800; letter-spacing: -0.03em; }
+.cal-nav {
+  width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
+  background: var(--surface-2); border: 1px solid var(--line); color: var(--sub);
+  transition: transform .1s, background .15s;
+}
+.cal-nav:active { transform: scale(.92); background: var(--surface-3); }
+.cal-nav:disabled { opacity: .28; }
+.cal-dow {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 6px;
+}
+.cal-dow span {
+  text-align: center; font-size: 11px; font-weight: 800; color: var(--muted);
+  letter-spacing: .02em;
+}
+.cal-dow .sun { color: var(--red); }
+.cal-dow .sat { color: var(--blue); }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.cal-cell {
+  aspect-ratio: 1 / 1; border-radius: 10px; position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  background: transparent; border: 1.5px solid transparent;
+  transition: background .15s, border-color .15s, transform .1s;
+}
+.cal-cell.empty { pointer-events: none; }
+.cal-cell:not(.empty):not(.future):active { transform: scale(.9); }
+.cal-num { font-size: 13px; font-weight: 700; color: var(--sub); line-height: 1; }
+.cal-cell.future .cal-num { color: var(--muted); opacity: .45; }
+.cal-cell.done { background: var(--surface-2); }
+.cal-cell.done .cal-num { color: var(--text); font-weight: 800; }
+.cal-cell.today { border-color: var(--accent); }
+.cal-cell.today .cal-num { color: var(--accent); font-weight: 900; }
+.cal-dots { display: flex; gap: 2px; height: 5px; align-items: center; }
+.cal-dot { width: 4px; height: 4px; border-radius: 50%; }
+.cal-foot {
+  display: flex; gap: 16px; justify-content: center;
+  margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--line);
+  font-size: 12px; color: var(--muted); font-weight: 600;
+}
+.cal-foot strong { color: var(--text); font-weight: 800; }
+
+/* ============================================================
+   SETTINGS
+   ============================================================ */
+.settings-label { font-size: 12px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 22px 2px 10px; }
+.account-avatar { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+.account-avatar.fallback { display: grid; place-items: center; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--accent-ink); font-weight: 900; font-size: 18px; }
+.settings-screen { padding-top: 8px; }
+
+/* Related rows share one card and are separated by hairlines, the way every
+   native settings screen does it. Each row used to be its own bordered,
+   shadowed, 8px-detached card, which gave a six-item list six competing
+   containers and no sense of what grouped with what. */
+.settings-group {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); box-shadow: var(--sh-card); overflow: hidden;
+}
+.settings-item {
+  display: flex; align-items: center; gap: 13px; width: 100%; text-align: left;
+  background: transparent; padding: 14px; transition: background .15s;
+}
+.settings-item + .settings-item { border-top: 1px solid var(--line); }
+.settings-item:active { background: var(--surface-2); }
+.settings-item:disabled { opacity: .55; }
+
+/* Icons are one neutral chip unless the row means something particular.
+   Per-row colours (a blue import, a red logout, a green export) read as
+   decoration and spend the accent colour on rows that have not earned it. */
+.settings-item-icon {
+  width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center;
+  flex-shrink: 0; background: var(--surface-3); color: var(--sub);
+}
+.settings-item-icon.accent { background: var(--accent-soft); color: var(--accent); }
+.settings-item-icon.danger { background: var(--red-soft); color: var(--red); }
+.settings-item-text { flex: 1; min-width: 0; }
+.settings-item-title { font-size: 15px; font-weight: 800; }
+.settings-item-sub { font-size: 12px; color: var(--muted); font-weight: 600; margin-top: 2px; }
+.settings-item-arrow { color: var(--muted); flex-shrink: 0; }
+
+/* ── Confirm dialog ────────────────────────────────────────────────────────
+   Centred rather than a bottom sheet: this asks a question and waits, which is
+   a different thing from what the pickers do, and the two should not look
+   alike. Replaces window.confirm — see ask() in app.js. */
+.dialog-backdrop {
+  position: fixed; inset: 0; z-index: 90;
+  background: rgba(0,0,0,.72);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 26px; animation: fadeIn .16s ease;
+}
+.dialog-backdrop.is-closing { animation: fadeOut .14s ease forwards; }
+@keyframes fadeOut { to { opacity: 0; } }
+.dialog {
+  width: 100%; max-width: 340px;
+  background: var(--surface); border: 1px solid var(--line-2);
+  border-radius: var(--r-xl); padding: 22px 20px 16px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.6);
+  animation: dialog-in .2s cubic-bezier(.2,.9,.3,1);
+}
+@keyframes dialog-in { from { opacity: 0; transform: translateY(10px) scale(.97); } to { opacity: 1; transform: none; } }
+.dialog-title {
+  font-size: 17px; font-weight: 900; letter-spacing: -0.03em;
+  text-align: center; line-height: 1.35;
+}
+.dialog-body {
+  margin-top: 9px; font-size: 13px; font-weight: 600; line-height: 1.6;
+  color: var(--muted); text-align: center; white-space: pre-line;
+}
+.dialog-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 20px; }
+.dialog-btn {
+  height: 48px; border-radius: var(--r-md);
+  font-size: 15px; font-weight: 800; letter-spacing: -0.02em;
+  transition: transform .1s, background .14s;
+}
+.dialog-btn:active { transform: scale(.97); }
+.dialog-btn.cancel { background: var(--surface-2); color: var(--sub); border: 1px solid var(--line); }
+.dialog-btn.go { background: var(--accent); color: var(--accent-ink); }
+.dialog-btn.danger { background: var(--red); color: #fff; }
+
+/* On/off switch for a settings row. */
+.switch {
+  width: 46px; height: 28px; border-radius: 999px; flex-shrink: 0;
+  background: var(--surface-3); border: 1px solid var(--line);
+  position: relative; transition: background .18s, border-color .18s;
+}
+.switch i {
+  position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+  border-radius: 50%; background: var(--muted);
+  transition: transform .18s cubic-bezier(.3,.9,.4,1), background .18s;
+}
+.switch.on { background: var(--accent-soft); border-color: var(--accent-line); }
+.switch.on i { transform: translateX(18px); background: var(--accent); }
+
+/* A row that holds a control rather than being one. */
+.settings-block { flex-direction: column; align-items: stretch; gap: 11px; cursor: default; }
+.settings-block:active { background: transparent; }
+.settings-block .presets-scroll { margin: 0; }
+
+/* Identity row: avatar, name, handle, and the body stats on one line under it. */
+.profile-row { padding: 16px 14px; }
+.profile-bits { font-size: 12px; font-weight: 700; color: var(--sub); margin-top: 6px; }
+.profile-bits.empty { color: var(--muted); font-weight: 600; }
+.settings-note {
+  font-size: 12px; color: var(--muted); font-weight: 600; line-height: 1.6;
+  margin: 20px 4px 0; text-align: center;
+}
+
+/* Advanced disclosure (backup files) */
+.settings-adv { margin-top: 22px; }
+.settings-adv-summary {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 13px 14px; border-radius: var(--r-md);
+  background: var(--surface); border: 1px solid var(--line);
+  font-size: 13px; font-weight: 800; color: var(--sub);
+  cursor: pointer; list-style: none; user-select: none;
+  touch-action: manipulation;
+}
+.settings-adv-summary::-webkit-details-marker { display: none; }
+.settings-adv-summary:active { background: var(--surface-2); }
+.settings-adv-chev { color: var(--muted); transition: transform .18s; flex-shrink: 0; }
+.settings-adv[open] .settings-adv-chev { transform: rotate(180deg); }
+.settings-adv-body { padding-top: 8px; }
+
+/* Danger zone — visually fenced so destructive taps need intent, not luck */
+.settings-label.danger-label { color: var(--red); margin-top: 30px; }
+/* Same grouped card as everything else, tinted rather than boxed inside a
+   second border — the red title and icon already say what these rows are. */
+.danger-zone { border-color: color-mix(in srgb, var(--red) 28%, var(--line)); margin-bottom: 24px; }
+.danger-zone .settings-item + .settings-item {
+  border-top-color: color-mix(in srgb, var(--red) 20%, var(--line));
+}
+.danger-item .settings-item-title { color: var(--red); }
+
+/* ============================================================
+   LOGIN / SPLASH
+   ============================================================ */
+.login-screen {
+  min-height: 100dvh; display: flex; flex-direction: column; justify-content: center;
+  padding: 40px 26px calc(40px + var(--safe-bot));
+}
+.login-screen .topbar-brand { font-size: 34px; margin-bottom: 26px; }
+.login-title { font-size: 26px; font-weight: 900; letter-spacing: -0.045em; line-height: 1.25; margin-bottom: 10px; }
+.btn-google {
+  width: 100%; height: 54px; border-radius: var(--r-lg); background: #fff; color: #1f1f1f;
+  font-size: 15px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 10px;
+  transition: transform .1s;
+}
+.btn-google:active { transform: scale(.98); }
+.login-top { margin-bottom: 4px; }
+/* Flex divider rather than the old absolutely-positioned pseudo-elements: the
+   rules now meet the label wherever it happens to sit instead of being pinned
+   at a fixed 28% that drifted away from short words. */
+.login-or {
+  display: flex; align-items: center; gap: 12px;
+  margin: 22px 0 16px; font-size: 12px; color: var(--muted); font-weight: 700;
+}
+.login-or::before, .login-or::after { content: ""; flex: 1; height: 1px; background: var(--line-2); }
+
+.login-links { display: flex; align-items: center; justify-content: center; gap: 14px; padding-top: 16px; }
+.login-link {
+  color: var(--sub); font-size: 13px; font-weight: 700; padding: 4px 2px;
+  text-decoration: underline; text-underline-offset: 3px;
+}
+.login-link.strong { color: var(--accent); text-decoration-thickness: 1.5px; }
+.login-link:disabled { opacity: .5; }
+.login-link-sep { width: 1px; height: 12px; background: var(--line-2); }
+.login-input {
+  width: 100%; height: 52px; background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: var(--r-md); padding: 0 16px; font-size: 15px; font-weight: 600; margin-bottom: 10px;
+}
+.login-input::placeholder { color: var(--muted); }
+.login-error { color: var(--red); font-size: 13px; font-weight: 700; margin-bottom: 12px; background: var(--red-soft); padding: 11px 14px; border-radius: var(--r-sm); }
+
+/* ── Signup wizard / onboarding ────────────────────────────────────────────
+   Top-aligned rather than vertically centred like the login screen: these
+   screens grow as fields are added, and a centred column would shift every
+   input upward between steps. */
+.signup-screen { justify-content: flex-start; padding-top: calc(18px + var(--safe-top)); }
+.signup-head { display: flex; align-items: center; gap: 12px; margin-bottom: 26px; min-height: 40px; }
+.signup-back {
+  width: 40px; height: 40px; margin-left: -8px; border-radius: 50%;
+  display: grid; place-items: center; color: var(--sub); flex-shrink: 0;
+}
+.signup-back:active { background: var(--surface-2); }
+.signup-steps { flex: 1; display: flex; align-items: center; gap: 6px; }
+.signup-dot {
+  height: 4px; flex: 1; border-radius: 2px; background: var(--surface-3);
+  transition: background .25s;
+}
+.signup-dot.done { background: color-mix(in srgb, var(--accent) 45%, var(--surface-3)); }
+.signup-dot.on { background: var(--accent); }
+.signup-count { font-size: 12px; font-weight: 800; color: var(--muted); flex-shrink: 0; }
+.signup-screen .topbar-brand { font-size: 24px; margin: 0; }
+
+.signup-title { font-size: 24px; font-weight: 900; letter-spacing: -0.045em; line-height: 1.25; }
+.signup-sub { font-size: 14px; color: var(--muted); font-weight: 600; margin: 8px 0 22px; line-height: 1.5; }
+.signup-body { flex: 1; }
+.signup-actions { padding-top: 22px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.signup-note {
+  display: flex; gap: 9px; margin-top: 16px; padding: 13px 14px; border-radius: var(--r-sm);
+  background: var(--surface-2); border: 1px solid var(--line);
+  font-size: 12px; color: var(--sub); font-weight: 600; line-height: 1.55;
+}
+.signup-note svg { flex-shrink: 0; margin-top: 1px; color: var(--muted); }
+
+/* ── Form fields ── */
+.field-label {
+  display: block; font-size: 12px; font-weight: 800; color: var(--sub);
+  margin: 16px 2px 7px; letter-spacing: -0.01em;
+}
+.signup-body > .field-label:first-child, .sheet-scroll > .field-label:first-child { margin-top: 0; }
+/* Reserves its line even when empty so validation text appearing does not
+   shove every field below it down the screen mid-typing. */
+.field-hint {
+  font-size: 12px; font-weight: 600; color: var(--muted);
+  margin: -3px 2px 2px; min-height: 16px; line-height: 1.35;
+}
+.field-hint.ok { color: var(--accent); }
+.field-hint.bad { color: var(--red); }
+.field-hint.muted { color: var(--muted); }
+.field-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
+.field-grid .login-input { padding: 0 12px; }
+
+/* ── Grouped form rows ─────────────────────────────────────────────────────
+   Label on the left, value on the right, hairlines between — the same shape as
+   the settings list, so a form and a list of settings stop looking like two
+   different apps. Replaces stacked label-above-input pairs, which cost twice
+   the vertical space and left every field visually detached from its name. */
+.form-label {
+  font-size: 12px; font-weight: 800; color: var(--muted); text-transform: uppercase;
+  letter-spacing: .06em; margin: 20px 2px 9px;
+}
+.form-label:first-child { margin-top: 4px; }
+.form-group {
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: var(--r-lg); overflow: hidden; margin-bottom: 4px;
+}
+.form-row {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  min-height: 54px; padding: 0 15px; text-align: left; background: transparent;
+}
+.form-row + .form-row { border-top: 1px solid var(--line); }
+.form-row.tappable:active { background: var(--surface-3); }
+.form-row-label { font-size: 14px; font-weight: 700; color: var(--sub); flex-shrink: 0; }
+.form-row-value { flex: 1; text-align: right; font-size: 15px; font-weight: 800; color: var(--text); }
+.form-row-value.empty { color: var(--muted); font-weight: 600; }
+.form-row-chev { color: var(--muted); flex-shrink: 0; margin-right: -3px; }
+.form-row.static { color: var(--muted); }
+.form-row-input {
+  flex: 1; min-width: 0; height: 52px; background: transparent; border: none;
+  font-size: 15px; font-weight: 700; text-align: right; padding: 0;
+}
+.form-row-input::placeholder { color: var(--muted); font-weight: 600; }
+.form-row-input.num { text-align: right; }
+.form-row-unit { font-size: 13px; font-weight: 700; color: var(--muted); flex-shrink: 0; width: 24px; }
+/* The segmented control sits in the row instead of below it. */
+.form-row-seg { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 7px; padding: 8px 0; }
+.form-row-seg .seg-btn { height: 38px; font-size: 13px; }
+/* A field that opens a picker instead of a keyboard. Sized to match
+   .login-input exactly so it sits in the same grid row without shimming. */
+.field-picker {
+  width: 100%; height: 52px; padding: 0 12px; margin-bottom: 10px;
+  display: flex; align-items: center; justify-content: space-between; gap: 4px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: var(--r-md); font-size: 15px; font-weight: 700; color: var(--text);
+  transition: border-color .15s, background .15s;
+}
+.field-picker svg { color: var(--muted); flex-shrink: 0; }
+.field-picker.is-empty { color: var(--muted); font-weight: 600; }
+.field-picker:active { background: var(--surface-3); }
+
+/* ── Scroll wheel ──────────────────────────────────────────────────────────
+   scroll-snap does the work: the browser owns the momentum and the settling,
+   so this stays a plain scrollable list that a tap, a flick, a keyboard and a
+   screen reader all reach the same way. The band is the selection indicator
+   and is painted under the list, never over it. */
+.wheel { position: relative; height: 220px; margin: 4px 0 18px; }
+.wheel-band {
+  position: absolute; left: 8px; right: 8px; top: 50%; height: 46px;
+  transform: translateY(-50%); border-radius: var(--r-md);
+  background: var(--accent-soft); border: 1px solid var(--accent-line);
+  pointer-events: none;
+}
+.wheel-scroll {
+  position: relative; height: 100%; overflow-y: auto; overscroll-behavior: contain;
+  scroll-snap-type: y mandatory; -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.wheel-scroll::-webkit-scrollbar { display: none; }
+/* Half the track's height, so the first and last years can reach the centre. */
+.wheel-pad { height: 87px; flex-shrink: 0; }
+.wheel-item {
+  display: block; width: 100%; height: 46px; scroll-snap-align: center;
+  font-size: 17px; font-weight: 700; color: var(--muted);
+  transition: color .12s, font-size .12s, opacity .12s;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.wheel-item.on { color: var(--accent); font-size: 21px; font-weight: 900; }
+
+.seg-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 4px; }
+.seg-btn {
+  height: 46px; border-radius: var(--r-md); background: var(--surface-2);
+  border: 1.5px solid var(--line); color: var(--muted);
+  font-size: 14px; font-weight: 800; transition: background .15s, color .15s, border-color .15s;
+}
+.seg-btn.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
+.seg-btn:active { transform: scale(.97); }
+
+/* Profile sheet needs its own scroll: it is taller than a picker and must not
+   push its save button off the bottom of the panel. */
+/* Roomier than the old 4px: the profile sheet now ends in a note rather than
+   an input, and the confirm button was sitting on top of its last line. */
+.sheet-scroll { max-height: min(52dvh, 460px); overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 14px; }
+.login-setup { color: var(--orange); font-size: 14px; font-weight: 600; background: color-mix(in srgb, var(--orange) 12%, var(--surface)); padding: 14px; border-radius: var(--r-sm); margin-bottom: 12px; }
+.splash-wrap { min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; }
+.splash-brand { font-size: 40px; font-weight: 900; letter-spacing: -0.05em; }
+.splash-brand span { color: var(--accent); }
+.spinner { width: 30px; height: 30px; border: 3px solid var(--line-2); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============================================================
+   TOAST
+   ============================================================ */
+.toast {
+  position: fixed; left: 50%; bottom: calc(var(--nav-h) + var(--safe-bot) + 20px);
+  transform: translateX(-50%); z-index: 100;
+  background: var(--surface-3); color: var(--text); border: 1px solid var(--line-2);
+  padding: 12px 20px; border-radius: 999px; font-size: 13px; font-weight: 700;
+  box-shadow: var(--sh-pop); animation: toastIn .3s cubic-bezier(.2,.9,.3,1); max-width: 88%; text-align: center;
+}
+@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* ============================================================
+   REST TIMER — appended to <body> directly, outside #app, so its
+   own tick loop never disturbs whatever is being rendered/edited.
+   ============================================================ */
+.rest-timer-bar {
+  position: fixed; left: 50%; bottom: calc(var(--nav-h) + var(--safe-bot) + 10px);
+  transform: translateX(-50%); z-index: 90; width: calc(100% - 24px); max-width: 456px;
+  background: color-mix(in srgb, var(--surface-3) 96%, transparent);
+  border: 1px solid var(--line-2); border-radius: var(--r-lg);
+  box-shadow: var(--sh-pop); backdrop-filter: saturate(180%) blur(16px);
+  -webkit-backdrop-filter: saturate(180%) blur(16px);
+  padding: 9px 10px; display: flex; align-items: center; gap: 10px;
+  animation: toastIn .3s cubic-bezier(.2,.9,.3,1);
+}
+.rest-ring { width: 38px; height: 38px; flex-shrink: 0; transform: rotate(-90deg); }
+.rest-ring-bg, .rest-ring-fg { fill: none; stroke-width: 3; }
+.rest-ring-bg { stroke: var(--surface-2); }
+.rest-ring-fg { stroke: var(--accent); stroke-linecap: round; transition: stroke-dashoffset .2s linear; }
+.rest-timer-mid { flex: 1; min-width: 0; }
+.rest-timer-time { font-size: 18px; font-weight: 900; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.rest-timer-time.zero { color: var(--accent); }
+.rest-timer-label { font-size: 12px; color: var(--muted); font-weight: 700; margin-top: -1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rest-timer-adj {
+  height: 34px; padding: 0 11px; border-radius: 999px; flex-shrink: 0;
+  background: var(--surface-2); border: 1px solid var(--line); color: var(--sub);
+  font-size: 12px; font-weight: 800; transition: transform .1s;
+}
+.rest-timer-adj:active { transform: scale(.92); }
+.rest-timer-close {
+  width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+  display: grid; place-items: center; color: var(--muted);
+  background: var(--surface-2); border: 1px solid var(--line); transition: transform .1s;
+}
+.rest-timer-close:active { transform: scale(.9); }
+/* 타이머 바가 떠 있는 동안 마지막 항목이 가려지지 않도록 여백 확보 */
+body.has-rest-timer .screen { padding-bottom: calc(var(--nav-h) + var(--safe-bot) + 92px); }
+
+/* ============================================================
+   FINISH BAR + DAY SUMMARY
+   ============================================================ */
+.finish-bar { margin: 26px 0 8px; }
+.finish-bar .btn-hero { width: 100%; }
+/* Present in the DOM from the first render so the 러닝 fields can reveal it
+   without a re-render — see paintFinishBar(). */
+.finish-bar.is-empty { display: none; }
+
+/* Sticky save bar for a past day being edited. Sticky rather than fixed so it
+   sits inside the scroll column and never covers the tab bar. */
+.pastsave-bar {
+  position: sticky; bottom: calc(var(--nav-h) + var(--safe-bot) + 10px);
+  margin: 22px 0 6px; padding: 13px 14px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--orange-line, var(--line)); border-radius: var(--r-lg);
+  box-shadow: var(--sh-card);
+}
+.pastsave-bar.is-clean { display: none; }
+.pastsave-msg {
+  display: flex; align-items: center; gap: 7px; margin-bottom: 11px;
+  font-size: 13px; font-weight: 700; color: var(--orange, var(--sub));
+}
+.pastsave-actions { display: grid; grid-template-columns: 1fr 1.6fr; gap: 9px; }
+.pastsave-actions .btn-ghost,
+.pastsave-actions .btn-hero { width: 100%; height: 46px; justify-content: center; }
+.finish-note {
+  margin-top: 10px; text-align: center;
+  font-size: 12px; font-weight: 600; color: var(--muted);
+}
+.finish-bar.done {
+  border: 1px solid var(--accent-line); border-radius: var(--r-lg);
+  background: var(--accent-soft); padding: 15px;
+}
+.finish-msg {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 14px; font-weight: 800; color: var(--accent); margin-bottom: 12px;
+}
+.finish-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.finish-actions .btn-ghost { width: 100%; justify-content: center; background: var(--surface); }
+
+/* Full-screen overlay above the tab content. Fixed rather than inserted into
+   the flow so opening it from any tab looks the same and the page underneath
+   keeps its scroll position for when it closes. */
+/* Stops short of the bottom so the tab bar stays visible and reachable.
+   It used to be inset:0, which covered the nav — opening a past workout from
+   히스토리 left no way to switch tabs without backing out first. */
+.detail-screen {
+  position: fixed; top: 0; left: 0; right: 0;
+  bottom: calc(var(--nav-h) + var(--safe-bot));
+  z-index: 45;
+  max-width: 480px; margin: 0 auto;
+  background: var(--bg); overflow-y: auto;
+  animation: detail-in .22s cubic-bezier(.2,.8,.3,1);
+}
+@keyframes detail-in { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+.detail-screen .screen { padding-bottom: 24px; }
+
+/* While a full-screen overlay is up, the page underneath must not scroll —
+   two scrollable layers under one finger is what made closing the summary
+   land at a random position. */
+body.overlay-open { overflow: hidden; }
+
+.dsum-hero {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); padding: 16px; margin: 4px 0 20px; box-shadow: var(--sh-card);
+}
+.dsum-hero.done { border-color: var(--accent-line); }
+.dsum-badge {
+  display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 11px;
+  border-radius: 999px; background: var(--surface-2); color: var(--muted);
+  font-size: 12px; font-weight: 800; border: 1px solid var(--line); margin-bottom: 12px;
+}
+.dsum-hero.done .dsum-badge { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
+.dsum-parts { display: flex; flex-wrap: wrap; gap: 6px; }
+.dsum-stats { display: flex; gap: 22px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.dsum-stats b { display: block; font-size: 21px; font-weight: 900; letter-spacing: -.04em; }
+.dsum-stats span { font-size: 12px; font-weight: 700; color: var(--muted); }
+
+.dsum-part { margin-bottom: 22px; }
+.dsum-part-head {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 14px; font-weight: 900; margin-bottom: 10px;
+}
+.dsum-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.dsum-part-count { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--muted); }
+.dsum-ex {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-md); padding: 13px 14px; margin-bottom: 8px;
+}
+.dsum-ex-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
+.dsum-ex-name { font-size: 14px; font-weight: 800; }
+.dsum-ex-meta { font-size: 12px; font-weight: 700; color: var(--muted); flex-shrink: 0; }
+.dsum-sets { display: flex; flex-wrap: wrap; gap: 6px; }
+/* One chip per set, so a whole exercise is scannable without reading a table */
+.dsum-set {
+  display: inline-flex; align-items: baseline; gap: 3px;
+  padding: 5px 9px; border-radius: 8px; background: var(--surface-2);
+  border: 1px solid var(--line); font-size: 12px; font-weight: 700; color: var(--sub);
+}
+.dsum-set b {
+  font-size: 11px; font-weight: 900; color: var(--muted);
+  margin-right: 2px; min-width: 9px;
+}
+.dsum-set i { font-style: normal; font-size: 11px; color: var(--muted); font-weight: 700; }
+.dsum-set.done { background: var(--accent-soft); border-color: var(--accent-line); color: var(--text); }
+.dsum-set.done b { color: var(--accent); }
+.dsum-set.warm { opacity: .72; }
+.dsum-empty { font-size: 12px; color: var(--muted); font-weight: 600; }
+.dsum-edit { width: 100%; justify-content: center; margin-top: 6px; }
+
+/* Briefly outlines a card that was just created, so the add lands visibly */
+.ex-card.just-added {
+  animation: just-added 1.5s ease-out;
+}
+@keyframes just-added {
+  0%, 60% { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft), var(--sh-card); }
+  100%    { border-color: var(--line); box-shadow: var(--sh-card); }
+}
+
+/* ============================================================
+   PASSWORD RESET + LOCAL IMPORT
+   ============================================================ */
+.reset-sent-icon {
+  width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent-line);
+  margin-bottom: 18px;
+}
+.reset-addr { color: var(--text); font-weight: 800; }
+.reset-confirm {
+  margin-top: 16px; padding: 14px; border-radius: var(--r-md);
+  background: var(--accent-soft); border: 1px solid var(--accent-line);
+}
+.reset-confirm-label { font-size: 12px; font-weight: 800; color: var(--accent); margin-bottom: 4px; }
+.reset-confirm-addr { font-size: 16px; font-weight: 800; letter-spacing: -.01em; }
+
+/* Offer, not an interruption — sits in the page flow like any other card */
+.import-card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); padding: 16px; margin-bottom: 16px; box-shadow: var(--sh-card);
+}
+.import-head {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 14px; font-weight: 900; color: var(--text); margin-bottom: 8px;
+}
+.import-head svg { color: var(--accent); flex-shrink: 0; }
+.import-body { font-size: 13px; font-weight: 600; color: var(--muted); line-height: 1.6; }
+.import-body strong { color: var(--sub); font-weight: 800; }
+.import-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+.import-actions .btn-ghost { width: 100%; justify-content: center; }
+.import-yes { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
+
+/* ── 운동 그림 ──────────────────────────────────────────────────────────
+   한 동작을 3장으로 나눠 그린 그림을 넘겨 보여줍니다.
+
+   여기서 한 번 틀렸던 부분: 장을 넘길 때 opacity 를 0 과 1 사이로 '변화'
+   시키면, 아무리 짧아도 두 장이 동시에 반투명해지는 순간이 생깁니다. 두
+   그림 다 배경이 비치는 선 그림이라 그 순간 선이 흐려졌다 돌아오고,
+   눈에는 깜빡임으로 보입니다. 겹치는 시간을 줄이는 걸로는 못 없앱니다 —
+   아예 중간값이 없어야 합니다.
+
+   그래서 step-end 를 씁니다. 각 구간의 값이 다음 구간까지 그대로 유지되고
+   전환은 한 순간에 일어나므로, 두 장이 동시에 보이는 시점이 존재하지
+   않습니다. 필름을 넘기듯 딱 바뀝니다.
+
+   순서는 1 → 2 → 3 → 2 로 돌아옵니다. 3 에서 1 로 튀면 동작이 끊기지만,
+   왔던 길을 되짚으면 들었다 내리는 실제 반복처럼 보입니다. */
+.ex-photo {
+  position: relative; width: 100%; aspect-ratio: 3 / 2; margin: 0 0 14px;
+  border-radius: var(--r-md); overflow: hidden; background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+.ex-photo-img {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: contain; padding: 12px; opacity: 0;
+  /* 각 장을 자기 레이어로 올려 두면 전환할 때 다시 그리지 않습니다. */
+  transform: translateZ(0); backface-visibility: hidden;
+  /* step-end 는 중간값 없이 툭 바꿉니다. 3장을 425ms 마다 자르니 초당 2.4장이고,
+     그래서 움직임이 아니라 '사진이 넘어갔다' 로 읽혔습니다. 아래 키프레임은
+     경계에서 6%(약 130ms) 만 겹치게 두는데, 이만큼 짧으면 두 장이 겹쳐 보이는
+     잔상이 아니라 모션블러로 읽힙니다. 완전히 겹치면(크로스페이드) 팔이 네 개로
+     보여서 오히려 나빠집니다 — 짧아야 합니다. */
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-fill-mode: both;
+}
+.ex-photo.f1 .ex-photo-img { opacity: 1; }
+
+/* 2장짜리 — 번갈아 */
+.ex-photo.f2 .ex-photo-img { animation-name: ex2-a; animation-duration: 1s; }
+.ex-photo.f2 .ex-photo-img:nth-child(2) { animation-name: ex2-b; }
+@keyframes ex2-a { 0%,47% { opacity: 1 } 53%,97% { opacity: 0 } 100% { opacity: 1 } }
+@keyframes ex2-b { 0%,47% { opacity: 0 } 53%,97% { opacity: 1 } 100% { opacity: 0 } }
+
+/* 3장짜리 — 1 2 3 2 로 왕복. 2번은 한 바퀴에 두 번 나옵니다.
+   구간을 균등하게 나누지 않았습니다: 1번과 3번(동작의 양 끝)에서 길게 머물고
+   2번(지나가는 중간)은 짧게 스칩니다. 실제 렙이 그렇게 움직입니다 — 맨 위와
+   맨 아래에서 잠깐 멈추고 중간은 빠르게 지납니다. 같은 3장인데 이 배분만으로
+   훨씬 자연스러워집니다. 그래서 한 바퀴도 1.7s 에서 2.2s 로 늘렸습니다. */
+.ex-photo.f3 .ex-photo-img { animation-name: ex3-a; animation-duration: 2.2s; }
+.ex-photo.f3 .ex-photo-img:nth-child(2) { animation-name: ex3-b; }
+.ex-photo.f3 .ex-photo-img:nth-child(3) { animation-name: ex3-c; }
+@keyframes ex3-a { 0%,12% { opacity: 1 } 18%,82% { opacity: 0 } 88%,100% { opacity: 1 } }
+@keyframes ex3-b { 0%,12% { opacity: 0 } 18%,32% { opacity: 1 } 38%,62% { opacity: 0 } 68%,82% { opacity: 1 } 88%,100% { opacity: 0 } }
+@keyframes ex3-c { 0%,32% { opacity: 0 } 38%,62% { opacity: 1 } 68%,100% { opacity: 0 } }
+
+/* 움직임을 끈 사용자에게는 첫 장만 고정으로 보여줍니다. */
+/* ── 모션 축소 설정 존중 ─────────────────────────────────────────────────
+   기기 설정에서 '동작 줄이기' 를 켠 사람에게는 화면이 미끄러지고 카드가
+   접히고 시트가 올라오는 움직임이 어지럼증이나 두통으로 이어집니다.
+
+   0 이 아니라 0.01ms 로 두는 이유: 애니메이션이 끝나기를 기다리는 코드가
+   있을 때 duration 이 완전히 0 이면 끝났다는 신호(animationend)가 아예
+   안 오는 브라우저가 있어서, 그 코드가 영영 기다리게 됩니다. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* 운동 그림은 세 장을 번갈아 보여 주는 방식이라, 애니메이션만 끄면
+     세 장이 겹쳐 보입니다. 첫 장만 남깁니다. */
+  .ex-photo-img { animation: none !important; opacity: 0; }
+  .ex-photo .ex-photo-img:first-child { opacity: 1; }
+}
+
+/* 출처 표기 — CC BY-SA 는 저작자와 라이선스를 밝히도록 요구합니다. */
+.credit-block { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.credit-block p { font-size: 11px; line-height: 1.7; color: var(--muted); margin: 0 0 6px; }
+.credit-block a { color: var(--sub); text-decoration: underline; }
+
+/* ── 히스토리에서 펼친 하루 ─────────────────────────────────────────────
+   달력 바로 아래에 끼워 넣으므로, 전체 화면판과 달리 자기 테두리를 갖고
+   달력과 시각적으로 분리됩니다. */
+.hist-day {
+  margin-top: 14px; padding: 14px; border-radius: var(--r-lg);
+  background: var(--surface); border: 1px solid var(--line);
+}
+.hist-day-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.hist-day-title { font-size: 15px; font-weight: 800; color: var(--text); }
+.hist-day .dsum-hero { margin-top: 0; }
+
+/* ── 운동량 추이 ────────────────────────────────────────────────────────
+   러닝(km)과 부위별 세트는 단위가 달라 그래프를 따로 둡니다. 한 그래프에
+   축을 두 개 그리면 두 값이 서로 관계있는 것처럼 읽히는데, 실제로는
+   아무 관계도 없습니다. */
+:root { --run-color: #4ecdc4; }
+
+.stats-card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); padding: 16px; margin-top: 18px;
+}
+.stats-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.stats-toggle { display: flex; gap: 4px; background: var(--surface-2); border-radius: 999px; padding: 3px; }
+.stats-tab {
+  padding: 5px 13px; border-radius: 999px; border: none; background: transparent;
+  font-size: 12px; font-weight: 800; color: var(--muted); cursor: pointer;
+}
+.stats-tab.on { background: var(--accent-soft); color: var(--accent); }
+
+.stats-sum { display: flex; gap: 8px; margin-bottom: 16px; }
+.stats-sum > div {
+  flex: 1; min-width: 0; background: var(--surface-2); border-radius: var(--r-sm);
+  padding: 9px 6px; text-align: center;
+}
+.stats-sum b { display: block; font-size: 17px; font-weight: 800; color: var(--text); }
+.stats-sum span { font-size: 11px; font-weight: 700; color: var(--muted); }
+
+.ch-title {
+  font-size: 11px; font-weight: 800; color: var(--sub);
+  text-transform: uppercase; letter-spacing: .05em; margin: 4px 0 2px;
+}
+.ch-title span { color: var(--muted); text-transform: none; letter-spacing: 0; }
+.ch { width: 100%; height: auto; margin-bottom: 10px; overflow: visible; }
+/* 격자와 축은 뒤로 물러나 있어야 막대가 먼저 읽힙니다. */
+.ch-base { stroke: var(--line); stroke-width: 1; }
+.ch-axis { fill: var(--muted); font-size: 9px; font-weight: 700; text-anchor: middle; }
+.ch-val  { fill: var(--sub);   font-size: 9px; font-weight: 800; text-anchor: middle; }
+
+/* 색만으로 구분하지 않도록 범례를 항상 답니다. */
+.ch-legend { display: flex; flex-wrap: wrap; gap: 5px 10px; margin-top: 2px; }
+.ch-leg { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 700; color: var(--sub); }
+.ch-leg i { width: 8px; height: 8px; border-radius: 3px; display: inline-block; }
+
+/* ── 개인 기록 ────────────────────────────────────────────────────────── */
+.pr-list { display: flex; flex-direction: column; gap: 2px; }
+/* 열 너비를 고정해 숫자가 세로로 줄을 맞춥니다. auto 로 두면 79kg 과 74kg
+   처럼 글자폭이 다를 때마다 날짜가 좌우로 흔들려, 훑어볼 때 눈이 걸립니다. */
+.pr-row {
+  display: grid; grid-template-columns: 8px 1fr 88px 34px; gap: 9px;
+  align-items: center; padding: 9px 2px; border-bottom: 1px solid var(--line);
+}
+.pr-kg, .pr-date { text-align: right; }
+.pr-row:last-child { border-bottom: none; }
+.pr-dot { width: 8px; height: 8px; border-radius: 50%; }
+.pr-name { font-size: 13px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-kg { font-size: 14px; font-weight: 800; color: var(--accent); }
+.pr-kg i { font-style: normal; font-size: 10px; font-weight: 700; color: var(--muted); }
+.pr-kg s { text-decoration: none; font-size: 11px; font-weight: 700; color: var(--muted); }
+.pr-date { font-size: 11px; font-weight: 700; color: var(--muted); }
+
+/* ── 루틴 ───────────────────────────────────────────────────────────────── */
+.routine-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--surface-2); color: var(--sub);
+  font-size: 12px; font-weight: 800; cursor: pointer;
+}
+.routine-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.routine-main {
+  flex: 1; min-width: 0; text-align: left; padding: 11px 12px;
+  border-radius: var(--r-md); border: 1px solid var(--line);
+  background: var(--surface-2); cursor: pointer;
+}
+.routine-name { font-size: 14px; font-weight: 800; color: var(--text); }
+.routine-sub { font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 3px; }
+
+/* 한 줄 입력 대화상자 */
+.dialog-input {
+  width: 100%; margin: 12px 0 4px; padding: 11px 13px;
+  border-radius: var(--r-sm); border: 1.5px solid var(--line);
+  background: var(--surface-2); color: var(--text);
+  font-size: 15px; font-weight: 700; font-family: inherit;
+}
+.dialog-input:focus { outline: none; border-color: var(--accent-line); }
+
+/* 하루치 기록을 통째로 지우는 버튼. 되돌릴 수 없는 동작이라 화면 맨 아래,
+   실수로 스치지 않는 자리에 조용히 둡니다 — 상단바에 두면 뒤로가기 옆이라
+   누를 일이 없는데도 계속 눈에 띄고, 잘못 누르기도 쉽습니다. */
+.day-wipe {
+  display: block; width: 100%; margin: 26px 0 8px; padding: 12px;
+  border: none; background: transparent; cursor: pointer;
+  font-size: 12px; font-weight: 700; color: var(--muted);
+}
+.day-wipe:active { color: var(--red); }
+
+/* ── 루틴 만들기 화면 ────────────────────────────────────────────────── */
+.rt-tile {
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  padding: 13px 6px; border-radius: var(--r-md);
+  background: var(--surface-2); border: 1.5px solid var(--line); cursor: pointer;
+}
+.rt-tile.on { border-color: var(--pt-color); background: color-mix(in srgb, var(--pt-color) 12%, var(--surface-2)); }
+.rt-tile .pt-icon { width: 24px; height: 24px; color: color-mix(in srgb, var(--pt-color) var(--part-mix, 100%), var(--part-ink, transparent)); }
+.rt-tile .pt-icon svg { width: 100%; height: 100%; }
+.rt-tile .pt-name { font-size: 12px; font-weight: 800; color: var(--text); }
+.rt-tile .pt-count { font-size: 10px; font-weight: 700; color: var(--muted); }
+
+.rt-part { margin-bottom: 14px; }
+.rt-part-head {
+  display: flex; align-items: center; gap: 7px; margin-bottom: 7px;
+  font-size: 12px; font-weight: 800; color: var(--sub);
+}
+.rt-part-count { margin-left: auto; font-size: 11px; font-weight: 700; color: var(--muted); }
+.rt-ex {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 11px 13px; margin-bottom: 5px; border-radius: var(--r-sm);
+  background: var(--surface-2); font-size: 13px; font-weight: 700; color: var(--text);
+}
+.rt-edit {
+  width: 34px; height: 34px; flex-shrink: 0; border-radius: var(--r-sm);
+  display: grid; place-items: center; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--line); color: var(--muted);
+}
+
+/* 여러 줄 안내는 줄바꿈이 살아야 읽힙니다. */
+.dialog-body.pre { white-space: pre-wrap; text-align: left; line-height: 1.65; }
+
+/* ── 부위별 분석 ────────────────────────────────────────────────────────── */
+.pa-list { display: flex; flex-direction: column; gap: 13px; }
+.pa-head { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
+.pa-name { font-size: 13px; font-weight: 800; color: var(--text); }
+.pa-verdict { font-size: 11px; font-weight: 800; padding: 2px 7px; border-radius: 999px;
+  white-space: nowrap; flex: 0 0 auto; }
+.pa-verdict.good { background: var(--accent-soft); color: var(--accent); }
+.pa-verdict.ok   { background: color-mix(in srgb, var(--orange) 15%, transparent); color: var(--orange); }
+.pa-verdict.bad  { background: var(--red-soft); color: var(--red); }
+.pa-up   { margin-left: auto; font-size: 11px; font-weight: 800; color: var(--accent); }
+.pa-down { margin-left: auto; font-size: 11px; font-weight: 800; color: var(--red); }
+.pa-flat { margin-left: auto; font-size: 11px; font-weight: 800; color: var(--muted); }
+.pa-bar { height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.pa-bar span { display: block; height: 100%; border-radius: 999px; }
+.pa-meta { margin-top: 5px; font-size: 11px; font-weight: 600; color: var(--muted); }
+.pa-none { margin: 12px 0 0; padding-top: 12px; border-top: 1px solid var(--line);
+  font-size: 12px; font-weight: 600; color: var(--muted); line-height: 1.5; }
+.pa-none b { color: var(--text); font-weight: 700; }
+
+/* ── 변화 리포트 ────────────────────────────────────────────────────────── */
+.ch-overall {
+  padding: 12px 14px; border-radius: var(--r-md); margin-bottom: 12px;
+  font-size: 13px; font-weight: 700; background: var(--surface-2); color: var(--sub);
+}
+.ch-overall.good { background: var(--accent-soft); color: var(--accent); }
+.ch-overall.warn { background: color-mix(in srgb, var(--orange) 13%, transparent); color: var(--orange); }
+.ch-list { display: flex; flex-direction: column; gap: 1px; }
+.ch-row {
+  display: grid; grid-template-columns: 8px 42px 1fr; gap: 9px; align-items: center;
+  padding: 9px 2px; border-bottom: 1px solid var(--line);
+}
+.ch-row:last-child { border-bottom: none; }
+.ch-part { font-size: 12px; font-weight: 800; color: var(--sub); }
+.ch-text { font-size: 12px; font-weight: 600; color: var(--muted); }
+.ch-text.good { color: var(--accent); }
+.ch-text.warn { color: var(--orange); }
+.ch-stall-head {
+  margin-top: 16px; margin-bottom: 8px; font-size: 11px; font-weight: 800;
+  color: var(--muted); text-transform: uppercase; letter-spacing: .05em;
+}
+.ch-stall {
+  display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center;
+  padding: 9px 12px; margin-bottom: 5px; border-radius: var(--r-sm); background: var(--surface-2);
+}
+.ch-stall-name { font-size: 13px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ch-stall-kg { font-size: 13px; font-weight: 800; color: var(--orange); }
+.ch-stall-wk { font-size: 11px; font-weight: 700; color: var(--muted); }
+.ch-note { margin-top: 8px; font-size: 11px; line-height: 1.6; color: var(--muted); }
+
+/* ── 몸무게 ─────────────────────────────────────────────────────────────── */
+:root { --wt-color: #54a0ff; --wt-fill: rgba(84,160,255,0.12); }
+.wt-now { display: flex; align-items: baseline; gap: 6px; margin-bottom: 6px; }
+.wt-now b { font-size: 24px; font-weight: 800; color: var(--text); }
+.wt-now span { font-size: 12px; font-weight: 700; color: var(--muted); }
+.wt-now em { margin-left: auto; font-style: normal; font-size: 10px; font-weight: 700; color: var(--muted); }
+
+.dsum-timing { margin: 6px 0 14px; font-size: 12px; font-weight: 600; color: var(--muted); }
+
+/* 위험 구역은 접어 둡니다 — 펼쳐 두면 되돌릴 수 없는 버튼 두 개가 설정 화면
+   중앙에 상시 노출되고, 정작 안전한 백업은 접혀 있어 순서가 거꾸로였습니다. */
+.danger-adv .settings-adv-summary { color: var(--red); }
+.app-version { margin-top: 10px; opacity: .6; letter-spacing: .02em; }
