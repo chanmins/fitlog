@@ -493,6 +493,48 @@ const APP_VERSION = (() => {
     }
     return null;
   }
+
+  /* ── '지난번' 참조 ───────────────────────────────────────────────────────
+     헬스장에서 가장 자주 나오는 질문은 "지난번에 몇 개 했더라" 입니다. 그
+     답은 이미 저장소에 있는데 화면에는 없었습니다 — lastLog() 로 첫 세트를
+     채워 주기는 하지만, 채워진 숫자가 '지난번 값' 인지 '그냥 남아 있던 값'
+     인지 구별할 방법이 없었고 2세트부터는 직전 세트를 복사할 뿐이라 지난번
+     2세트가 얼마였는지는 아예 알 수 없었습니다.
+
+     웜업은 양쪽 모두에서 뺍니다. 웜업 개수는 그날 컨디션 따라 달라지는데,
+     그걸 세면 오늘 1번 작업세트가 지난번 웜업과 짝지어져서 "지난번 20×10"
+     같은 엉뚱한 기준이 붙습니다. */
+  function prevWorkingSets(ex, beforeDate) {
+    const last = lastLog(ex.name, beforeDate);
+    if (!last) return null;
+    const working = (last.sets || []).filter(st => !st.warmup);
+    if (!working.length) return null;
+    return { date: last.date, sets: working };
+  }
+
+  /* 지난번이 '며칠 전' 인지는 오늘이 아니라 지금 보고 있는 날 기준입니다.
+     8월 20일 기록을 고치는 중에 오늘 기준으로 "12일 전" 이라고 적으면, 그
+     날의 그 사람에게는 사실이 아닌 숫자입니다. */
+  function gapLabel(fromISO, toISO) {
+    const d = Math.round((isoToDate(toISO) - isoToDate(fromISO)) / 86400000);
+    if (!Number.isFinite(d) || d <= 0) return shortDate(fromISO);
+    if (d === 1) return '어제';
+    if (d < 14) return `${d}일 전`;
+    return shortDate(fromISO);
+  }
+
+  /* 세트 한 줄에 붙일 지난번 값. 무게나 횟수가 비어 있으면 아무것도 적지
+     않습니다 — "지난번 -- × 8" 은 답이 아니라 잡음입니다. */
+  function prevSetText(ref, hold) {
+    if (!ref) return '';
+    const reps = Number(ref.reps);
+    if (!Number.isFinite(reps) || reps <= 0) return '';
+    if (hold) return `${reps}초`;
+    const kg = Number(ref.kg);
+    if (!Number.isFinite(kg) || kg <= 0) return '';
+    return `${toDisplayWeight(kg)}${weightUnitLabel()} × ${reps}`;
+  }
+
   /* ── 개인 기록 ───────────────────────────────────────────────────────────
      기록으로 셀 수 있는 세트인지 가려내고, 그 무게와 횟수를 돌려줍니다.
      웜업은 제외합니다 — 가볍게 몸을 푼 것을 기록이라고 부르면 기록이라는
@@ -1114,6 +1156,86 @@ const APP_VERSION = (() => {
     p.str = clamped ? String(clamped) : '';
   }
 
+  /* ── 원판 계산기 ─────────────────────────────────────────────────────────
+     "100kg 을 하려면 한쪽에 뭘 끼우지" 는 바벨 운동을 할 때마다 하는 암산
+     입니다. 답이 정해져 있는 계산이니 앱이 합니다.
+
+     바벨 운동에서만 보여 줍니다(exercises.js 의 equipment === 'barbell').
+     머신이나 케이블 무게에 원판 구성을 붙이면 그건 답이 아니라 거짓말입니다.
+
+     계산은 화면에 보이는 단위 그대로 합니다. kg 로 바꿔서 계산하면
+     45lb 원판이 20.41kg 이 되어 "20 + 0.41 부족" 같은 답이 나옵니다. */
+  const BAR_WEIGHTS   = { kg: [20, 15, 10], lb: [45, 35, 25] };
+  const PLATE_WEIGHTS = { kg: [25, 20, 15, 10, 5, 2.5, 1.25], lb: [45, 35, 25, 10, 5, 2.5] };
+
+  function barChoices() { return BAR_WEIGHTS[unitWeight()] || BAR_WEIGHTS.kg; }
+  function barWeight() {
+    const list = barChoices();
+    try {
+      const n = Number(localStorage.getItem(`fitlog-bar-${unitWeight()}`));
+      return list.includes(n) ? n : list[0];
+    } catch (_) { return list[0]; }
+  }
+  function setBarWeight(v) {
+    try { localStorage.setItem(`fitlog-bar-${unitWeight()}`, String(v)); } catch (_) {}
+  }
+
+  /* 남는 무게는 반올림하지 않고 그대로 돌려줍니다. 97.5kg 을 100kg 이라고
+     보여 주면 바에 올릴 수 없는 숫자를 올릴 수 있다고 말하는 셈입니다. */
+  function platesPerSide(total, bar) {
+    let side = (total - bar) / 2;
+    if (!(side > 0)) return { plates: [], left: 0 };
+    const out = [];
+    for (const p of (PLATE_WEIGHTS[unitWeight()] || PLATE_WEIGHTS.kg)) {
+      while (side >= p - 1e-9 && out.length < 12) {
+        out.push(p);
+        side = Math.round((side - p) * 1000) / 1000;
+      }
+    }
+    return { plates: out, left: Math.round(side * 1000) / 1000 };
+  }
+
+  function isBarbellEx(ex) {
+    if (!ex) return false;
+    const lib = findExercise(ex.id) || findExercise(ex.name) ||
+                state.customExercises.find(e => e.id === ex.id);
+    return !!(lib && lib.equipment === 'barbell');
+  }
+
+  function renderPlateHint(ex, displayStr) {
+    if (!isBarbellEx(ex)) return '';
+    const u = weightUnitLabel();
+    const bar = barWeight();
+    const bars = barChoices().map(b =>
+      `<button class="bar-chip${b === bar ? ' on' : ''}" data-act="set-bar" data-val="${b}">${b}</button>`
+    ).join('');
+
+    const total = Number(displayStr);
+    let body;
+    if (!Number.isFinite(total) || total <= 0) {
+      body = `<div class="plate-note">무게를 입력하면 한쪽에 낄 원판을 알려 드립니다</div>`;
+    } else if (total < bar) {
+      body = `<div class="plate-note">바(${bar}${esc(u)})보다 가볍습니다</div>`;
+    } else if (Math.abs(total - bar) < 1e-9) {
+      body = `<div class="plate-note">바만 — 원판 없음</div>`;
+    } else {
+      const r = platesPerSide(total, bar);
+      if (!r.plates.length) {
+        body = `<div class="plate-note">이 무게는 원판으로 만들 수 없습니다</div>`;
+      } else {
+        body = `<div class="plate-chips">${r.plates.map(v => `<span class="plate-chip">${v}</span>`).join('')}` +
+               (r.left ? `<span class="plate-left">${r.left}${esc(u)} 모자람</span>` : '') + `</div>`;
+      }
+    }
+    return `<div class="plate-hint">
+      <div class="plate-head">
+        <span class="plate-label">한쪽 원판</span>
+        <span class="bar-pick"><i>바</i>${bars}</span>
+      </div>
+      ${body}
+    </div>`;
+  }
+
   const WEIGHT_STEPS = [-5, -2.5, 2.5, 5];
   /* lb 에서는 반 플레이트/반 원판 단위인 kg 스텝이 어색해서(2.5kg ≈
      5.5lb), 흔히 쓰는 5·10lb 단위로 바꿔 보여줍니다. */
@@ -1170,6 +1292,23 @@ const APP_VERSION = (() => {
     /* Dim the placeholder zero so an empty pad never looks like a typed 0. */
     el.classList.toggle('is-empty', p.str === '');
     el.classList.toggle('is-fresh', !!p.fresh);
+    paintPlateHint();
+  }
+
+  /* 숫자판은 render() 를 거치지 않고 큰 숫자만 직접 고쳐 씁니다(위 주석).
+     원판 줄도 같은 길로 따라가야 합니다 — 안 그러면 60 을 치고 100 으로
+     고쳤을 때 숫자는 100 인데 원판은 60 짜리가 그대로 남습니다. 틀린 답을
+     자신 있게 보여 주는 쪽이 아무것도 안 보여 주는 쪽보다 나쁩니다. */
+  function paintPlateHint() {
+    const host = document.querySelector('.plate-hint');
+    if (!host || !state.weightPicker) return;
+    const ex = state.session?.exercises.find(x => x.id === state.weightPicker.exId);
+    const html = renderPlateHint(ex, pickerDisplay(state.weightPicker));
+    if (!html) { host.remove(); return; }
+    const tpl = document.createElement('div');
+    tpl.innerHTML = html;
+    const next = tpl.firstElementChild;
+    if (next) host.replaceWith(next);
   }
 
   const CHECK_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
@@ -3017,6 +3156,10 @@ const APP_VERSION = (() => {
     const isExpanded = exIsExpanded(ex);
     const hold = isHoldExercise(ex);
 
+    /* 지난번 기록. 오늘 날짜가 아니라 '지금 보고 있는 날' 이전에서 찾습니다 —
+       과거 기록을 고칠 때 미래의 세션이 '지난번' 으로 끼어들면 안 됩니다. */
+    const prevRef = prevWorkingSets(ex, state.session?.date || todayISO());
+
     /* Warm-ups are labelled W and don't consume a number, so the working sets
        still read 1, 2, 3 — which is how a lifter counts them. */
     let workingNo = 0;
@@ -3028,6 +3171,12 @@ const APP_VERSION = (() => {
       const kg   = (set.kg   !== '' && set.kg   != null) ? toDisplayWeight(set.kg) : '--';
       const reps = (set.reps !== '' && set.reps != null) ? set.reps : '--';
       const enter = pendingEnterSetIds.has(set.id) ? ' enter' : '';
+      /* 이미 체크한 세트에는 붙이지 않습니다. 끝난 세트에 지난번 값을 계속
+         달아 두면 남은 세트를 밀어내면서, 정작 지금 필요한 정보(아직 안 한
+         세트의 기준)를 화면 밖으로 내보냅니다. 웜업도 뺍니다 — 웜업은
+         지난번을 따라갈 이유가 없습니다. */
+      const prevText = (done || warmup || !prevRef) ? ''
+        : prevSetText(prevRef.sets[workingNo - 1], hold);
       /* .set-swipe 가 실제 목록 항목의 경계입니다 — 왼쪽으로 밀면 뒤에 깔린
          빨간 삭제 버튼이 드러납니다. 원래 있던 작은 X 버튼은 없앴습니다 —
          이제 지우는 길은 스와이프 하나뿐입니다. */
@@ -3049,6 +3198,7 @@ const APP_VERSION = (() => {
         <button class="done-toggle${done?' done':''}" data-act="toggle-done" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="세트 완료">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
         </button>
+        ${prevText ? `<div class="set-prev"><span>지난번</span> ${esc(prevText)}</div>` : ''}
         </div>
       </div>`;
     }).join('');
@@ -3059,6 +3209,11 @@ const APP_VERSION = (() => {
     const metaBits = [];
     if (prog.total) metaBits.push(`${prog.done}/${prog.total} 세트`);
     if (!isExpanded) { const t = topSetLine(ex); if (t) metaBits.push(t); }
+    /* 세트 줄마다 '지난번' 이 언제인지 반복해 적으면 같은 말이 다섯 번
+       나옵니다. 날짜는 카드에 한 번만 적고, 세트 줄은 숫자만 답합니다. */
+    if (isExpanded && prevRef) {
+      metaBits.push(`지난번 ${gapLabel(prevRef.date, state.session?.date || todayISO())}`);
+    }
     const exEnter = pendingEnterExIds.has(ex.id) ? ' enter' : '';
     const exFold  = pendingFoldExIds.has(ex.id) ? ' just-folded' : '';
 
@@ -3119,6 +3274,7 @@ const APP_VERSION = (() => {
           <div class="${numCls}">${esc(display)}</div>
           <div class="picker-big-unit">${weightUnitLabel()}</div>
         </button>
+        ${renderPlateHint(ex, display)}
         ${adjRow('numpad-w-adj', weightStepValues())}
         <div class="numpad">${numpad}</div>
         <button class="picker-confirm" data-act="confirm-weight">확인</button>
@@ -4592,6 +4748,10 @@ const APP_VERSION = (() => {
       if (!state.weightPicker) return;
       pickerBack(state.weightPicker);
       paintPickerValue(); return;
+    }
+    if (act === 'set-bar') {
+      setBarWeight(Number(btn.dataset.val));
+      paintPlateHint(); return;
     }
     if (act === 'numpad-w-clear') {
       if (!state.weightPicker) return;

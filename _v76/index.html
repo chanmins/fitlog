@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#09090d">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="FITLOG">
+  <title>FITLOG</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="stylesheet" href="./styles.css?v=76">
+  <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+</head>
+
+<body>
+  <div id="app"></div>
+  <input id="import-file" type="file" accept="application/json,.json" hidden>
+  <script>
+    /* 낡은 서비스워커가 빈 껍데기를 남겼을 때 한 번만 청소하고 다시 엽니다.
+
+       예전에는 "3.5초 뒤에도 #app 이 비어 있으면" 이 조건이었습니다. 그런데
+       그 타이머는 스크립트가 내려받기 시작하기도 전에 켜집니다. app.js 만
+       270KB 이고 여기에 exercises.js·styles.css·파이어베이스 SDK 까지 붙으니,
+       3G 에서 앱을 처음 여는 사람은 아직 멀쩡히 받는 중인데도 조건에 걸렸습니다.
+       그러면 서비스워커를 지우고 캐시를 전부 비우는데, 거기엔 버전이 올라도
+       일부러 남겨 두는 운동 그림 캐시(2MB, 283개)까지 들어 있습니다. 느린
+       회선에서 아무 문제 없던 사람이 그 느린 회선으로 전부 다시 받게 됩니다.
+
+       그래서 기준을 바꿉니다: app.js 가 실행을 '시작이라도' 했는지를 봅니다
+       (app.js 첫 줄에서 window.__fitlogBooted 를 세웁니다). 아직 받는 중이면
+       이 값이 없지만, load 이벤트까지 기다리므로 받는 중일 수가 없습니다.
+       load 가 끝났는데도 부팅 흔적이 없다 = 스크립트가 진짜로 못 돌았다.
+       그리고 운동 그림 캐시는 어떤 경우에도 지우지 않습니다. */
+    (function () {
+      var BUILD = "76";
+      function check() {
+        setTimeout(function () {
+          if (window.__fitlogBooted) return;
+          var app = document.getElementById("app");
+          if (app && app.innerHTML.trim()) return;
+          try { if (sessionStorage.getItem("fitlog-blank-recover") === BUILD) return; } catch (_) {}
+          try { sessionStorage.setItem("fitlog-blank-recover", BUILD); } catch (_) {}
+          if (!("serviceWorker" in navigator)) { location.reload(); return; }
+          navigator.serviceWorker.getRegistrations()
+            .then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); })
+            .then(function () { return caches.keys(); })
+            .then(function (keys) {
+              return Promise.all(keys.map(function (k) {
+                if (k.indexOf("fitlog-media") === 0) return null;   /* 그림은 남깁니다 */
+                return caches.delete(k);
+              }));
+            })
+            .finally(function () { location.reload(); });
+        }, 2000);
+      }
+      if (document.readyState === "complete") check();
+      else window.addEventListener("load", check);
+    })();
+  </script>
+  <script src="https://www.gstatic.com/firebasejs/11.4.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/11.4.0/firebase-app-check-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/11.4.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/11.4.0/firebase-firestore-compat.js"></script>
+  <!-- 네이티브 껍데기(iOS/Android) 감지는 app.js 보다 먼저 끝나 있어야 합니다.
+       app.js 는 뜨자마자 저장된 휴식 타이머를 되살리는데, 그때 이미
+       window.FitLogNative 가 있어야 네이티브가 들고 있던 타이머를 물어볼 수
+       있습니다. 브라우저에서는 이 파일이 아무 일도 하지 않습니다. -->
+  <script src="./native-bridge.js?v=76"></script>
+  <script src="./firebase-config.js?v=76"></script>
+  <script src="./cloud.js?v=76"></script>
+  <script src="./exercises.js?v=76"></script>
+  <script src="./exercise-photos.js?v=76"></script>
+  <script src="./db.js?v=76"></script>
+  <script src="./app.js?v=76"></script>
+</body>
+</html>

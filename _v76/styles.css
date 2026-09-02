@@ -855,6 +855,22 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
    The header above it loses the same column so 시간/완료 stay over what they
    label. */
 .set-row.hold, .set-table-head.hold { grid-template-columns: 26px 1fr 40px; }
+
+/* 지난번 기록 한 줄. 세트 행 그리드의 둘째 줄에 자동으로 놓입니다 —
+   grid-template-rows 를 따로 선언하지 않아도 암묵 행이 생깁니다. 아직 체크
+   하지 않은 작업세트에만 붙으므로(app.js), 다 끝낸 운동 카드는 예전과 같은
+   높이로 돌아갑니다. */
+.set-prev {
+  grid-column: 2 / 4;
+  display: flex; align-items: center; justify-content: center; gap: 5px;
+  font-size: 11px; font-weight: 700; color: var(--muted);
+  padding: 3px 0 1px; line-height: 1;
+}
+.set-prev span {
+  font-size: 9.5px; font-weight: 800; letter-spacing: .04em;
+  padding: 2px 5px; border-radius: 999px;
+  background: var(--surface-2); color: var(--muted); opacity: .9;
+}
 .set-row.done .set-num { background: var(--accent-soft); color: var(--accent); }
 .set-num.warmup { background: color-mix(in srgb, var(--orange) 18%, var(--surface-2)); color: var(--orange); }
 .set-row.warmup .val-chip { opacity: .78; }
@@ -1024,6 +1040,37 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 
 /* Nudge the value instead of retyping it — most changes between sets are one
    plate or a rep or two. */
+/* ── 원판 계산기 ─────────────────────────────────────────────────────────
+   무게 시트에서 바벨 운동일 때만 나타납니다. */
+.plate-hint {
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: var(--r-sm); padding: 9px 11px 10px; margin-bottom: 12px;
+}
+.plate-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.plate-label {
+  font-size: 10.5px; font-weight: 800; color: var(--muted);
+  letter-spacing: .05em; text-transform: uppercase;
+}
+.bar-pick { display: flex; align-items: center; gap: 4px; }
+.bar-pick i { font-style: normal; font-size: 10.5px; font-weight: 800; color: var(--muted); margin-right: 2px; }
+.bar-chip {
+  min-width: 30px; height: 24px; padding: 0 7px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--surface);
+  font-size: 11.5px; font-weight: 800; color: var(--muted);
+  transition: background .15s, color .15s, border-color .15s;
+}
+.bar-chip.on { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
+.bar-chip:active { transform: scale(.94); }
+.plate-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 8px; }
+.plate-chip {
+  min-width: 34px; height: 30px; padding: 0 9px; border-radius: var(--r-sm);
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--accent-soft); color: var(--accent);
+  font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums;
+}
+.plate-left { font-size: 11px; font-weight: 700; color: var(--red); margin-left: 2px; }
+.plate-note { margin-top: 7px; font-size: 11.5px; font-weight: 600; color: var(--muted); }
+
 .picker-adj-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-bottom: 14px; }
 .adj-btn {
   height: 40px; border-radius: var(--r-sm); background: var(--surface-2);

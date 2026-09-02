@@ -80,6 +80,21 @@
        Android 13+ 는 런타임 권한이라 필요할 때 부릅니다. */
     requestNotificationPermission() { return send('requestNotificationPermission'); },
 
+    /* 화면을 켜 둘지. 웹의 Screen Wake Lock API 는 브라우저에는 있지만
+       껍데기 안의 WKWebView·Android WebView 에는 노출되지 않는 경우가
+       많습니다. 그래서 껍데기가 있으면 이쪽이 실제로 일하는 경로입니다.
+
+       휴식 타이머와 달리 상태를 저장하지 않습니다 — 켜 둔 채로 앱이 죽으면
+       OS 가 어차피 플래그를 걷어 가고, 다시 열면 웹이 곧바로 현재 상태를
+       다시 보내 주기 때문입니다. 되살릴 것이 없습니다.
+
+       네이티브 쪽 구현:
+         iOS     UIApplication.shared.isIdleTimerDisabled = on
+         Android on 이면 window.addFlags(FLAG_KEEP_SCREEN_ON), 아니면 clearFlags
+       둘 다 특별한 권한이 필요 없습니다. 아직 안 심었으면 send() 가 false 를
+       돌려주고 아무 일도 일어나지 않습니다. */
+    keepAwake(on) { return send('keepAwake', { on: !!on }); },
+
     /* 앱을 다시 열었을 때, 네이티브가 아직 들고 있는 휴식이 있으면 그걸
        돌려줍니다. 이쪽이 localStorage 보다 진실에 가깝습니다 — 앱이 완전히
        죽어 있는 동안에도 계속 돌던 쪽이니까요.
