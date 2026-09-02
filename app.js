@@ -209,6 +209,15 @@ const APP_VERSION = (() => {
     statsRange: 'week',
     /* 개인 기록 목록을 전부 펼쳤는지 */
     prAll: false,
+
+    /* 기록 검색 — 히스토리 상단 돋보기로 열리는 전체 화면 */
+    searchOpen: false,
+    logSearch: '',
+    searchLibOpen: false,
+    /* 운동 이력 화면에 띄운 운동 이름 (없으면 null). id 가 아니라 이름인
+       이유는 lastLog·allPersonalBests 가 이미 이름으로 묶기 때문입니다. */
+    exHistoryName: null,
+    exhRange: '3m',        /* '3m' | '1y' | 'all' */
     /* 이 달의 기록 목록을 전부 펼쳤는지 */
     histAll: false,
 
@@ -259,6 +268,108 @@ const APP_VERSION = (() => {
   /* Warm-ups need far less recovery than a working set. */
   function restDurationFor(set) {
     return set && set.warmup ? Math.max(20, Math.round(restDuration() * 0.4)) : restDuration();
+  }
+
+  /* ── 화면 꺼짐 방지 ───────────────────────────────────────────────────────
+     세트를 하나 끝내고 폰을 내려놨다가 다시 집으면 잠금화면이 떠 있습니다.
+     운동 한 번에 열 번 넘게 겪는 일이고, 그때마다 얼굴을 들이대거나 비밀번호를
+     칩니다 — 손에 초크나 땀이 묻어 있으면 지문도 안 먹습니다. 기록하려고 연
+     앱인데 기록까지 가는 데 매번 한 단계가 더 붙습니다.
+
+     Screen Wake Lock 은 '화면이 보이는 동안' 만 유지됩니다. 주머니에 넣거나
+     다른 앱으로 넘어가면 브라우저가 알아서 풀어 주므로, 켜 둔 채 잊어버려도
+     배터리가 계속 새지는 않습니다. 대신 돌아왔을 때 자동으로 복구되지도
+     않습니다 — visibilitychange 에서 우리가 다시 잡아야 합니다. 이 API 를 쓸 때
+     가장 흔히 빠뜨리는 부분이고, 빠뜨리면 "처음 몇 분만 되다가 만다" 는
+     재현하기 까다로운 증상으로 나타납니다.
+
+     잠그는 범위는 '기록 탭이 열려 있는 동안' 으로 좁힙니다. 홈이나 히스토리를
+     들여다보는 건 운동 중이라는 뜻이 아니고, 거기서까지 화면을 붙잡으면 그냥
+     배터리를 먹는 앱이 됩니다. */
+  const WAKE_KEY = 'fitlog-wakelock';
+
+  /* 기본값은 켜짐입니다. 휴식 타이머는 기본 꺼짐인데 이건 반대인 이유:
+     타이머는 화면 아래를 차지해서 안 쓰는 사람에게 방해가 되지만, 이건
+     아무 자리도 차지하지 않고 기록 탭에 있는 동안에만 조용히 동작합니다.
+     끄고 싶은 사람을 위해 스위치는 둡니다. */
+  function wakeLockOn() {
+    try { return localStorage.getItem(WAKE_KEY) !== '0'; } catch (_) { return true; }
+  }
+  function setWakeLockOn(on) {
+    try {
+      if (on) localStorage.removeItem(WAKE_KEY);
+      else localStorage.setItem(WAKE_KEY, '0');
+    } catch (_) {}
+  }
+
+  let _wakeSentinel = null;   /* 지금 잡고 있는 WakeLockSentinel, 없으면 null */
+  let _wakeBusy = false;      /* request() 가 아직 안 끝남 — 중복 요청 방지 */
+  let _wakeBlocked = false;   /* 이번 포그라운드에서 거절당함 — 조르지 않음 */
+
+  function wakeLockWanted() {
+    return wakeLockOn()
+        && state.tab === 'workout'
+        && document.visibilityState === 'visible';
+  }
+
+  /* render() 끝과 visibilitychange 에서 부릅니다. 여러 번 불려도 안전하도록
+     '지금 상태' 와 '원하는 상태' 를 비교해서 차이만 처리합니다 — 렌더는 세트를
+     하나 체크할 때마다 도는데, 그때마다 잠금을 새로 잡으면 안 됩니다. */
+  async function syncWakeLock() {
+    const want = wakeLockWanted();
+
+    if (!want) {
+      /* 네이티브 껍데기에는 웹 Wake Lock 이 아예 없을 수 있으므로(WKWebView·
+         Android WebView 는 노출하지 않습니다) 양쪽 모두에 알립니다. 껍데기가
+         없으면 이 호출은 조용한 no-op 입니다. */
+      try { window.FitLogNative?.keepAwake(false); } catch (_) {}
+      const s = _wakeSentinel;
+      _wakeSentinel = null;
+      if (s) { try { await s.release(); } catch (_) {} }
+      return;
+    }
+
+    try { window.FitLogNative?.keepAwake(true); } catch (_) {}
+    if (_wakeSentinel || _wakeBusy || _wakeBlocked) return;
+    if (!navigator.wakeLock) return;
+
+    _wakeBusy = true;
+    try {
+      const s = await navigator.wakeLock.request('screen');
+      /* 기다리는 사이에 탭을 옮겼거나 화면이 꺼졌을 수 있습니다. 그대로 들고
+         있으면 히스토리를 넘겨 보는 내내 화면이 안 꺼집니다. */
+      if (!wakeLockWanted()) {
+        try { await s.release(); } catch (_) {}
+      } else {
+        _wakeSentinel = s;
+        /* 브라우저가 스스로 풀었을 때(화면 꺼짐, 다른 앱으로 전환) 우리 쪽
+           참조도 같이 비웁니다. 안 비우면 돌아왔을 때 '이미 잡고 있다' 고
+           착각해서 다시 잡지 않습니다 — 위에서 말한 그 증상입니다. */
+        s.addEventListener('release', () => { if (_wakeSentinel === s) _wakeSentinel = null; });
+      }
+    } catch (_) {
+      /* NotAllowedError(저전력 모드, 권한 정책, 백그라운드) 또는 미지원.
+         조용히 넘깁니다 — 화면이 꺼지는 건 불편할 뿐 기록에는 아무 영향이
+         없고, 사용자가 손쓸 수 있는 일도 아니라서 토스트를 띄울 이유가
+         없습니다. 다만 다음 렌더마다 다시 조르지 않도록 표시해 두고, 앱이
+         다시 앞으로 나올 때 한 번 더 기회를 줍니다(저전력 모드는 풀립니다). */
+      _wakeBlocked = true;
+    } finally {
+      _wakeBusy = false;
+    }
+  }
+
+  function watchWakeLock() {
+    document.addEventListener('visibilitychange', () => {
+      /* 앞으로 나온 순간은 새 기회입니다 — 뒤에서 거절당했던 것이 지금은
+         될 수 있습니다. */
+      if (document.visibilityState === 'visible') _wakeBlocked = false;
+      syncWakeLock();
+    });
+    /* iOS 에서 OS 가 얼려 둔 페이지는 visibilitychange 없이 pageshow 로만
+       돌아오는 경우가 있습니다. restoreRestTimer 쪽이 이미 같은 이유로 세
+       가지 이벤트를 듣고 있고, 여기서도 같은 판단을 합니다. */
+    window.addEventListener('pageshow', () => { _wakeBlocked = false; syncWakeLock(); });
   }
 
   /* ── 개인화 · 접근성 설정 ──────────────────────────────────────────────────
@@ -1503,6 +1614,11 @@ const APP_VERSION = (() => {
        has to dismiss it — otherwise the tab switches behind a screen that is
        still covering it. */
     state.summaryDate = null;
+    /* 검색·운동 이력도 같은 이유로 닫습니다. 하단 탭은 전체 화면 밑으로
+       계속 보이고 눌리므로, 안 닫으면 탭만 바뀌고 위 화면은 그대로 남습니다. */
+    state.searchOpen = false;
+    state.exHistoryName = null;
+    state.logSearch = '';
     /* 루틴 만들기 화면도 함께 닫습니다. 이 화면은 시트가 아니라 전체 화면
        (position:fixed) 이라 closeAllSheets 가 건드리지 않았고, 그래서 하단
        탭을 눌러도 밑에서 화면만 바뀌고 위는 그대로였습니다 — 사용자에게는
@@ -1658,6 +1774,13 @@ const APP_VERSION = (() => {
        참조를 들고 있으면 다음 동작에서 죽은 노드를 건드리게 되니 비워 둡니다. */
     openSwipeRow = null;
     gesture = null;
+    /* 운동별 집계 캐시를 여기서 버립니다.
+       기록을 바꾸는 곳이 열네 군데라 그 각각에 무효화를 심으면 언젠가 하나를
+       빠뜨리고, 그러면 '방금 기록한 운동이 검색에 안 나오는' 조용한 버그가
+       됩니다. 상태가 바뀌면 반드시 render() 를 거치므로 여기 한 줄이 그 전부를
+       덮습니다. 타이핑 중에는 render() 가 아니라 결과 목록만 갈아 끼우므로
+       (아래 search-log 참고) 정작 캐시가 필요한 구간에서는 살아 있습니다. */
+    invalidateExIndex();
     if (!state.authReady) { appEl.innerHTML = renderSplash(); return; }
     if (!state.user) {
       appEl.innerHTML = (state.authMode === 'signup' ? renderSignup()
@@ -1698,6 +1821,11 @@ const APP_VERSION = (() => {
     if (state.routineEdit)    html += renderRoutineEditor();
 
     html += renderBottomNav();
+    /* 전체 화면들은 전부 z-index 45 라 DOM 순서가 곧 쌓이는 순서입니다.
+       검색 → 운동 이력 → 하루 요약 순으로 붙여야, 검색에서 운동을 열고 거기서
+       날짜를 눌렀을 때 마지막에 연 것이 맨 위에 옵니다. */
+    if (state.searchOpen)     html += renderSearchScreen();
+    if (state.exHistoryName)  html += renderExHistory(state.exHistoryName);
     /* Full-screen overlay, so it can be opened from home, history or the
        workout screen without any of them needing to know about it. */
     if (state.summaryDate) html += renderDaySummary(state.summaryDate);
@@ -1706,6 +1834,10 @@ const APP_VERSION = (() => {
     positionYearWheel();
     syncOverlayScroll();
     flushPendingFlash();
+    /* 탭이 바뀌었는지, 설정이 바뀌었는지를 여기서 따로 추적하지 않습니다 —
+       상태가 바뀌면 반드시 render() 를 거치므로, 이 한 줄이 모든 경로를
+       덮습니다. syncWakeLock 은 차이가 없으면 아무 일도 하지 않습니다. */
+    syncWakeLock();
   }
 
   /* An overlay opens at its own top, and the page under it stops scrolling.
@@ -1720,11 +1852,17 @@ const APP_VERSION = (() => {
      바뀐 순간에만 초기화합니다. */
   let _overlayKey = null;
   function syncOverlayScroll() {
-    const overlay = document.querySelector('.detail-screen');
+    /* 전체 화면이 두 겹까지 쌓입니다(검색 → 운동 이력). 맨 위 것을 잡아야
+       합니다 — 첫 번째를 잡으면 이력 화면을 열 때 밑에 깔린 검색 화면의
+       스크롤이 맨 위로 되돌아가서, 돌아왔을 때 보던 자리를 잃습니다. */
+    const screens = document.querySelectorAll('.detail-screen');
+    const overlay = screens[screens.length - 1] || null;
     document.body.classList.toggle('overlay-open', !!overlay);
     const key = !overlay ? null
-      : state.routineEdit ? `routine:${state.routineEdit.id || 'new'}`
       : state.summaryDate ? `day:${state.summaryDate}`
+      : state.exHistoryName ? `exhist:${state.exHistoryName}`
+      : state.searchOpen ? 'search'
+      : state.routineEdit ? `routine:${state.routineEdit.id || 'new'}`
       : 'other';
     if (key !== _overlayKey) {
       _overlayKey = key;
@@ -3313,6 +3451,10 @@ const APP_VERSION = (() => {
           </div>
         </div>
         ${renderExerciseTrend(libEx.name)}
+        <button class="btn-ghost" data-act="open-ex-history" data-name="${esc(libEx.name)}" style="margin-bottom:14px">
+          전체 기록 보기
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
         ${libEx.description ? `<p class="info-desc">${esc(libEx.description)}</p>` : ''}
         ${tips ? `<div class="sec-title" style="margin-bottom:10px">수행 팁</div><ul class="tips-list">${tips}</ul>` : ''}
       </div>
@@ -3819,7 +3961,6 @@ const APP_VERSION = (() => {
       : `<p class="wt-hint">그래프에서 점을 짚으면 그 날 몸무게가 나오고, 고치거나 지울 수 있어요.</p>`}
     </div>`;
   }
-
   /* ── 부위별 분석 카드 ── */
   function renderPartAnalysisCard() {
     const w = partWindows();
@@ -3936,6 +4077,416 @@ const APP_VERSION = (() => {
     </div>`;
   }
 
+
+  /* ── 기록 검색 ────────────────────────────────────────────────────────────
+     기록 앱에 던지는 질문은 축이 둘입니다. '3월 12일에 뭐 했지'(날짜 축)는
+     히스토리 달력이 이미 답합니다. 남은 것이 '벤치, 내가 어떻게 해왔지'
+     (운동 축)인데, 지금까지 그 화면으로 가는 길은 두 개뿐이었습니다 — 그
+     운동이 오늘 기록에 담겨 있을 때, 또는 운동을 고르는 중일 때. 반년 전에
+     하던 운동의 이력을 보려면 일단 오늘 기록에 담았다가 보고 다시 지워야
+     했습니다.
+
+     그래서 검색 결과의 단위는 '세션' 이 아니라 '운동' 입니다. 매칭된 날짜를
+     늘어놓으면 달력이 하는 일을 더 나쁘게 다시 하는 것뿐입니다. */
+
+  /* 한글 초성. 운동 이름이 길어서(인클라인 덤벨 벤치프레스) 끝까지 치는
+     사람이 없습니다. ㅇㅋㄹㅇ 으로 찾을 수 있어야 쓸 만해집니다.
+     유니코드 한글 음절은 (초성 × 21 × 28) 순서로 규칙적이라 나누기 한 번이면
+     초성이 나옵니다. */
+  const CHO = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+  function chosung(str) {
+    let out = '';
+    for (const ch of String(str)) {
+      const c = ch.charCodeAt(0) - 0xAC00;
+      out += (c >= 0 && c <= 11171) ? CHO[Math.floor(c / 588)] : ch;
+    }
+    return out;
+  }
+  /* 초성 매칭은 '자모가 섞여 있을 때만' 씁니다.
+     '벤치' 를 치면 초성은 'ㅂㅊ' 인데, 이걸 항상 매칭에 쓰면 이름에 '벤치'
+     가 없는 운동까지 결과에 끼어듭니다. 자모가 보인다는 건 사용자가 초성을
+     치고 있거나 한글을 조합하는 중이라는 뜻이고, 그때만 켜면 됩니다. */
+  function hasJamo(s) { return /[ㄱ-ㅣ]/.test(s); }
+
+  /* ── 운동별 집계 ─────────────────────────────────────────────────────────
+     state.sessions 는 이미 전부 메모리에 있습니다. 2년치라도 300세션 남짓이라
+     한 번 훑는 데 1ms 대고, 그래서 인덱스 저장소 같은 건 필요 없습니다.
+     다만 키를 칠 때마다 다시 훑으면 저사양 기기에서 입력이 밀리므로 한 번만
+     만들어 들고 있습니다. */
+  let _exIndex = null;
+  function invalidateExIndex() { _exIndex = null; }
+
+  function exIndex() {
+    if (_exIndex) return _exIndex;
+    const map = new Map();
+    for (const s of state.sessions) {
+      if (!s || !s.date) continue;
+      for (const ex of s.exercises || []) {
+        if (!ex || !ex.name) continue;
+        const done = (ex.sets || []).filter(st => st.done);
+        if (!done.length) continue;
+        let row = map.get(ex.name);
+        if (!row) {
+          row = { name: ex.name, part: ex.part, count: 0, sets: 0, volume: 0,
+                  best: null, lastDate: null, hold: !!ex.hold };
+          map.set(ex.name, row);
+        }
+        row.count += 1;
+        row.sets += done.length;
+        for (const st of done) {
+          const sc = setScore(st);
+          if (!sc) continue;
+          row.volume += sc.kg * sc.reps;
+          /* 개인 기록 카드(allPersonalBests)와 같은 기준 — 무게가 가장 큰
+             완료 세트. 여기서만 다른 기준을 쓰면 같은 운동에 대해 화면마다
+             다른 숫자가 뜹니다. */
+          if (!row.best || sc.kg > row.best.kg) row.best = { kg: sc.kg, reps: sc.reps, date: s.date };
+        }
+        if (!row.lastDate || s.date > row.lastDate) row.lastDate = s.date;
+      }
+    }
+    _exIndex = [...map.values()]
+      .sort((a, b) => b.count - a.count || (b.lastDate || '').localeCompare(a.lastDate || ''));
+    return _exIndex;
+  }
+
+  /* 이 운동을 한 날들. 이력 화면을 열 때만 부르므로 캐시하지 않습니다 —
+     state.sessions 가 최신순이라 결과도 최신순으로 나옵니다. */
+  function exHistoryRows(name) {
+    const rows = [];
+    for (const s of state.sessions) {
+      const ex = (s.exercises || []).find(e => e && e.name === name);
+      if (!ex) continue;
+      const done = (ex.sets || []).filter(st => st.done);
+      if (!done.length) continue;
+      rows.push({ date: s.date, sets: done, hold: !!ex.hold });
+    }
+    return rows;
+  }
+
+  /* 이름이 곧 키입니다. lastLog·allPersonalBests·renderExerciseTrend 가 전부
+     ex.name 으로 묶고 있어서, 검색만 id 로 묶으면 같은 운동인데 화면마다 다른
+     이력이 나옵니다. 부작용(이름을 바꾸면 이력이 끊김)은 이미 있는 것이고
+     여기서 새로 만들지 않습니다. */
+  function searchMatches(q) {
+    const query = String(q || '').trim().toLowerCase();
+    if (!query) return null;
+    const qCho = chosung(query);
+    const useCho = hasJamo(query);
+
+    /* 순위: 이름 앞부분 → 이름 포함 → 영문 포함 → 초성.
+       이 순서라야 '벤치' 를 쳤을 때 벤치프레스가 클로즈그립 벤치보다 위에
+       옵니다. 뒤집히면 매번 눈으로 골라야 합니다. */
+    function rank(name, nameEn) {
+      const n = String(name || '').toLowerCase();
+      const e = String(nameEn || '').toLowerCase();
+      if (n.startsWith(query)) return 0;
+      if (n.includes(query)) return 1;
+      if (e && e.includes(query)) return 2;
+      if (useCho && chosung(n).includes(qCho)) return 3;
+      return null;
+    }
+    function libInfo(name) {
+      return findExercise(name) || state.customExercises.find(e => e.name === name) || null;
+    }
+
+    const mine = [];
+    for (const r of exIndex()) {
+      const k = rank(r.name, libInfo(r.name)?.nameEn);
+      if (k !== null) mine.push({ ...r, _rank: k });
+    }
+    mine.sort((a, b) => a._rank - b._rank || b.count - a.count);
+
+    /* 아직 안 해 본 것은 따로 모읍니다. '벤치' 하나로 벤치프레스·인클라인·
+       디클라인·클로즈그립·덤벨벤치가 전부 걸리는데, 실제로 하는 건 보통
+       둘입니다. 해 본 것과 안 해 본 것을 한 목록에 섞으면 매번 눈으로
+       골라내야 합니다. */
+    const seen = new Set(mine.map(r => r.name));
+    const lib = [];
+    for (const p of PARTS) {
+      const pool = [...state.customExercises.filter(e => e.part === p.id),
+                    ...(typeof DEFAULT_EXERCISES !== 'undefined' ? (DEFAULT_EXERCISES[p.id] || []) : [])];
+      for (const item of pool) {
+        if (!item || !item.name || seen.has(item.name)) continue;
+        const k = rank(item.name, item.nameEn);
+        if (k === null) continue;
+        seen.add(item.name);
+        lib.push({ name: item.name, part: p.id, id: item.id || '', _rank: k });
+      }
+    }
+    lib.sort((a, b) => a._rank - b._rank || a.name.localeCompare(b.name));
+    return { mine, lib };
+  }
+
+  /* ── 검색 결과 조각 ──────────────────────────────────────────────────── */
+  function daysAgoLabel(iso) {
+    if (!iso) return '';
+    const d = daysSince(iso);
+    if (!Number.isFinite(d)) return esc(shortDate(iso));
+    if (d <= 0) return '오늘';
+    if (d === 1) return '어제';
+    if (d < 30) return `${d}일 전`;
+    return esc(shortDate(iso));
+  }
+
+  function srRow(row, logged) {
+    const p = PARTS.find(x => x.id === row.part);
+    const bits = [];
+    if (logged) {
+      bits.push(`${row.count}회`);
+      if (row.best) bits.push(`최고 ${toDisplayWeight(row.best.kg)}${weightUnitLabel()}×${row.best.reps}`);
+      const ago = daysAgoLabel(row.lastDate);
+      if (ago) bits.push(ago);
+    } else {
+      bits.push(p ? p.label : '');
+      bits.push('아직 기록 없음');
+    }
+    return `<button class="sr-row" data-act="open-ex-history" data-name="${esc(row.name)}">
+      <span class="sr-dot" style="background:${p ? p.color : 'var(--muted)'}"></span>
+      <span class="recent-mid">
+        <span class="recent-parts">${esc(row.name)}</span>
+        <span class="recent-meta">${esc(bits.filter(Boolean).join(' · '))}</span>
+      </span>
+      <svg class="recent-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+    </button>`;
+  }
+
+  /* 아무것도 치지 않았을 때가 이 화면에서 가장 중요합니다. 빈 화면을 주면
+     사람은 뭘 쳐야 할지 모르고, 사실 대부분은 치고 싶지도 않습니다 — 같은
+     운동을 반복하니까요. 자주 한 운동을 그냥 띄워 주면 검색의 대부분이
+     타이핑 없이 탭 한 번으로 끝납니다.
+
+     '자주' 는 세트 수나 볼륨이 아니라 '몇 번 했나' 입니다. 세트 수로 하면
+     고반복 운동이, 볼륨으로 하면 하체가 목록을 독차지합니다. */
+  function buildSearchResults() {
+    const q = state.logSearch.trim();
+    if (!q) {
+      const all = exIndex();
+      if (!all.length) {
+        return `<div class="empty-state">아직 기록이 없습니다.<br>운동을 기록하면 여기서 찾을 수 있어요.</div>`;
+      }
+      const often = all.slice(0, 8);
+      const oftenNames = new Set(often.map(r => r.name));
+      const recent = all.filter(r => !oftenNames.has(r.name))
+        .sort((a, b) => (b.lastDate || '').localeCompare(a.lastDate || ''))
+        .slice(0, 4);
+      return `
+        <div class="sec-head"><div class="sec-title">자주 한 운동</div></div>
+        <div class="sr-list">${often.map(r => srRow(r, true)).join('')}</div>
+        ${recent.length ? `
+          <div class="sec-head" style="margin-top:20px"><div class="sec-title">최근 기록한 운동</div></div>
+          <div class="sr-list">${recent.map(r => srRow(r, true)).join('')}</div>` : ''}`;
+    }
+
+    const res = searchMatches(q);
+    if (!res.mine.length && !res.lib.length) {
+      return `<div class="empty-state">'${esc(q)}' 에 해당하는 운동이 없습니다.</div>`;
+    }
+    let html = '';
+    if (res.mine.length) {
+      html += `<div class="sec-head"><div class="sec-title">내가 기록한 운동</div></div>
+        <div class="sr-list">${res.mine.map(r => srRow(r, true)).join('')}</div>`;
+    }
+    if (res.lib.length) {
+      const open = state.searchLibOpen || !res.mine.length;
+      html += `<div class="sec-head" style="margin-top:${res.mine.length ? 20 : 0}px">
+          <div class="sec-title">운동 라이브러리</div>
+          <button class="stats-tab${open ? ' on' : ''}" data-act="toggle-search-lib">${open ? '접기' : `${res.lib.length}개 보기`}</button>
+        </div>
+        ${open ? `<div class="sr-list">${res.lib.map(r => srRow(r, false)).join('')}</div>` : ''}`;
+    }
+    return html;
+  }
+
+  function renderSearchScreen() {
+    return `<div class="detail-screen search-screen">
+      <header class="topbar">
+        <button class="btn-icon ghost" data-act="close-search" aria-label="닫기">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <div class="search-bar sr-bar">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="log-search" type="search" placeholder="운동 이름으로 찾기"
+                 value="${esc(state.logSearch)}" data-act="search-log"
+                 autocomplete="off" autocorrect="off" spellcheck="false">
+        </div>
+      </header>
+      <main class="screen">
+        <div class="search-results">${buildSearchResults()}</div>
+        <div style="height:20px"></div>
+      </main>
+    </div>`;
+  }
+
+  /* ── 운동 이력 화면 ──────────────────────────────────────────────────────
+     정보 시트(사진·근육맵·팁)와 일부러 나눠 둡니다. 저기는 '이 운동을 어떻게
+     하나', 여기는 '내가 어떻게 해왔나' 로 답하는 질문이 다르고, 한 화면에 다
+     넣으면 사진 세 장 + 바디맵 + 그래프 + 수십 줄 목록 + 팁이 되어 아무것도
+     찾을 수 없게 됩니다. 서로 링크만 겁니다.
+
+     덤으로 여기는 커스텀 운동도 열립니다 — 정보 시트는 라이브러리에 없으면
+     빈 문자열을 돌려주고 끝이라 직접 추가한 운동은 아예 못 엽니다. */
+  const EXH_RANGES = [
+    { id: '3m',  label: '3개월', days: 92 },
+    { id: '1y',  label: '1년',   days: 366 },
+    { id: 'all', label: '전체',  days: 0 },
+  ];
+
+  function exhRangeDays() {
+    const r = EXH_RANGES.find(x => x.id === state.exhRange);
+    return r ? r.days : 92;
+  }
+
+  function renderExHistoryChart(rows) {
+    /* 세션당 가장 무거운 완료 세트 하나. 그래프에 점이 하나뿐이면 선이 안
+       그려지고 '추세' 라고 부를 것도 없으므로 카드를 통째로 뺍니다. */
+    const pts = rows.slice().reverse()
+      .map(r => {
+        let best = 0;
+        for (const st of r.sets) { const sc = setScore(st); if (sc && sc.kg > best) best = sc.kg; }
+        return best > 0 ? { date: r.date, kg: toDisplayWeight(best) } : null;
+      })
+      .filter(Boolean);
+    if (pts.length < 2) return '';
+
+    const W = 320, H = 108, PAD_L = 34, PAD_B = 18, PAD_T = 10;
+    const plotH = H - PAD_B - PAD_T;
+    const vals = pts.map(p => p.kg);
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    if (hi - lo < 2) { const mid = (hi + lo) / 2; lo = mid - 1; hi = mid + 1; }
+    const pad = (hi - lo) * 0.15; lo -= pad; hi += pad;
+    const x = i => PAD_L + (pts.length === 1 ? (W - PAD_L) / 2 : (i / (pts.length - 1)) * (W - PAD_L - 6));
+    const y = v => PAD_T + plotH - ((v - lo) / (hi - lo)) * plotH;
+    const line = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(p.kg).toFixed(1)}`).join(' ');
+    const area = `${line} L${x(pts.length - 1).toFixed(1)} ${PAD_T + plotH} L${x(0).toFixed(1)} ${PAD_T + plotH} Z`;
+    /* 점이 아주 많으면(1년, 전체) 원을 다 찍으면 선이 안 보입니다. */
+    const dots = pts.length > 40 ? '' : pts.map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.kg).toFixed(1)}"
+      r="${i === pts.length - 1 ? 4 : 2.4}" fill="var(--accent)"><title>${esc(p.date)} · ${p.kg}${weightUnitLabel()}</title></circle>`).join('');
+
+    return `<svg class="ch" viewBox="0 0 ${W} ${H}" role="img" aria-label="무게 추이">
+      <text x="${PAD_L - 6}" y="${PAD_T + 4}" class="ch-axis" text-anchor="end">${hi.toFixed(0)}</text>
+      <text x="${PAD_L - 6}" y="${PAD_T + plotH + 4}" class="ch-axis" text-anchor="end">${lo.toFixed(0)}</text>
+      <path d="${area}" fill="var(--accent-soft)"/>
+      <path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      ${dots}
+    </svg>
+    <div class="exh-chart-foot"><span>${esc(shortDate(pts[0].date))}</span><span>${esc(shortDate(pts[pts.length - 1].date))}</span></div>`;
+  }
+
+  function renderExHistory(name) {
+    const all = exHistoryRows(name);
+    const idx = exIndex().find(r => r.name === name);
+    const lib = findExercise(name) || state.customExercises.find(e => e.name === name);
+    const part = PARTS.find(p => p.id === (idx?.part || lib?.part));
+    const hold = !!(idx?.hold || lib?.hold);
+
+    const days = exhRangeDays();
+    const since = days ? shiftDate(todayISO(), -days) : '';
+    const rows = days ? all.filter(r => r.date >= since) : all;
+
+    let body;
+    if (!all.length) {
+      body = `<div class="empty-state">아직 이 운동의 기록이 없습니다.${
+        lib ? '<br>동작을 먼저 확인해 보세요.' : ''}</div>`;
+    } else {
+      const best = idx?.best;
+      const vol = idx?.volume || 0;
+      /* 총 볼륨은 톤으로 보여 줍니다 — 82,150kg 은 자릿수를 세어야 읽히고,
+         82t 은 한눈에 읽힙니다. */
+      const volLabel = vol >= 1000 ? `${(vol / 1000).toFixed(vol >= 10000 ? 0 : 1)}t` : `${Math.round(vol)}kg`;
+      const stats = `<div class="exh-stats">
+        <div><b>${idx?.count || 0}</b><span>기록</span></div>
+        <div><b>${best ? `${toDisplayWeight(best.kg)}<i>${weightUnitLabel()}</i>×${best.reps}` : '—'}</b><span>최고 기록</span></div>
+        ${hold ? '' : `<div><b>${volLabel}</b><span>총 볼륨</span></div>`}
+      </div>`;
+
+      const tabs = `<div class="stats-toggle" role="tablist">${EXH_RANGES.map(r =>
+        `<button class="stats-tab${state.exhRange === r.id ? ' on' : ''}" data-act="exh-range" data-val="${r.id}" role="tab">${r.label}</button>`
+      ).join('')}</div>`;
+
+      const chart = renderExHistoryChart(rows);
+      const chartCard = chart
+        ? `<div class="stats-card"><div class="stats-head"><div class="sec-title">무게 추이</div>${tabs}</div>${chart}</div>`
+        : `<div class="stats-card"><div class="stats-head"><div class="sec-title">무게 추이</div>${tabs}</div>
+             <p class="balance-empty">이 기간에는 그릴 만한 기록이 없습니다.</p></div>`;
+
+      /* 그래프는 추세를 보여 주지만 정확한 숫자를 못 읽습니다. "작년 여름에
+         몇 kg 했더라" 의 실제 답은 이 목록입니다. 그리고 날짜를 누르면 그날
+         전체 기록으로 건너갑니다 — 운동 축에서 날짜 축으로 가는 다리입니다. */
+      const bestDate = best?.date;
+      const list = rows.length ? rows.map(r => {
+        const parts = r.sets.map(st => {
+          const kg = Number(st.kg), reps = Number(st.reps);
+          if (hold) return `${Number.isFinite(reps) ? reps : '-'}초`;
+          if (!Number.isFinite(kg) || !Number.isFinite(reps)) return '—';
+          return `${toDisplayWeight(kg)}×${reps}${st.warmup ? 'W' : ''}`;
+        }).join('  ');
+        const [, m, d] = r.date.split('-').map(Number);
+        return `<button class="recent-row exh-row" data-act="open-day" data-date="${esc(r.date)}">
+          <div class="recent-daybox">
+            <div class="recent-day-d">${d}</div>
+            <div class="recent-day-m">${m}월</div>
+          </div>
+          <div class="recent-mid">
+            <div class="recent-parts">${esc(parts)}</div>
+            <div class="recent-meta">${r.date === bestDate ? '<span class="exh-pr">최고</span>' : ''}${esc(r.date.slice(0, 4))}년</div>
+          </div>
+          <svg class="recent-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>`;
+      }).join('') : `<div class="help-text">이 기간에는 기록이 없습니다.</div>`;
+
+      body = `${stats}${chartCard}
+        <div class="sec-head" style="margin-top:20px">
+          <div class="sec-title">기록</div>
+          <div class="sec-sub">${rows.length}일</div>
+        </div>
+        <div class="recent-list">${list}</div>`;
+    }
+
+    return `<div class="detail-screen exh-screen">
+      <header class="topbar">
+        <button class="btn-icon ghost" data-act="close-ex-history" aria-label="닫기">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <div class="topbar-title">${part ? `<span class="pdot" style="background:${part.color};margin-right:7px"></span>` : ''}${esc(name)}</div>
+        <div class="topbar-spacer"></div>
+        ${lib && lib.id ? `<button class="stats-tab" data-act="show-ex-info" data-exid="${esc(lib.id)}" data-exname="${esc(name)}">동작 보기</button>` : ''}
+      </header>
+      <main class="screen">
+        ${body}
+        <div style="height:20px"></div>
+      </main>
+    </div>`;
+  }
+
+  /* ── 화면 열고 닫기 ──────────────────────────────────────────────────────
+     하드웨어 뒤로 가기(history/popstate)는 일부러 붙이지 않았습니다.
+     이 앱에는 전체 화면·시트가 이미 여덟 군데 있고(하루 요약, 루틴 편집기,
+     각종 피커, 정보 시트…) 그중 어느 것도 뒤로 가기를 처리하지 않습니다.
+     새로 만드는 두 화면에만 붙이면 "어떤 화면은 뒤로 가기로 닫히고 어떤
+     화면은 앱이 꺼지는" 상태가 되는데, 그건 아예 없는 것보다 나쁩니다.
+     뒤로 가기는 여덟 곳을 한 번에 정리하는 별도 작업으로 두는 게 맞습니다. */
+  async function openSearch() {
+    if (!await confirmLeavePast()) return;
+    state.searchOpen = true;
+    state.logSearch = '';
+    state.searchLibOpen = false;
+    render();
+    /* 검색 화면은 열자마자 칠 수 있어야 합니다. render 가 방금 DOM 을 새로
+       만들었으므로 다음 프레임에 잡습니다. */
+    requestAnimationFrame(() => { try { document.getElementById('log-search')?.focus(); } catch (_) {} });
+  }
+
+  function openExHistory(name) {
+    if (!name) return;
+    /* 정보 시트에서 넘어온 경우 그 시트는 닫습니다 — 시트(z-index 70)가 이력
+       화면(45) 위에 계속 떠 있으면 방금 연 화면이 안 보입니다. */
+    state.exerciseInfoId = null;
+    state.exHistoryName = name;
+    state.exhRange = state.exhRange || '3m';
+    render();
+  }
+
   function renderHistory() {
     const mKey = state.histMonth || monthKey(todayISO());
     let body = renderCalendar(mKey);
@@ -4002,7 +4553,13 @@ const APP_VERSION = (() => {
     /* 마지막 카드가 하단 탭바에 가리지 않도록 여백을 둡니다. */
     body += '<div style="height:18px"></div>';
 
-    return `<header class="topbar"><div class="topbar-title">히스토리</div></header>
+    return `<header class="topbar">
+        <div class="topbar-title">히스토리</div>
+        <div class="topbar-spacer"></div>
+        <button class="btn-icon ghost" data-act="open-search" aria-label="기록 검색">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7.5"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
+        </button>
+      </header>
       <main class="screen${navDir ? ' nav-' + navDir : ''}">${body}</main>`;
   }
 
@@ -4071,6 +4628,16 @@ const APP_VERSION = (() => {
 
         <div class="settings-label">운동</div>
         <div class="settings-group">
+          <button class="settings-item" data-act="toggle-wake-lock" role="switch" aria-checked="${wakeLockOn()}">
+            <div class="settings-item-icon${wakeLockOn() ? ' accent' : ''}">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2.5"/><circle cx="12" cy="12" r="3"/><path d="M12 6.5v1.5M12 16v1.5M17.5 12H16M8 12H6.5"/></svg>
+            </div>
+            <div class="settings-item-text">
+              <div class="settings-item-title">화면 꺼짐 방지</div>
+              <div class="settings-item-sub">기록 화면을 보고 있는 동안만 화면이 켜져 있습니다</div>
+            </div>
+            <span class="switch${wakeLockOn() ? ' on' : ''}" aria-hidden="true"><i></i></span>
+          </button>
           <button class="settings-item" data-act="toggle-rest-timer" role="switch" aria-checked="${restTimerOn()}">
             <div class="settings-item-icon${restTimerOn() ? ' accent' : ''}">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 1.5"/><path d="M9 2h6"/></svg>
@@ -4630,7 +5197,9 @@ const APP_VERSION = (() => {
     if (act === 'open-day') {
       /* 히스토리 안에서는 달력을 남긴 채 아래에서 펼치고, 다른 화면(홈 등)
          에서는 지금처럼 전체 화면으로 띄웁니다. */
-      if (state.tab === 'history') { state.histDay = state.histDay === btn.dataset.date ? null : btn.dataset.date; }
+      /* 운동 이력에서 날짜를 누른 것이면 히스토리 탭에 있더라도 전체 화면으로
+         띄웁니다 — 달력 아래에서 펼쳐 봐야 이력 화면에 가려 안 보입니다. */
+      if (state.tab === 'history' && !state.exHistoryName) { state.histDay = state.histDay === btn.dataset.date ? null : btn.dataset.date; }
       else state.summaryDate = btn.dataset.date;
       render(); return;
     }
@@ -4890,6 +5459,19 @@ const APP_VERSION = (() => {
     }
     if (act === 'toggle-done') { await handleToggleDone(btn.dataset.ex, btn.dataset.set); return; }
     if (act === 'open-summary') { state.summaryDate = btn.dataset.date; render(); return; }
+    if (act === 'open-search')  { await openSearch(); return; }
+    if (act === 'close-search') { state.searchOpen = false; state.logSearch = ''; state.searchLibOpen = false; render(); return; }
+    if (act === 'toggle-search-lib') {
+      state.searchLibOpen = !state.searchLibOpen;
+      /* 결과 목록만 갈아 끼웁니다 — 여기서 render() 를 부르면 검색어를 치던
+         input 이 사라지고 키보드가 내려갑니다. */
+      const box = document.querySelector('.search-results');
+      if (box) box.innerHTML = buildSearchResults();
+      return;
+    }
+    if (act === 'open-ex-history')  { openExHistory(btn.dataset.name); return; }
+    if (act === 'close-ex-history') { state.exHistoryName = null; render(); return; }
+    if (act === 'exh-range') { state.exhRange = btn.dataset.val; render(); return; }
     if (act === 'close-summary') { state.summaryDate = null; render(); return; }
     if (act === 'edit-day') {
       /* 다른 날을 고치던 중이었다면 먼저 물어봅니다. 여기만 빠져 있어서,
@@ -5026,6 +5608,10 @@ const APP_VERSION = (() => {
       return;
     }
     if (act === 'toggle-haptics') { setHapticsOn(!hapticsOn()); render(); return; }
+    /* render() 끝의 syncWakeLock() 이 켜고 끄는 일을 실제로 합니다 — 여기서
+       직접 잡거나 놓지 않습니다. 상태를 바꾸는 곳과 그 상태를 화면·장치에
+       반영하는 곳을 하나로 유지하려는 것입니다. */
+    if (act === 'toggle-wake-lock') { setWakeLockOn(!wakeLockOn()); render(); return; }
     if (act === 'set-start-tab') { setStartTab(btn.dataset.val); render(); return; }
     if (act === 'set-week-start') { setWeekStartsMon(btn.dataset.val === 'mon'); render(); return; }
     if (act === 'set-unit-weight') { setUnitWeight(btn.dataset.val); render(); return; }
@@ -5072,6 +5658,13 @@ const APP_VERSION = (() => {
       state.exerciseSearch = t.value;
       const list = document.querySelector('.pick-list');
       if (list && state.pickerPart) list.innerHTML = buildPickItems(state.pickerPart);
+    }
+    /* 피커 검색과 같은 이유로 render() 를 부르지 않습니다 — #app 을 통째로
+       갈아 끼우면 지금 치고 있는 input 이 파괴되고 키보드가 내려갑니다. */
+    if (t.dataset.act === 'search-log') {
+      state.logSearch = t.value;
+      const box = document.querySelector('.search-results');
+      if (box) box.innerHTML = buildSearchResults();
     }
   }
 
@@ -6822,6 +7415,7 @@ const APP_VERSION = (() => {
     initTheme();
     render();
     startRestTicker();
+    watchWakeLock();
     /* 앱을 껐다 켜도 쉬던 중이었다면 남은 시간이 이어집니다. */
     restoreRestTimer();
     watchForGateGoingStale();

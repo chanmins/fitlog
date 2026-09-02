@@ -2108,3 +2108,63 @@ body.overlay-open { overflow: hidden; }
    중앙에 상시 노출되고, 정작 안전한 백업은 접혀 있어 순서가 거꾸로였습니다. */
 .danger-adv .settings-adv-summary { color: var(--red); }
 .app-version { margin-top: 10px; opacity: .6; letter-spacing: .02em; }
+
+/* ============================================================
+   기록 검색 · 운동 이력
+   ============================================================ */
+
+/* 검색창은 상단 바 안에 들어갑니다. 본문 첫 줄에 두면 결과를 훑어 내리는
+   동안 위로 밀려 사라지고, 그러면 지우거나 고치려고 매번 맨 위까지 스크롤을
+   되감아야 합니다. 상단 바는 sticky 라 늘 손 닿는 자리에 있습니다. */
+.sr-bar { flex: 1; min-width: 0; margin-bottom: 0; }
+.sr-bar input { height: 42px; font-size: 15px; }
+/* iOS 가 type=search 에 붙이는 기본 지우기 버튼을 그대로 씁니다 — 우리가
+   그린 버튼은 값이 비었을 때 숨기려면 다시 그려야 하고, 다시 그리면 키보드가
+   내려갑니다. */
+.sr-bar input::-webkit-search-decoration { -webkit-appearance: none; }
+
+.sr-list { display: flex; flex-direction: column; gap: 8px; }
+.sr-row {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-md); padding: 13px 14px;
+  transition: transform .1s, background .15s;
+  box-shadow: var(--sh-card);
+}
+.sr-row:active { transform: scale(.985); background: var(--surface-2); }
+.sr-row .recent-mid { display: flex; flex-direction: column; }
+.sr-dot {
+  width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 0%, transparent);
+}
+
+/* 운동 이력 — 요약 세 칸 */
+.exh-stats {
+  display: flex; gap: 8px; margin-bottom: 16px;
+}
+.exh-stats > div {
+  flex: 1; min-width: 0; text-align: center;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-md); padding: 12px 6px; box-shadow: var(--sh-card);
+}
+.exh-stats b {
+  display: block; font-size: 17px; font-weight: 900; letter-spacing: -0.04em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.exh-stats b i { font-size: 11px; font-weight: 700; font-style: normal; color: var(--muted); }
+.exh-stats span { display: block; font-size: 11px; font-weight: 700; color: var(--muted); margin-top: 4px; }
+
+.exh-chart-foot {
+  display: flex; justify-content: space-between;
+  font-size: 10px; font-weight: 700; color: var(--muted); margin-top: -4px;
+}
+
+/* 세트 줄은 숫자가 늘어서므로 고정폭 숫자로 맞춥니다 — 100×5 와 97.5×5 가
+   섞였을 때 자릿수가 흔들리면 훑어 내리기가 어렵습니다. */
+.exh-row .recent-parts { font-variant-numeric: tabular-nums; font-weight: 800; }
+.exh-pr {
+  display: inline-block; margin-right: 6px; padding: 1px 6px; border-radius: 6px;
+  background: var(--accent-soft); color: var(--accent);
+  font-size: 10px; font-weight: 800; border: 1px solid var(--accent-line);
+}
+.exh-screen .topbar-title { display: flex; align-items: center; }
