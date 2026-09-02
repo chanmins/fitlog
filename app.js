@@ -137,7 +137,7 @@ const APP_VERSION = (() => {
     exerciseInfoId: null,
     weightPicker: null,   /* { exId, setId, str, fresh } */
     repsPicker:   null,   /* { exId, setId, str, fresh } */
-    /* 히스토리 몸무게 그래프에서 짚어 고른 날짜 — 고치기·지우기의 대상 */
+    /* 히스토리 몸무게 그래프에서 짚어 고른 날짜 — 수정·지우기의 대상 */
     weightPicked: null,
 
     /* Auth — 손님 모드는 없습니다. 로그인한 계정으로만 앱에 들어옵니다. */
@@ -1024,7 +1024,7 @@ const APP_VERSION = (() => {
       /* 매번 띄우면 세트를 누를 때마다 토스트가 뜹니다 — 한 번만 알립니다. */
       if (!state.saveBroken) {
         state.saveBroken = true;
-        toast('저장에 실패했습니다 — 기기 저장 공간을 확인해 주세요');
+        toast('저장 공간을 확인해 주세요', true);
       }
       throw err;
     }
@@ -1176,22 +1176,29 @@ const APP_VERSION = (() => {
     });
   }
 
-  /* ── Toast ──────────────────────────────── */
-  function toast(msg) {
+  /* ── Toast ────────────────────────────────────────────────────────────────
+     bad:true 면 빨간 점이 붙고 조금 더 오래 남습니다 — 잘된 알림과 안 된
+     알림이 똑같이 생기면 지나가는 동안 구분할 방법이 없습니다.
+
+     문구는 다른 앱에서 쓰는 말을 그대로 씁니다 — '저장에 실패했습니다',
+     '네트워크 연결을 확인해 주세요'. 스쳐 지나가는 알림은 읽는 게 아니라
+     알아보는 것이라, 처음 보는 표현이면 그 짧은 순간에 해석을 해야 합니다. */
+  function toast(msg, bad) {
     state.toast = msg;
     clearTimeout(state.toastTimer);
-    const el = document.querySelector('.toast');
-    if (el) el.textContent = msg;
-    else {
-      const t = document.createElement('div');
-      t.className = 'toast';
-      t.textContent = msg;
-      document.body.appendChild(t);
+    let el = document.querySelector('.toast');
+    if (!el) {
+      el = document.createElement('div');
+      document.body.appendChild(el);
     }
+    /* 이미 떠 있는 알림을 재사용할 때 className 도 같이 바꿉니다 — 안 그러면
+       성공 알림 바로 뒤에 온 실패 알림이 성공 차림새로 뜹니다. */
+    el.className = 'toast' + (bad ? ' is-bad' : '');
+    el.textContent = msg;
     state.toastTimer = setTimeout(() => {
       document.querySelector('.toast')?.remove();
       state.toast = '';
-    }, 1800);
+    }, bad ? 2600 : 1800);
   }
 
   /* ── Number pad buffer ────────────────────────────────────────────────────
@@ -1737,7 +1744,7 @@ const APP_VERSION = (() => {
       state.editingPast = true;
       state.pastDirty = true;
       render();
-      toast('저장에 실패했습니다 — 다시 시도해 주세요');
+      toast('저장에 실패했습니다', true);
       return;
     }
     state.sessions = await WorkoutDB.getAllSessions();
@@ -2773,7 +2780,7 @@ const APP_VERSION = (() => {
   /* ── Workout Tab ──────────────────────────── */
   function renderWorkout() {
     const s = state.session;
-    if (!s) return `<header class="topbar"><div class="topbar-title">기록</div></header>
+    if (!s) return `<header class="topbar"><div class="topbar-brand">FIT<span>LOG</span></div></header>
       <main class="screen${navDir ? ' nav-' + navDir : ''}"><div class="empty-state"><div class="empty-icon">🏋️</div>오늘의 운동을 시작하세요</div>
       <button class="btn-hero" data-act="today">오늘 기록 시작하기</button></main>`;
 
@@ -2926,10 +2933,7 @@ const APP_VERSION = (() => {
 
     return `
       <header class="topbar">
-        <button class="btn-icon ghost" data-act="go-tab" data-tab="home" aria-label="홈으로">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-        </button>
-        <div class="topbar-title">운동 기록</div>
+        <div class="topbar-brand">FIT<span>LOG</span></div>
         <div class="topbar-spacer"></div>
         ${isToday ? '' : `<button class="btn-today" data-act="today">오늘로</button>`}
       </header>
@@ -3825,8 +3829,8 @@ const APP_VERSION = (() => {
     const curKg = existing ? existing.weightKg : fallbackKg;
     const cur = curKg ? toDisplayWeight(curKg) : '';
     const v = await promptText({
-      title: editing ? '몸무게 고치기' : '몸무게 기록',
-      message: editing ? '날짜와 몸무게를 고칠 수 있어요.' : '잰 날짜와 몸무게를 적어 주세요.',
+      title: editing ? '몸무게 수정' : '몸무게 기록',
+      message: editing ? '날짜와 몸무게를 바꿀 수 있어요.' : '잰 날짜와 몸무게를 적어 주세요.',
       value: cur ? String(cur) : '',
       placeholder: weightUnitLabel(),
       confirmText: editing ? '저장' : '기록',
@@ -3839,14 +3843,14 @@ const APP_VERSION = (() => {
     const disp = Number(String(v.text).replace(/[^0-9.]/g, ''));
     const kg = fromDisplayWeight(disp);
     if (!Number.isFinite(kg) || kg < 20 || kg > 300) {
-      toast(`${Math.round(toDisplayWeight(20))}~${Math.round(toDisplayWeight(300))}${weightUnitLabel()} 사이로 적어 주세요`);
+      toast(`${Math.round(toDisplayWeight(20))}~${Math.round(toDisplayWeight(300))}${weightUnitLabel()} 사이로 적어 주세요`, true);
       return;
     }
     const newDate = /^\d{4}-\d{2}-\d{2}$/.test(v.date) ? v.date : target;
-    if (newDate > todayISO()) { toast('오늘 이후 날짜에는 적을 수 없어요'); return; }
+    if (newDate > todayISO()) { toast('오늘 이후 날짜에는 적을 수 없습니다', true); return; }
     const row = { date: newDate, weightKg: Math.round(kg * 10) / 10 };
 
-    /* 날짜를 옮겼으면 원래 있던 날은 비웁니다 — 안 그러면 한 번의 '고치기'
+    /* 날짜를 옮겼으면 원래 있던 날은 비웁니다 — 안 그러면 한 번의 '수정'
        가 두 줄이 됩니다. */
     if (editing && newDate !== target) {
       await WorkoutDB.deleteMetric(target).catch(() => {});
@@ -3918,7 +3922,7 @@ const APP_VERSION = (() => {
                 : `<span class="pa-flat">변화 없음</span>`;
 
     /* 짚어서 고른 점은 손을 떼도 그대로 둡니다 — 값을 읽자마자 사라지면
-       '고치기' 를 누를 틈이 없고, 다시 그릴 때마다 선택이 풀리면 고친 직후에
+       '수정' 을 누를 틈이 없고, 다시 그릴 때마다 선택이 풀리면 고친 직후에
        어느 날을 보고 있었는지 잃어버립니다. 그래서 선택은 state 에 있고,
        여기서 표시 상태까지 같이 그립니다. */
     const selIdx = state.weightPicked ? rows.findIndex(r => r.date === state.weightPicked) : -1;
@@ -3952,13 +3956,13 @@ const APP_VERSION = (() => {
       ${sel ? `
       <div class="wt-sel">
         <div class="wt-sel-day">${esc(longDate(sel.date))}<b>${sel.dv}${weightUnitLabel()}</b></div>
-        <button class="stats-tab" data-act="edit-weight" data-date="${esc(sel.date)}">고치기</button>
+        <button class="stats-tab" data-act="edit-weight" data-date="${esc(sel.date)}">수정</button>
         <button class="stats-tab wt-sel-del" data-act="del-weight" data-date="${esc(sel.date)}">지우기</button>
         <button class="btn-icon ghost wt-sel-x" data-act="clear-weight-pick" aria-label="선택 해제">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>`
-      : `<p class="wt-hint">그래프에서 점을 짚으면 그 날 몸무게가 나오고, 고치거나 지울 수 있어요.</p>`}
+      : `<p class="wt-hint">그래프에서 점을 짚으면 그 날 몸무게가 나오고, 수정하거나 지울 수 있어요.</p>`}
     </div>`;
   }
   /* ── 부위별 분석 카드 ── */
@@ -4554,7 +4558,7 @@ const APP_VERSION = (() => {
     body += '<div style="height:18px"></div>';
 
     return `<header class="topbar">
-        <div class="topbar-title">히스토리</div>
+        <div class="topbar-brand">FIT<span>LOG</span></div>
         <div class="topbar-spacer"></div>
         <button class="btn-icon ghost" data-act="open-search" aria-label="기록 검색">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7.5"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
@@ -5159,7 +5163,7 @@ const APP_VERSION = (() => {
     });
     /* 손을 뗀 자리의 날짜를 선택으로 확정합니다. 미는 동안은 DOM 만 직접
        칠하고(다시 그리면 손가락 밑에서 화면이 통째로 새로 만들어집니다),
-       여기서 한 번만 render() 해서 아래 고치기·지우기 줄을 띄웁니다. */
+       여기서 한 번만 render() 해서 아래 수정·지우기 줄을 띄웁니다. */
     const release = () => {
       if (!tracking) return;
       tracking = false;
@@ -5438,7 +5442,7 @@ const APP_VERSION = (() => {
          경우가 있어, state 만 믿으면 방금 붙여넣은 이름을 놓칩니다. */
       const input = document.getElementById('custom-name');
       const name = ((input ? input.value : state.customName) || '').trim();
-      if (!name) { toast('운동 이름을 적어 주세요'); return; }
+      if (!name) { toast('운동 이름을 적어 주세요', true); return; }
       state.customName = '';
       await handleAddCustom(btn.dataset.part, name);
       return;
@@ -5908,7 +5912,7 @@ const APP_VERSION = (() => {
        남아 다음에 앱을 켜면 되살아납니다 — 저장한 것도 아니고 안 한 것도
        아닌 상태입니다. 받을 수 없는 값이면 받지 않았다고 말합니다. */
     const bad = onboardingMissing();
-    if (bad) { toast(bad); return; }
+    if (bad) { toast(bad, true); return; }
     state.authBusy = true;
     render();
     try {
@@ -5923,7 +5927,7 @@ const APP_VERSION = (() => {
          전부 다시 입력해야 하는데, 실패 이유는 대개 잠깐의 네트워크 문제라
          한 번 더 누르면 되는 일입니다. */
       render();
-      toast('프로필 저장에 실패했습니다 — 잠시 후 다시 눌러 주세요');
+      toast('저장에 실패했습니다', true);
       console.warn('profile save failed', err);
     }
   }
@@ -6067,7 +6071,7 @@ const APP_VERSION = (() => {
         state.editingPast = true;
         state.pastDirty = true;
         render();
-        toast('저장에 실패했습니다 — 다시 시도해 주세요');
+        toast('저장에 실패했습니다', true);
         return;
       }
       state.pastDirty = false;
@@ -6268,8 +6272,8 @@ const APP_VERSION = (() => {
     const d = state.routineEdit;
     if (!d) return;
     const name = (document.getElementById('routine-name')?.value || d.name).trim();
-    if (!name) { toast('루틴 이름을 적어 주세요'); document.getElementById('routine-name')?.focus(); return; }
-    if (!d.exercises.length) { toast('운동을 하나 이상 골라 주세요'); return; }
+    if (!name) { toast('루틴 이름을 적어 주세요', true); document.getElementById('routine-name')?.focus(); return; }
+    if (!d.exercises.length) { toast('운동을 하나 이상 골라 주세요', true); return; }
     const row = {
       id: d.id || uid(),
       name: name.slice(0, 40),
@@ -6424,7 +6428,7 @@ const APP_VERSION = (() => {
   async function handleDeleteSet(exId, setId) {
     const ex = state.session.exercises.find(e=>e.id===exId);
     if (!ex) return;
-    if (ex.sets.length <= 1) { toast('마지막 세트는 지울 수 없습니다'); return; }
+    if (ex.sets.length <= 1) { toast('마지막 세트는 지울 수 없습니다', true); return; }
     await animateRemoval(document.querySelector(`.set-swipe[data-ex="${CSS.escape(exId)}"][data-set="${CSS.escape(setId)}"]`));
     ex.sets = ex.sets.filter(s => s.id !== setId);
     await persist(); render();
@@ -6525,7 +6529,8 @@ const APP_VERSION = (() => {
 
   async function importJson(file) {
     let payload;
-    try { payload = JSON.parse(await file.text()); } catch { toast('JSON을 읽을 수 없습니다'); return; }
+    try { payload = JSON.parse(await file.text()); }
+    catch { toast('파일을 불러올 수 없습니다', true); return; }
 
     /* 물어보기 '전에' 파일을 들여다봅니다.
        예전에는 아무것도 확인하지 않고 "교체할까요?" 부터 띄웠습니다. 다른 앱의
@@ -6537,7 +6542,7 @@ const APP_VERSION = (() => {
       ? payload.sessions.filter(r => r && typeof r.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.date)).length
       : 0;
     const customs = Array.isArray(payload?.customExercises) ? payload.customExercises.length : 0;
-    if (!days && !customs) { toast('이 파일에는 불러올 기록이 없습니다'); return; }
+    if (!days && !customs) { toast('불러올 기록이 없습니다', true); return; }
 
     const extra = [];
     if (Array.isArray(payload?.routines) && payload.routines.length) extra.push(`루틴 ${payload.routines.length}개`);
@@ -6555,7 +6560,7 @@ const APP_VERSION = (() => {
       /* 예전에는 여기서 던진 오류를 아무도 받지 않아, 사용자가 가져오기를
          눌러도 화면에 아무 일도 일어나지 않았습니다. */
       console.warn('import failed', err);
-      toast(err?.message || '가져오지 못했습니다');
+      toast('불러오기에 실패했습니다', true);
       return;
     }
     state.sessions = await WorkoutDB.getAllSessions();
@@ -7036,7 +7041,8 @@ const APP_VERSION = (() => {
          없습니다 — 자기가 하지도 않은 일이 실패했다고 나옵니다. */
       if (stillMe()) {
         render();
-        toast('클라우드 동기화 실패 — 기록은 이 기기에 저장됩니다');
+        /* 끊긴 것과 늦는 것은 사용자가 할 일이 달라서 따로 말합니다. */
+        toast(navigator.onLine === false ? '네트워크 연결을 확인해 주세요' : '동기화에 실패했습니다', true);
       }
     } finally {
       state.syncing = false;
@@ -7203,7 +7209,7 @@ const APP_VERSION = (() => {
       console.warn('import failed', err);
       state.pendingImport = p;
       render();
-      toast('가져오기에 실패했습니다');
+      toast('불러오기에 실패했습니다', true);
     }
   }
 
@@ -7303,9 +7309,9 @@ const APP_VERSION = (() => {
       if (err && err.message === 'cancelled') {
         toast('삭제를 취소했습니다 — 기록은 그대로 있습니다');
       } else if (err && err.code === 'fitlog/reauth-failed') {
-        toast(`본인 확인에 실패해 삭제하지 않았습니다 — ${err.message}`);
+        toast('본인 확인에 실패했습니다', true);
       } else {
-        toast(`삭제 실패: ${Cloud.authMessage(err)}`);
+        toast('삭제에 실패했습니다', true);
       }
     }
   }
@@ -7511,7 +7517,7 @@ const APP_VERSION = (() => {
     state.authReady = true;
     try {
       render();
-      toast('시작하는 중 문제가 있었습니다 — 다시 로그인해 주세요');
+      toast('다시 로그인해 주세요', true);
     } catch (e) {
       appEl.innerHTML = `<main style="padding:40px 24px;color:#f87171;font-family:system-ui">
         시작 오류: ${String(e)}</main>`;

@@ -338,7 +338,7 @@ em { font-style: normal; }
 /* 제목이 길어도 버튼을 밀어내지 않고 말줄임 처리합니다. */
 .topbar-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .topbar-title { font-size: 18px; font-weight: 800; letter-spacing: -0.03em; }
-.topbar-brand { font-size: 21px; font-weight: 900; letter-spacing: -0.04em; }
+.topbar-brand { font-size: 21px; font-weight: 900; letter-spacing: -0.04em; flex-shrink: 0; }
 .topbar-brand span { color: var(--accent); }
 .topbar-spacer { flex: 1; }
 /* The wordmark doubles as a tap target on pre-login screens (login/signup/
@@ -1595,9 +1595,25 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   transform: translateX(-50%); z-index: 100;
   background: var(--surface-3); color: var(--text); border: 1px solid var(--line-2);
   padding: 12px 20px; border-radius: 999px; font-size: 13px; font-weight: 700;
-  box-shadow: var(--sh-pop); animation: toastIn .3s cubic-bezier(.2,.9,.3,1); max-width: 88%; text-align: center;
+  box-shadow: var(--sh-pop); animation: toastIn .3s cubic-bezier(.2,.9,.3,1); text-align: center;
+  /* left:50% 로 띄운 fixed 요소라, 폭을 정해 주지 않으면 '들어갈 수 있는
+     자리' 가 화면 오른쪽 절반뿐입니다 — 긴 문장이 절반 폭에 갇혀 네 줄로
+     접혔습니다. max-content 로 내용만큼 벌리고 위에서 잘라 냅니다. */
+  width: max-content; max-width: min(86vw, 380px);
 }
 @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* 뭔가 안 됐을 때. 잘된 알림과 같은 차림새면 지나가는 1~2초 동안 둘을
+   구분할 방법이 없습니다. 빨간 점 하나와 테두리 색만 바꿉니다 — 화면을
+   덮는 경고창은 이 정도 일에는 과합니다. */
+.toast.is-bad {
+  display: flex; align-items: center; gap: 8px;
+  border-color: color-mix(in srgb, var(--red) 42%, var(--line-2));
+}
+.toast.is-bad::before {
+  content: ''; flex: none; width: 7px; height: 7px;
+  border-radius: 50%; background: var(--red);
+}
 
 /* ============================================================
    REST TIMER — appended to <body> directly, outside #app, so its
