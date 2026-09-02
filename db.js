@@ -214,6 +214,13 @@ const WorkoutDB = (() => {
     return txDone(tx);
   }
 
+  async function deleteMetric(date) {
+    const db = await open();
+    const tx = db.transaction("metrics", "readwrite");
+    tx.objectStore("metrics").delete(date);
+    return txDone(tx);
+  }
+
   async function replaceAll(sessions, customExercises) {
     const db = await open();
     const tx = db.transaction(["sessions", "customExercises"], "readwrite");
@@ -418,6 +425,7 @@ const WorkoutDB = (() => {
     deleteRoutine,
     getMetrics,
     putMetric,
+    deleteMetric,
     replaceAll,
     exportAll,
     importAll,

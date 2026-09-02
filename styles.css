@@ -2065,6 +2065,43 @@ body.overlay-open { overflow: hidden; }
 .wt-now span { font-size: 12px; font-weight: 700; color: var(--muted); }
 .wt-now em { margin-left: auto; font-style: normal; font-size: 10px; font-weight: 700; color: var(--muted); }
 
+/* 그래프를 손가락으로 짚으면 그 날 값이 뜹니다.
+   pan-y 로 두어야 세로 스크롤은 평소대로 넘어가고, 가로로 훑는 동작만
+   그래프가 가져갑니다. */
+.wt-chart { position: relative; touch-action: pan-y; -webkit-user-select: none; user-select: none; }
+.wt-chart .ch { margin-bottom: 4px; }
+.wt-guide, .wt-mark, .wt-tip { display: none; }
+.wt-chart.is-probing .wt-guide,
+.wt-chart.is-probing .wt-mark { display: inline; }
+.wt-chart.is-probing .wt-tip { display: block; }
+.wt-guide { stroke: var(--wt-color); stroke-width: 1; stroke-dasharray: 3 3; opacity: .55; }
+.wt-mark { fill: var(--surface); stroke: var(--wt-color); stroke-width: 2.5; }
+.wt-tip {
+  position: absolute; top: 0; left: 0; transform: translate(-50%, -145%);
+  padding: 5px 9px; border-radius: 999px; white-space: nowrap;
+  background: var(--wt-color); color: #fff;
+  font-size: 11px; font-weight: 800; letter-spacing: -0.01em;
+  box-shadow: var(--sh-card); pointer-events: none;
+}
+.wt-tip.below { transform: translate(-50%, 45%); }
+.wt-hint { margin: 2px 0 0; font-size: 11px; font-weight: 600; color: var(--muted); }
+
+/* 짚어서 고른 날 — 그 자리에서 고치거나 지울 수 있게 */
+.wt-sel {
+  display: flex; align-items: center; gap: 7px; margin-top: 6px;
+  padding: 9px 6px 0; border-top: 1px solid var(--line);
+}
+.wt-sel-day {
+  display: flex; align-items: baseline; gap: 7px; margin-right: auto;
+  font-size: 12px; font-weight: 700; color: var(--sub);
+}
+.wt-sel-day b { font-size: 14px; font-weight: 800; color: var(--text); }
+.wt-sel-del { color: var(--red); }
+.wt-sel-x { width: 28px; height: 28px; flex: none; }
+
+/* 몸무게 대화상자의 날짜 칸 */
+.dialog-date { margin-bottom: 8px; }
+
 .dsum-timing { margin: 6px 0 14px; font-size: 12px; font-weight: 600; color: var(--muted); }
 
 /* 위험 구역은 접어 둡니다 — 펼쳐 두면 되돌릴 수 없는 버튼 두 개가 설정 화면
