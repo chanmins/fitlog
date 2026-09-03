@@ -2422,6 +2422,8 @@ const APP_VERSION = (() => {
      주면 브라우저가 그 사이를 채웁니다. 휴식 타이머 바를 body 에 둔 것과
      같은 이유입니다. */
   let navEl = null;
+  /* 직전에 어느 칸에 있었는지. 첫 그리기(-1)에는 움직임을 만들지 않습니다. */
+  let navIdx = -1;
 
   function ensureNavEl() {
     if (navEl && navEl.isConnected) return navEl;
@@ -2448,6 +2450,28 @@ const APP_VERSION = (() => {
     document.body.classList.toggle('has-nav', !!show);
     if (!show) return;
     const i = Math.max(0, TAB_ORDER.indexOf(state.tab));
+
+    /* 물방울처럼 보이게 하는 것은 '이동' 이 아니라 '늘어났다 줄어드는 것'
+       입니다. 옮겨 가는 동안 진행 방향으로 납작하게 늘어졌다가 도착해서
+       도로 뭉치면, 같은 거리를 같은 시간에 움직여도 딱딱한 사각형이 아니라
+       한 덩어리의 액체가 흘러간 것으로 읽힙니다.
+
+       늘어나는 양을 건너뛴 칸 수에 비례시킵니다 — 옆 칸으로 갈 때와 끝에서
+       끝으로 갈 때가 똑같이 늘어나면, 멀리 갈수록 오히려 뻣뻣해 보입니다.
+
+       옮기는 일(translate)은 바깥 상자가, 늘어나는 일(scale)은 안쪽이
+       맡습니다. 한 요소에 둘 다 걸면 transform 이 서로를 덮어씁니다. */
+    if (navIdx >= 0 && navIdx !== i) {
+      const dist = Math.min(3, Math.abs(i - navIdx));
+      el.style.setProperty('--goo', (0.20 + dist * 0.17).toFixed(2));
+      /* 클래스를 뗐다 붙이는 것만으로는 같은 애니메이션이 다시 시작되지
+         않습니다(브라우저가 한 프레임 안의 변화를 합쳐 버립니다). 사이에
+         레이아웃을 한 번 읽어 강제로 끊어 줍니다. */
+      el.classList.remove('moving');
+      void el.offsetWidth;
+      el.classList.add('moving');
+    }
+    navIdx = i;
     el.style.setProperty('--nav-i', String(i));
     el.querySelectorAll('.nav-tab').forEach((b, n) => {
       const on = n === i;
@@ -2807,9 +2831,10 @@ const APP_VERSION = (() => {
     const next = stagedParts(s);
     const added = next.filter(id => !s.parts.includes(id)).length;
     const removed = s.parts.filter(id => !next.includes(id)).length;
-    if (!added && !removed) {
-      return `<button class="picker-confirm ghost" disabled>부위를 선택해 주세요</button>`;
-    }
+    /* 바뀐 게 없으면 아무것도 그리지 않습니다. 눌러도 할 일이 없는 버튼을
+       회색으로 띄워 두면 화면에 '막힌 곳' 이 하나 생길 뿐이고, 무엇을 해야
+       하는지는 타일의 '탭하여 추가' 가 이미 말하고 있습니다. */
+    if (!added && !removed) return '';
     const bits = [];
     if (added) bits.push(`${added}개 추가`);
     if (removed) bits.push(`${removed}개 빼기`);

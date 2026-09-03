@@ -387,9 +387,12 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   gap: 4px; color: var(--muted); font-size: 11px; font-weight: 700;
   letter-spacing: -0.01em; transition: color .18s; position: relative;
 }
-.nav-tab svg { width: 23px; height: 23px; transition: transform .18s; }
+.nav-tab svg { width: 23px; height: 23px; }
 .nav-tab.active { color: var(--accent); }
-.nav-tab.active svg { transform: translateY(-1px); }
+/* 아이콘도 같이 반응해야 알약만 따로 노는 것처럼 보이지 않습니다. 살짝 뜨고
+   조금 커지는데, 되튕기는 곡선이라 알약이 뭉치는 순간과 박자가 맞습니다. */
+.nav-tab svg { transition: transform .38s cubic-bezier(.34, 1.5, .5, 1); }
+.nav-tab.active svg { transform: translateY(-2px) scale(1.07); }
 
 /* 강조 알약은 탭마다 하나씩이 아니라 '하나' 입니다. 탭마다 ::before 로
    두면 켜지고 꺼질 뿐 움직일 수가 없습니다 — 서로 다른 요소니까요. 하나만
@@ -406,12 +409,46 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   position: absolute; top: 7px; left: 0; width: 25%; height: 30px;
   display: grid; place-items: center; pointer-events: none; z-index: 0;
   transform: translateX(calc(var(--nav-i, 0) * 100%));
-  transition: transform .42s cubic-bezier(.34, 1.34, .48, 1);
+  /* 옮기는 곡선은 앞이 빠르고 뒤가 길게 남습니다. 액체는 던져지듯 출발했다가
+     도착해서 천천히 자리를 잡습니다 — 앞뒤가 같은 속도면 미끄럼틀입니다. */
+  transition: transform .46s cubic-bezier(.55, 0, .18, 1);
 }
+/* 실제로 보이는 알약. 바깥은 '옮기는 일' 만, 여기는 '모양이 바뀌는 일' 만
+   맡습니다 — 한 요소에 둘 다 걸면 transform 이 서로를 덮어씁니다. */
 .nav-pill::before {
   content: ""; width: 34px; height: 30px;
   background: var(--accent-soft); border-radius: 10px;
+  will-change: transform, border-radius;
 }
+
+/* 물방울처럼 보이게 하는 것은 이동이 아니라 이 변형입니다.
+   진행하는 동안 납작하게 늘어졌다가(가로로 퍼지고 세로로 눌리고),
+   도착 직전에 살짝 되튕겨 뭉칩니다. 가장자리도 그동안 완전히 둥글어졌다
+   원래 사각 모서리로 돌아옵니다 — 딱딱한 모서리가 유지되면 아무리 늘려도
+   '늘어난 상자' 로 보이지 두 방울로 보이지 않습니다.
+
+   --goo 는 app.js 가 건너뛴 칸 수에 맞춰 넣습니다(0.37 ~ 0.71). 세로는
+   가로만큼 줄이지 않습니다(0.42배) — 부피가 아주 유지되면 종잇장처럼
+   보이고, 물방울은 눌려도 어느 정도 두께가 남습니다. */
+@keyframes navGoo {
+  0% {
+    transform: scale(1, 1) translateY(0);
+    border-radius: 10px;
+  }
+  38% {
+    transform: scale(calc(1 + var(--goo, .4)), calc(1 - var(--goo, .4) * .42)) translateY(1px);
+    border-radius: 999px;
+  }
+  72% {
+    transform: scale(calc(1 - var(--goo, .4) * .17), calc(1 + var(--goo, .4) * .12)) translateY(-1px);
+    border-radius: 14px;
+  }
+  100% {
+    transform: scale(1, 1) translateY(0);
+    border-radius: 10px;
+  }
+}
+.bottom-nav.moving .nav-pill::before { animation: navGoo .46s cubic-bezier(.4, 0, .2, 1); }
 /* 앱을 처음 열 때는 알약이 날아오면 안 됩니다 — 전환이 아니라 오작동으로
    보입니다. app.js 가 두 프레임 뒤에 이 클래스를 뗍니다. */
 .bottom-nav.no-anim .nav-pill { transition: none; }
