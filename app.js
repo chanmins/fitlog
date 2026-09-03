@@ -71,9 +71,28 @@ const APP_VERSION = (() => {
 
   /* ── 테마 ────────────────────────────────────────────────────────────────
      'auto' 는 아무것도 안 하는 상태입니다 — data-theme 속성을 지우면 CSS 의
-     prefers-color-scheme 이 시스템 설정을 그대로 따릅니다. 'light'/'dark' 는
-     그 위에 속성으로 덮어씁니다(속성 선택자가 미디어쿼리보다 우선합니다). */
-  const THEME_MODES = ['auto', 'light', 'dark'];
+     prefers-color-scheme 이 시스템 설정을 그대로 따릅니다. 나머지는 그 위에
+     속성으로 덮어씁니다(속성 선택자가 미디어쿼리보다 우선합니다).
+
+     base 는 '이 테마가 밝은 쪽이냐 어두운 쪽이냐' 입니다. 색은 전부 CSS 가
+     쥐고 있지만 딱 하나, 주소창·상태바 색만은 JS 가 칠해야 해서 필요합니다.
+     테마가 늘어나도 이 표에 한 줄 더하고 styles.css 에 토큰 블록 하나를
+     쓰면 끝나도록, 목록을 여기 한 군데로 모아 둡니다 — 설정 화면의 칩도
+     이 표에서 만들어지므로 추가하고 화면에 안 나오는 일이 없습니다.
+
+     color 는 그 테마의 --bg 와 같은 값입니다. 두 곳에 같은 색을 적는 게
+     마음에 걸리지만, 상태바는 CSS 변수를 읽지 못합니다(meta 태그라 계산된
+     스타일이 없습니다). getComputedStyle 로 --bg 를 읽어 오는 방법도 있는데,
+     첫 페인트 전에는 아직 값이 없어서 한 번 더 깜빡이게 됩니다. */
+  const THEMES = {
+    auto:     { label: '자동' },
+    light:    { label: '라이트',     base: 'light', color: '#FAFBFC' },
+    dark:     { label: '다크',       base: 'dark',  color: '#09090D' },
+    midnight: { label: '미드나이트', base: 'dark',  color: '#0A0F1C' },
+    oled:     { label: '순검정',     base: 'dark',  color: '#000000' },
+    paper:    { label: '크림',       base: 'light', color: '#FBF8F3' },
+  };
+  const THEME_MODES = Object.keys(THEMES);
 
   function initTheme() {
     let saved = null;
@@ -89,9 +108,13 @@ const APP_VERSION = (() => {
     } catch (_) {}
   }
 
-  /* 지금 실제로 보이는 테마 — 'auto' 면 시스템 설정을 읽습니다. */
+  /* 지금 실제로 보이는 것이 밝은 쪽인지 어두운 쪽인지 — 'auto' 면 시스템
+     설정을 읽습니다. 테마 이름이 아니라 계열을 돌려주는 것이 중요합니다:
+     미드나이트와 순검정은 서로 다른 테마지만 둘 다 어두운 쪽이라, 상태바
+     글자색처럼 '밝냐 어둡냐' 만 묻는 곳에서는 같이 취급해야 합니다. */
   function effectiveTheme() {
-    if (state.themeMode !== 'auto') return state.themeMode;
+    const t = THEMES[state.themeMode];
+    if (t && t.base) return t.base;
     try { return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'; }
     catch (_) { return 'dark'; }
   }
@@ -102,10 +125,13 @@ const APP_VERSION = (() => {
     else html.setAttribute('data-theme', state.themeMode);
 
     /* 주소창·상태바 색도 같이 맞춥니다. 이게 없으면 라이트 화면 위에 검은
-       상태바가 남아 앱이 반쯤만 바뀐 것처럼 보입니다. */
+       상태바가 남아 앱이 반쯤만 바뀐 것처럼 보입니다. auto 일 때는 고를 수
+       있는 색이 없으니 시스템 계열의 기본값을 씁니다. */
     try {
       const meta = document.querySelector('meta[name="theme-color"]');
-      if (meta) meta.setAttribute('content', effectiveTheme() === 'light' ? '#FAFBFC' : '#09090D');
+      const t = THEMES[state.themeMode];
+      const color = (t && t.color) || (effectiveTheme() === 'light' ? '#FAFBFC' : '#09090D');
+      if (meta) meta.setAttribute('content', color);
     } catch (_) {}
   }
 
@@ -1927,6 +1953,7 @@ const APP_VERSION = (() => {
     paintNav(true);
     bindEvents();
     positionYearWheel();
+    syncPresetScroll();
     syncOverlayScroll();
     flushPendingFlash();
     /* 탭이 바뀌었는지, 설정이 바뀌었는지를 여기서 따로 추적하지 않습니다 —
@@ -1945,6 +1972,21 @@ const APP_VERSION = (() => {
      매 렌더마다 되돌리면, 루틴을 만들다 운동을 하나 담을 때마다 화면이
      맨 위로 튀어 방금 보던 자리를 잃습니다. 무엇이 열려 있는지를 키로 삼아
      바뀐 순간에만 초기화합니다. */
+  /* 가로로 스크롤되는 칩 줄(글자 크기·테마)에서, 지금 고른 칩이 오른쪽
+     끝에 잘려 있으면 사람은 자기가 무엇을 골랐는지 볼 수 없습니다. 테마가
+     여섯 개가 되면서 '크림' 은 처음부터 화면 밖입니다. 줄이 실제로 넘칠
+     때만 고른 칩을 가운데로 끌어옵니다. */
+  function syncPresetScroll() {
+    document.querySelectorAll('.presets-scroll').forEach(row => {
+      const on = row.querySelector('.preset-chip.on');
+      if (!on) return;
+      const max = row.scrollWidth - row.clientWidth;
+      if (max <= 0) return;                       // 다 보이면 건드리지 않습니다
+      const left = on.offsetLeft - (row.clientWidth - on.offsetWidth) / 2;
+      row.scrollLeft = Math.max(0, Math.min(left, max));
+    });
+  }
+
   let _overlayKey = null;
   function syncOverlayScroll() {
     /* 전체 화면이 두 겹까지 쌓입니다(검색 → 운동 이력). 맨 위 것을 잡아야
@@ -4989,8 +5031,8 @@ const APP_VERSION = (() => {
               <div class="settings-item-sub">야간 운동 시 눈 피로 감소</div>
             </div>
             <div class="presets-scroll">
-              ${[['auto','자동'],['light','라이트'],['dark','다크']]
-                .map(([v,l]) => `<button class="preset-chip${state.themeMode===v?' on':''}" data-act="set-theme" data-val="${v}">${l}</button>`).join('')}
+              ${THEME_MODES
+                .map(v => `<button class="preset-chip${state.themeMode===v?' on':''}" data-act="set-theme" data-val="${v}">${THEMES[v].label}</button>`).join('')}
             </div>
           </div>
         </div>
