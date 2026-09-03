@@ -286,6 +286,8 @@ const APP_VERSION = (() => {
        focus from a numpad or input the user is mid-edit on. */
     restTimer: null,
 
+    /* 몸무게 기록 휠이 열려 있으면 { int, dec } (지금 단위 기준) */
+    bodyWeight: null,
     /* Theme mode: 'auto' | 'light' | 'dark' */
     themeMode: 'auto',
 
@@ -1133,51 +1135,6 @@ const APP_VERSION = (() => {
     });
   }
 
-  /* ask 와 같은 모양이되 한 줄을 받아 오는 대화상자. 브라우저 기본
-     window.prompt 은 ask 를 걷어낸 이유와 똑같은 문제를 갖고 있어 쓰지
-     않습니다. */
-  function promptText(opts) {
-    const o = opts || {};
-    return new Promise(resolve => {
-      const wrap = document.createElement('div');
-      wrap.className = 'dialog-backdrop';
-      wrap.innerHTML = `
-        <div class="dialog" role="dialog" aria-modal="true">
-          <div class="dialog-title">${esc(o.title || '입력')}</div>
-          ${o.message ? `<div class="dialog-body">${esc(o.message)}</div>` : ''}
-          <input class="dialog-input" type="text" maxlength="40"
-                 value="${esc(o.value || '')}" placeholder="${esc(o.placeholder || '')}">
-          <div class="dialog-actions">
-            <button class="dialog-btn cancel" data-v="0">취소</button>
-            <button class="dialog-btn go" data-v="1">${esc(o.confirmText || '저장')}</button>
-          </div>
-        </div>`;
-      const input = wrap.querySelector('.dialog-input');
-      let settled = false;
-      const close = (val) => {
-        if (settled) return;
-        settled = true;
-        wrap.classList.add('is-closing');
-        setTimeout(() => wrap.remove(), 140);
-        document.removeEventListener('keydown', onKey);
-        resolve(val);
-      };
-      const submit = () => close(input.value.trim() || null);
-      const onKey = (e) => {
-        if (e.key === 'Escape') close(null);
-        if (e.key === 'Enter' && document.activeElement === input) submit();
-      };
-      wrap.addEventListener('click', (e) => {
-        const btn = e.target.closest('[data-v]');
-        if (btn) { btn.dataset.v === '1' ? submit() : close(null); return; }
-        if (e.target === wrap) close(null);
-      });
-      document.addEventListener('keydown', onKey);
-      document.body.appendChild(wrap);
-      requestAnimationFrame(() => { input.focus(); input.select(); });
-    });
-  }
-
   /* 판정에 쓴 기준은 반드시 밝힙니다. '부족' 이라는 말은 근거가 없으면
      그냥 앱이 훈수 두는 것이 됩니다. */
   async function showVolumeInfo() {
@@ -1209,14 +1166,18 @@ const APP_VERSION = (() => {
   }
 
   /* ── Toast ──────────────────────────────── */
-  function toast(msg) {
+  /* kind: 없으면 보통 알림, 'warn' 이면 뭔가 안 된 것입니다. 둘을 같은 회색
+     알약으로 띄우면 '저장했습니다' 와 '이름을 적어 주세요' 가 구별이 안 돼서,
+     실패한 줄 모르고 다시 누르게 됩니다. */
+  function toast(msg, kind) {
     state.toast = msg;
     clearTimeout(state.toastTimer);
+    const cls = 'toast' + (kind ? ' ' + kind : '');
     const el = document.querySelector('.toast');
-    if (el) el.textContent = msg;
+    if (el) { el.textContent = msg; el.className = cls; }
     else {
       const t = document.createElement('div');
-      t.className = 'toast';
+      t.className = cls;
       t.textContent = msg;
       document.body.appendChild(t);
     }
@@ -1355,6 +1316,9 @@ const APP_VERSION = (() => {
   function paintPickRow(row, on) {
     if (!row) return;
     row.classList.toggle('on', on);
+    /* 줄 자체가 버튼이 됐으므로 눌린 상태도 줄이 들고 있습니다 — 화면만
+       바꾸고 이걸 두면 스크린리더는 계속 '선택 안 됨' 으로 읽습니다. */
+    if (row.hasAttribute('aria-pressed')) row.setAttribute('aria-pressed', String(on));
     const check = row.querySelector('.pick-check');
     if (check) { check.classList.toggle('on', on); check.innerHTML = on ? CHECK_SVG : ''; }
   }
@@ -1965,6 +1929,7 @@ const APP_VERSION = (() => {
     if (state.profileEditing) html += renderProfileSheet();
     if (state.yearPicker)     html += renderYearPickerSheet();
     if (state.weightPicker)   html += renderWeightPickerSheet();
+    if (state.bodyWeight)     html += renderBodyWeightSheet();
     if (state.repsPicker)     html += renderRepsPickerSheet();
     if (state.partSheet)      html += renderPartSheet();
     if (state.pickerPart)     html += renderExercisePickerSheet(state.pickerPart);
@@ -1989,6 +1954,7 @@ const APP_VERSION = (() => {
     paintNav(true);
     bindEvents();
     positionYearWheel();
+    positionBodyWeightWheels();
     syncPresetScroll();
     syncSegThumbs();
     syncOverlayScroll();
@@ -2017,9 +1983,9 @@ const APP_VERSION = (() => {
 
      --n 은 칸 수, --i 는 지금 고른 칸입니다. thumb 의 폭이 정확히 한 칸이라
      translateX(--i * 100%) 가 그 칸에 딱 맞습니다. */
-  function renderMiniSeg(key, act, opts, cur) {
+  function renderMiniSeg(key, act, opts, cur, cls) {
     const i = Math.max(0, opts.findIndex(o => o[0] === cur));
-    return `<div class="mini-seg" data-seg="${key}" data-i="${i}" style="--n:${opts.length};--i:${i}">
+    return `<div class="mini-seg${cls ? ' ' + cls : ''}" data-seg="${key}" data-i="${i}" style="--n:${opts.length};--i:${i}">
       <i class="mini-seg-thumb" aria-hidden="true"></i>
       ${opts.map(([v, l]) => `<button class="mini-seg-btn${v === cur ? ' on' : ''}"
         data-act="${act}" data-val="${v}" aria-pressed="${v === cur}">${esc(l)}</button>`).join('')}
@@ -3728,7 +3694,18 @@ const APP_VERSION = (() => {
 
     const primary   = libEx.primary || [];
     const secondary = libEx.secondary || [];
-    const diffStars = '★'.repeat(libEx.difficulty||1) + '☆'.repeat(3-(libEx.difficulty||1));
+    /* 난이도입니다. 별(★★☆)을 쓰지 않는 이유: 바로 앞 화면인 운동 목록에서
+       별은 '내가 즐겨찾기 한 것' 이라고 이미 가르쳐 놓았습니다. 같은 모양에
+       다른 뜻을 얹으면 사람은 먼저 배운 뜻으로 읽습니다 — 실제로 '저 별은
+       뭐야' 가 나왔습니다.
+
+       대신 계단처럼 높아지는 막대 셋을 씁니다. 별과 달리 눌러서 켜는 것으로
+       보이지 않고, 높이 자체가 '단계' 를 말합니다. 색만으로는 못 읽는 사람도
+       있으니 '초급/중급/고급' 글자를 반드시 함께 둡니다. */
+    const diffLv = Math.min(3, Math.max(1, libEx.difficulty || 1));
+    const diffLabel = ['초급', '중급', '고급'][diffLv - 1];
+    const diffMeter = `<span class="diff-meter" aria-hidden="true">${
+      [1, 2, 3].map(i => `<i${i <= diffLv ? ' class="on"' : ''}></i>`).join('')}</span>`;
     const eq = EQUIPMENT_LABEL[libEx.equipment] || libEx.equipment || '기타';
 
     const primaryPills   = primary.map(m => `<span class="muscle-pill primary"><span class="muscle-pill-dot"></span>${esc(MUSCLE_GROUPS[m]||m)}</span>`).join('');
@@ -3773,7 +3750,7 @@ const APP_VERSION = (() => {
         </div>
         <div class="info-meta" style="margin-top:0;margin-bottom:16px">
           <span class="info-badge eq">${esc(eq)}</span>
-          <span class="info-badge"><span class="diff-stars">${diffStars}</span></span>
+          <span class="info-badge diff" title="운동 난이도 ${diffLv}단계 중 ${diffLabel}">난이도${diffMeter}<b>${diffLabel}</b></span>
         </div>
         ${photo}
         <div class="muscle-legend">
@@ -3810,12 +3787,31 @@ const APP_VERSION = (() => {
     /* 즐겨찾기를 맨 위로 — 같은 그룹(즐겨찾기/일반) 안에서는 원래 순서
        그대로 두는 안정 정렬입니다. */
     const favs = favoriteIds();
+    let favCount = 0;
     if (favs.length) {
-      library = library.map((item, i) => ({ item, i, fav: item.id && favs.includes(item.id) }))
+      library = library.map((item, i) => ({ item, i, fav: !!(item.id && favs.includes(item.id)) }))
         .sort((a, b) => (b.fav - a.fav) || (a.i - b.i))
-        .map(x => x.item);
+        .map(x => { if (x.fav) favCount++; return x.item; });
     }
-    return library.map(item => {
+
+    /* 별을 눌러도 화면에서 달라지는 게 별 색깔 하나뿐이면, 그게 무슨 기능인지
+       알 길이 없습니다 — 목록이 재정렬돼도 원래 위쪽에 있던 운동이면 움직임도
+       없습니다. 머리글을 넣어 '이 위쪽은 내가 별을 준 것들' 이라고 말해 줍니다.
+       검색 중에는 넣지 않습니다: 검색 결과는 이미 다른 목록이라, 거기서까지
+       두 덩어리로 나누면 몇 개가 걸렸는지 세기 어려워집니다. */
+    const groupAt = (q || !favCount || favCount === library.length) ? -1 : favCount;
+    const head = (label, n) => `<div class="pick-group">${label}<span>${n}</span></div>`;
+
+    return library.map((item, idx) => {
+      const before = groupAt < 0 ? ''
+        : idx === 0 ? head('즐겨찾기', favCount)
+        : idx === groupAt ? head('전체', library.length - favCount) : '';
+      return before + pickItemHtml(item, partId, added);
+    }).join('');
+  }
+
+  function pickItemHtml(item, partId, added) {
+    {
       /* Three visual states, kept distinct so the footer count always matches
          what looks selected: already in today's session (muted, "빼기"),
          newly picked (bright check), and untouched. */
@@ -3823,23 +3819,36 @@ const APP_VERSION = (() => {
       const picked = state.pickSelection.some(x => x.name === item.name);
       const eq = EQUIPMENT_LABEL[item.equipment] || '';
       const fav = item.id && isFavoriteEx(item.id);
-      return `<div class="pick-item${inSession ? ' added' : picked ? ' on' : ''}">
+
+      /* 줄 전체가 버튼입니다. 예전에는 이름 부분만 눌렸는데, 오른쪽 끝의
+         체크 동그라미야말로 '여기를 누르면 골라지겠구나' 하고 손이 먼저
+         가는 자리라 정작 그게 안 먹혔습니다. 안쪽의 별·ⓘ·빼기 버튼은 각자
+         data-act 를 들고 있어서, closest() 가 가장 가까운 것을 집습니다 —
+         별을 눌렀는데 운동이 같이 골라지는 일은 없습니다.
+
+         이미 담긴 운동(inSession)에는 아예 안 붙입니다. 누를 수 없는 줄에
+         data-act 를 두면 눌러도 아무 일이 없는 이유를 설명할 방법이
+         없습니다. */
+      const rowAct = inSession ? '' :
+        ` data-act="toggle-pick" data-part="${partId}" data-name="${esc(item.name)}"` +
+        ` data-exid="${esc(item.id||'')}" role="button" tabindex="0" aria-pressed="${picked}"`;
+
+      return `<div class="pick-item${inSession ? ' added' : picked ? ' on' : ''}"${rowAct}>
         ${item.id ? `<button class="pick-fav${fav?' on':''}" data-act="toggle-fav" data-exid="${esc(item.id)}" aria-label="${esc(item.name)} 즐겨찾기 ${fav?'해제':'추가'}">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="${fav?'currentColor':'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
         </button>` : ''}
-        <button class="pick-item-name" data-act="toggle-pick" data-part="${partId}" data-name="${esc(item.name)}" data-exid="${esc(item.id||'')}" ${inSession?'disabled':''}>
-          <span>${esc(item.name)}</span>
+        <div class="pick-item-name">
+          <span class="pick-item-title">${esc(item.name)}${item.id ? `<button class="pick-info" data-act="show-ex-info" data-exid="${esc(item.id)}" aria-label="${esc(item.name)} 설명 보기">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          </button>` : ''}</span>
           ${item.nameEn ? `<span class="pick-item-en">${esc(item.nameEn)}</span>` : ''}
-        </button>
+        </div>
         ${eq ? `<span class="pick-item-eq">${esc(eq)}</span>` : ''}
-        ${item.id ? `<button class="pick-info" data-act="show-ex-info" data-exid="${esc(item.id)}" aria-label="${esc(item.name)} 설명 보기">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-        </button>` : ''}
         ${inSession ? `<span class="pick-added-tag">추가됨</span><button class="custom-del" data-act="quick-del-ex" data-name="${esc(item.name)}" data-part="${partId}">빼기</button>` : ''}
         ${item.custom && !inSession ? `<button class="custom-del" data-act="del-custom" data-id="${esc(item.id)}">삭제</button>` : ''}
         ${inSession ? '' : `<div class="pick-check${picked?' on':''}">${picked ? CHECK_SVG : ''}</div>`}
       </div>`;
-    }).join('');
+    }
   }
 
   /* ── Exercise Picker Sheet ────────────────── */
@@ -3872,10 +3881,19 @@ const APP_VERSION = (() => {
             <input id="picker-search" placeholder="운동 검색" value="${esc(state.exerciseSearch)}" data-act="search-ex">
           </div>
           <div class="pick-list">${buildPickItems(partId)}</div>
-          <div class="custom-add-row">
-            <input id="custom-name" placeholder="나만의 운동 직접 추가"
-                   data-act="custom-name" value="${esc(state.customName)}">
-            <button class="btn-add-sm" data-act="add-custom" data-part="${partId}">추가</button>
+          <!-- 목록과 확실히 갈라 놓습니다. 예전에는 이 입력칸도 목록의 운동
+               줄과 같은 회색(--surface-2)이라, 스크롤 끝에서 '운동 하나가 더
+               있는데 글씨가 흐린' 것처럼 보였습니다. 여기서부터는 고르는
+               곳이 아니라 만드는 곳이라고 말해 주는 머리글과, 채워 넣는
+               자리라는 뜻의 점선 테두리를 씁니다. -->
+          <div class="custom-add">
+            <div class="custom-add-head">찾는 운동이 없나요?</div>
+            <div class="custom-add-row">
+              <input id="custom-name" placeholder="나만의 운동 이름"
+                     data-act="custom-name" value="${esc(state.customName)}">
+              <button class="btn-add-sm" data-act="add-custom" data-part="${partId}"
+                      ${state.customName.trim() ? '' : 'disabled'}>추가</button>
+            </div>
           </div>
         </div>
         <div class="picker-footer">
@@ -3919,7 +3937,14 @@ const APP_VERSION = (() => {
         const p = PARTS.find(x => x.id === id);
         return p ? `<span class="cal-dot" style="background:${p.color}"></span>` : '';
       }).join('') : '';
-      cells += `<button class="cal-cell${s ? ' done' : ''}${isToday ? ' today' : ''}${future ? ' future' : ''}"
+      /* 요일 머리글은 토요일이 파랑, 일요일이 빨강인데 날짜는 전부 같은
+         회색이었습니다. 달력을 볼 때 눈이 찾는 건 머리글이 아니라 숫자라,
+         주말이 어디인지 매번 위를 올려다봐야 했습니다. 같은 규칙을 숫자에도
+         적용합니다 — 요일 계산은 달력을 채울 때 이미 하고 있으므로
+         Date 를 새로 만들 필요가 없습니다: 1일의 요일 + 지난 날수. */
+      const dow = (first.getDay() + d - 1) % 7;
+      const wkCls = dow === 0 ? ' sun' : dow === 6 ? ' sat' : '';
+      cells += `<button class="cal-cell${wkCls}${s ? ' done' : ''}${isToday ? ' today' : ''}${future ? ' future' : ''}"
         data-act="open-day" data-date="${esc(iso)}"${future ? ' disabled' : ''}>
         <span class="cal-num">${d}</span>
         <span class="cal-dots">${dots}</span>
@@ -4040,10 +4065,11 @@ const APP_VERSION = (() => {
     const anyData = rows.some(r => r.total > 0 || r.km > 0);
     const modeLabel = mode === 'week' ? '주' : '달';
 
-    const toggle = `<div class="stats-toggle" role="tablist">
-      <button role="tab" aria-selected="${mode === 'week'}" class="stats-tab${mode === 'week' ? ' on' : ''}" data-act="stats-range" data-range="week">주간</button>
-      <button role="tab" aria-selected="${mode === 'month'}" class="stats-tab${mode === 'month' ? ' on' : ''}" data-act="stats-range" data-range="month">월간</button>
-    </div>`;
+    /* 설정의 kg/lb 와 하는 일이 똑같은 2지선다입니다 — 같은 부품을 씁니다.
+       크기만 카드 머리글에 맞게 한 단계 작습니다. 같은 동작에 두 가지 생김새를
+       두면, 쓰는 사람은 그 둘이 다른 것이라고 배우게 됩니다. */
+    const toggle = renderMiniSeg('stats-range', 'stats-range',
+      [['week', '주간'], ['month', '월간']], mode, 'sm');
 
     if (!anyData) {
       return `<div class="stats-card">
@@ -4144,26 +4170,140 @@ const APP_VERSION = (() => {
      선 그래프를 쓰는 이유: 몸무게는 이어지는 값이라 막대로 끊어 보이면
      하루하루가 별개의 사건처럼 읽힙니다. 그리고 0 부터 그리지 않습니다 —
      80kg 대의 1kg 변화를 0 기준 축에 얹으면 아무 변화도 없어 보입니다. */
-  async function handleAddWeight() {
+  /* ── 몸무게 기록 ─────────────────────────────────────────────────────────
+     예전에는 글자 입력칸이었습니다. 그런데 몸무게는 어제와 오늘이 0.5kg
+     다른 값입니다 — 키보드를 띄워 '57.5' 네 글자를 치는 것은, 바로 옆에
+     있는 값을 고르는 일에 비하면 과한 절차입니다. 게다가 숫자 키보드가
+     화면 절반을 덮어서 지난 기록이 얼마였는지 보이지도 않습니다.
+
+     그래서 휠로 바꿉니다. 출생연도 피커와 같은 부품이고, 정수·소수 두 칸을
+     나란히 둡니다. 열면 지난 기록에 맞춰져 있으므로, 대개는 한 칸만 굴리면
+     끝납니다. */
+  const BW_MIN_KG = 25, BW_MAX_KG = 250;
+
+  function handleAddWeight() {
     const last = state.metrics[state.metrics.length - 1];
-    const curKg = last ? last.weightKg : Number(state.profile?.weightKg) || '';
-    const cur = curKg ? toDisplayWeight(curKg) : '';
-    const v = await promptText({
-      title: '몸무게 기록',
-      message: '오늘 몸무게를 적어 주세요.',
-      value: cur ? String(cur) : '',
-      placeholder: weightUnitLabel(),
-      confirmText: '기록',
+    const curKg = last ? last.weightKg : Number(state.profile?.weightKg) || 70;
+    const v = Math.round(toDisplayWeight(curKg) * 10) / 10;
+    const lo = Math.ceil(toDisplayWeight(BW_MIN_KG)), hi = Math.floor(toDisplayWeight(BW_MAX_KG));
+    const int = Math.min(hi, Math.max(lo, Math.floor(v)));
+    state.bodyWeight = { int, dec: Math.round((v - Math.floor(v)) * 10) % 10 };
+    render();
+  }
+
+  function bodyWeightValue() {
+    const p = state.bodyWeight;
+    return p ? Math.round((p.int + p.dec / 10) * 10) / 10 : 0;
+  }
+
+  /* 휠을 굴리는 동안 머리글만 다시 씁니다 — 여기서 render() 를 부르면
+     스크롤 위치가 초기화되어 손가락 밑에서 휠이 튑니다. */
+  function paintBodyWeightSub() {
+    const sub = document.querySelector('#sheet-bw .sheet-title-sub');
+    if (!sub) return;
+    const last = state.metrics[state.metrics.length - 1];
+    const now = bodyWeightValue();
+    const u = weightUnitLabel();
+    if (!last) { sub.textContent = `${now}${u}`; return; }
+    const prev = Math.round(toDisplayWeight(last.weightKg) * 10) / 10;
+    const d = Math.round((now - prev) * 10) / 10;
+    sub.textContent = `${now}${u} · 지난 기록 ${prev}${u}`
+      + (d === 0 ? ' (그대로)' : ` (${d > 0 ? '+' : ''}${d})`);
+  }
+
+  function renderBodyWeightSheet() {
+    const p = state.bodyWeight;
+    const lo = Math.ceil(toDisplayWeight(BW_MIN_KG)), hi = Math.floor(toDisplayWeight(BW_MAX_KG));
+    const ints = [];
+    for (let i = lo; i <= hi; i++) ints.push(i);
+    const item = (wheel, v, on, label) => `<button class="wheel-item${on ? ' on' : ''}" role="option"
+      aria-selected="${on}" data-act="bw-pick" data-val="${v}">${label}</button>`;
+    return `<div class="sheet-backdrop${overlayIn('bodyweight')}">
+      <div class="sheet-panel" id="sheet-bw">
+        <div class="sheet-grab"></div>
+        <div class="sheet-head">
+          <div>
+            <div class="sheet-title">몸무게 기록</div>
+            <div class="sheet-title-sub">위아래로 넘겨 맞춰 주세요</div>
+          </div>
+          <button class="sheet-x" data-act="close-bw" aria-label="닫기">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <!-- 띠(선택 표시)는 두 휠에 하나씩 두지 않고 짝 전체에 하나만 둡니다 —
+             '57' 과 '5' 가 따로 고른 두 값이 아니라 한 숫자라는 뜻입니다. -->
+        <div class="wheel-pair">
+          <div class="wheel-band" aria-hidden="true"></div>
+          <div class="wheel">
+            <div class="wheel-scroll" id="bw-int" data-wheel="int" role="listbox" aria-label="몸무게 정수">
+              <div class="wheel-pad"></div>
+              ${ints.map(v => item('int', v, v === p.int, v)).join('')}
+              <div class="wheel-pad"></div>
+            </div>
+          </div>
+          <div class="wheel-dot" aria-hidden="true">.</div>
+          <div class="wheel narrow">
+            <div class="wheel-scroll" id="bw-dec" data-wheel="dec" role="listbox" aria-label="몸무게 소수">
+              <div class="wheel-pad"></div>
+              ${[0,1,2,3,4,5,6,7,8,9].map(v => item('dec', v, v === p.dec, v)).join('')}
+              <div class="wheel-pad"></div>
+            </div>
+          </div>
+          <div class="wheel-unit" aria-hidden="true">${weightUnitLabel()}</div>
+        </div>
+        <button class="picker-confirm" data-act="confirm-bw">기록</button>
+      </div>
+    </div>`;
+  }
+
+  /* 열릴 때 지난 기록 자리로 맞춰 둡니다. 스크롤 컨테이너라 '여기서 시작' 을
+     선언적으로 말할 방법이 없어, 매 페인트마다 손으로 옮겨야 합니다. */
+  function positionBodyWeightWheels() {
+    ['bw-int', 'bw-dec'].forEach(id => {
+      const scroll = document.getElementById(id);
+      if (!scroll) return;
+      const active = scroll.querySelector('.wheel-item.on') || scroll.querySelector('.wheel-item');
+      if (!active) return;
+      scroll.scrollTop = active.offsetTop - (scroll.clientHeight - active.offsetHeight) / 2;
+      bindBodyWeightWheel(scroll);
     });
-    if (!v) return;
-    /* 입력은 지금 단위(kg 또는 lb) 그대로 받고, 저장 직전에만 kg 로
-       바꿉니다 — state.metrics 는 언제나 kg 입니다. */
-    const disp = Number(String(v).replace(/[^0-9.]/g, ''));
+    paintBodyWeightSub();
+  }
+
+  function bindBodyWeightWheel(scroll) {
+    if (scroll.dataset.bound) return;
+    scroll.dataset.bound = '1';
+    let raf = 0;
+    scroll.addEventListener('scroll', () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        if (!state.bodyWeight) return;
+        const mid = scroll.scrollTop + scroll.clientHeight / 2;
+        let best = null, bestGap = Infinity;
+        scroll.querySelectorAll('.wheel-item').forEach(el => {
+          const gap = Math.abs((el.offsetTop + el.offsetHeight / 2) - mid);
+          if (gap < bestGap) { bestGap = gap; best = el; }
+        });
+        if (!best) return;
+        const key = scroll.dataset.wheel;
+        const v = Number(best.dataset.val);
+        if (state.bodyWeight[key] === v) return;
+        state.bodyWeight[key] = v;
+        scroll.querySelectorAll('.wheel-item.on').forEach(el => {
+          el.classList.remove('on'); el.setAttribute('aria-selected', 'false');
+        });
+        best.classList.add('on'); best.setAttribute('aria-selected', 'true');
+        paintBodyWeightSub();
+      });
+    }, { passive: true });
+  }
+
+  async function handleSaveBodyWeight() {
+    const disp = bodyWeightValue();
     const kg = fromDisplayWeight(disp);
-    if (!Number.isFinite(kg) || kg < 20 || kg > 300) {
-      toast(`${Math.round(toDisplayWeight(20))}~${Math.round(toDisplayWeight(300))}${weightUnitLabel()} 사이로 적어 주세요`);
-      return;
-    }
+    if (!Number.isFinite(kg)) return;
+    state.bodyWeight = null;
     const row = { date: todayISO(), weightKg: Math.round(kg * 10) / 10 };
     state.metrics = state.metrics.filter(m => m.date !== row.date).concat(row)
       .sort((a, b) => a.date.localeCompare(b.date));
@@ -4785,9 +4925,8 @@ const APP_VERSION = (() => {
         ${hold ? '' : `<div><b>${volLabel}</b><span>총 볼륨</span></div>`}
       </div>`;
 
-      const tabs = `<div class="stats-toggle" role="tablist">${EXH_RANGES.map(r =>
-        `<button class="stats-tab${state.exhRange === r.id ? ' on' : ''}" data-act="exh-range" data-val="${r.id}" role="tab">${r.label}</button>`
-      ).join('')}</div>`;
+      const tabs = renderMiniSeg('exh-range', 'exh-range',
+        EXH_RANGES.map(r => [r.id, r.label]), state.exhRange, 'sm');
 
       const chart = renderExHistoryChart(rows);
       const chartCard = chart
@@ -5518,10 +5657,20 @@ const APP_VERSION = (() => {
       render(); return;
     }
     if (act === 'close-hist-day') { state.histDay = null; render(); return; }
-    if (act === 'stats-range') { state.statsRange = btn.dataset.range; render(); return; }
+    if (act === 'stats-range') { state.statsRange = btn.dataset.val || btn.dataset.range; render(); return; }
     if (act === 'pr-toggle') { state.prAll = !state.prAll; render(); return; }
     if (act === 'hist-all')  { state.histAll = !state.histAll; render(); return; }
-    if (act === 'add-weight') { await handleAddWeight(); return; }
+    if (act === 'add-weight') { handleAddWeight(); return; }
+    if (act === 'close-bw')   { state.bodyWeight = null; render(); return; }
+    if (act === 'confirm-bw') { await handleSaveBodyWeight(); return; }
+    /* 휠 항목을 직접 눌렀을 때. 값을 바로 넣지 않고 그 자리로 굴려
+       보냅니다 — 스크롤 핸들러가 가운데 온 것을 읽어 상태를 맞추므로,
+       손으로 굴렸을 때와 눌렀을 때가 정확히 같은 길을 지납니다. */
+    if (act === 'bw-pick') {
+      const sc = btn.closest('.wheel-scroll');
+      if (sc) sc.scrollTo({ top: btn.offsetTop - (sc.clientHeight - btn.offsetHeight) / 2, behavior: 'smooth' });
+      return;
+    }
     if (act === 'vol-info')   { await showVolumeInfo(); return; }
     if (act === 'open-routines') { state.partSheet = false; state.routineSheet = true; render(); return; }
     if (act === 'open-part-sheet') { state.partSheet = true; render(); return; }
@@ -5572,7 +5721,15 @@ const APP_VERSION = (() => {
       render(); return;
     }
     if (act === 'toggle-fav') {
+      /* 별이 무슨 일을 하는지 한 번은 말해 줘야 합니다 — 아이콘 색만 바뀌고
+         목록이 조용히 재정렬되면, 눌러 놓고도 '아무 일도 안 일어났다' 로
+         읽힙니다. 이름까지 넣어서 어느 운동에 준 별인지 분명히 합니다. */
+      const on = !isFavoriteEx(btn.dataset.exid);
       toggleFavoriteEx(btn.dataset.exid);
+      const nm = (findExercise(btn.dataset.exid)
+        || state.customExercises.find(e => e.id === btn.dataset.exid))?.name;
+      toast(on ? `${nm ? nm + ' — ' : ''}즐겨찾기, 목록 맨 위로 올렸어요`
+               : `${nm ? nm + ' — ' : ''}즐겨찾기에서 뺐어요`);
       render(); return;
     }
     if (act === 'open-weight') {
@@ -5749,7 +5906,10 @@ const APP_VERSION = (() => {
          경우가 있어, state 만 믿으면 방금 붙여넣은 이름을 놓칩니다. */
       const input = document.getElementById('custom-name');
       const name = ((input ? input.value : state.customName) || '').trim();
-      if (!name) { toast('운동 이름을 적어 주세요'); return; }
+      /* 버튼이 비어 있을 때 비활성이라 여기까지 오는 길은 거의 없지만,
+         자동완성이 값을 지우고 가는 경우가 남아 있어 그대로 둡니다. 이때는
+         '뭔가 잘못됐다' 는 신호여야 하므로 경고색 토스트를 씁니다. */
+      if (!name) { toast('운동 이름을 적어 주세요', 'warn'); if (input) input.focus(); return; }
       state.customName = '';
       await handleAddCustom(btn.dataset.part, name);
       return;
@@ -5943,7 +6103,16 @@ const APP_VERSION = (() => {
        지우거나, 백그라운드 동기화가 끝나기만 해도 — 적던 이름이 사라졌습니다.
        다시 그리지는 않습니다: 여기서 render 하면 글자를 칠 때마다 포커스가
        날아가고 한글 조합이 끊깁니다. */
-    if (t.dataset.act === 'custom-name') { state.customName = t.value; return; }
+    if (t.dataset.act === 'custom-name') {
+      state.customName = t.value;
+      /* 여기서 render() 를 부르면 안 됩니다 — 화면을 새로 만들면 입력칸도 새
+         것이 되어 커서가 날아가고, 한 글자 칠 때마다 키보드가 닫힙니다.
+         그래서 바뀌어야 하는 단 하나, '추가' 버튼의 활성 여부만 손으로
+         맞춥니다. */
+      const add = document.querySelector('[data-act="add-custom"]');
+      if (add) add.disabled = !t.value.trim();
+      return;
+    }
     /* Signup fields write straight to state and deliberately do NOT re-render:
        replacing the DOM mid-keystroke would drop focus and, on phones, dismiss
        the keyboard. Feedback is painted into the existing nodes instead. */

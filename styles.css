@@ -1523,7 +1523,15 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .info-badge.eq { background: var(--accent-soft); color: var(--accent); }
 .info-badge.diff { gap: 6px; }
 .info-badge.diff b { color: var(--text); font-weight: 800; }
-.diff-stars { color: var(--orange); font-size: 13px; letter-spacing: 1px; }
+/* 난이도 막대. 별이 아니라 계단입니다 — 목록의 즐겨찾기 별과 같은 모양을
+   쓰면 둘 중 하나는 반드시 오해받습니다. 아래를 맞춰 세워야 '점점 높아진다'
+   로 읽히고, 위를 맞추면 그냥 길이가 다른 선 세 개가 됩니다. */
+.diff-meter { display: inline-flex; align-items: flex-end; gap: 2.5px; height: 12px; }
+.diff-meter i { width: 3.5px; border-radius: 2px; background: var(--line-2); }
+.diff-meter i:nth-child(1) { height: 6px; }
+.diff-meter i:nth-child(2) { height: 9px; }
+.diff-meter i:nth-child(3) { height: 12px; }
+.diff-meter i.on { background: var(--orange); }
 
 /* ── 근육 지도 ──────────────────────────────────────────────────────────
    "가슴, 삼두근" 이라고 적어 두는 것만으로는 그게 몸의 어디인지 모르는
@@ -2457,15 +2465,6 @@ body.overlay-open { overflow: hidden; }
 }
 .routine-name { font-size: 14px; font-weight: 800; color: var(--text); }
 .routine-sub { font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 3px; }
-
-/* 한 줄 입력 대화상자 */
-.dialog-input {
-  width: 100%; margin: 12px 0 4px; padding: 11px 13px;
-  border-radius: var(--r-sm); border: 1.5px solid var(--line);
-  background: var(--surface-2); color: var(--text);
-  font-size: 15px; font-weight: 700; font-family: inherit;
-}
-.dialog-input:focus { outline: none; border-color: var(--accent-line); }
 
 /* 하루치 기록을 통째로 지우는 버튼. 되돌릴 수 없는 동작이라 화면 맨 아래,
    실수로 스치지 않는 자리에 조용히 둡니다 — 상단바에 두면 뒤로가기 옆이라
