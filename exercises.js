@@ -629,10 +629,13 @@ const EXTRA_EXERCISES = {
       primary:['lats'], secondary:['biceps','back'],
       description:'손바닥이 몸 쪽을 향하는 그립의 턱걸이로, 이두 개입이 커집니다.',
       tips:['어깨를 아래로 내리며 시작하세요','턱이 봉을 넘도록 당기세요'] },
-    { id:'cable-row', name:'케이블 시티드 로우', nameEn:'Cable Seated Row', equipment:'cable', difficulty:1,
-      primary:['back'], secondary:['lats','biceps'],
-      description:'등 두께를 만드는 기본 케이블 운동입니다.',
-      tips:['반동 없이 등으로만 당기세요','당길 때 견갑골을 모으세요'] },
+    /* '케이블 시티드 로우'(cable-row)를 뺐습니다 — 위의 '시티드 로우'
+       (seated-row, Seated Cable Row)와 같은 동작이었습니다. 영문명이
+       'Seated Cable Row' 와 'Cable Seated Row' 로 어순만 달랐고, 동작
+       그림(media/cable-row-*.svg)도 seated-row 것과 바이트까지 같은
+       사본이었습니다. 목록에서 둘 중 어느 쪽을 골라야 하는지 알 수 없는
+       항목이 나란히 있는 것이 라이브러리에서 가장 나쁜 상태입니다.
+       설명과 팁이 더 충실한 seated-row 를 남겼습니다. */
     { id:'straight-arm-pulldown', name:'스트레이트 암 풀다운', nameEn:'Straight-Arm Pulldown', equipment:'cable', difficulty:1,
       primary:['lats'], secondary:[],
       description:'팔을 편 채 내려 광배근만 고립해 자극합니다.',
@@ -937,3 +940,95 @@ for (const [part, list] of Object.entries(EXTRA_EXERCISES)) {
   const seen = new Set(DEFAULT_EXERCISES[part].map((e) => e.id));
   for (const item of list) if (!seen.has(item.id)) DEFAULT_EXERCISES[part].push(item);
 }
+
+/* ============================================================
+   머신 라이브러리
+   ============================================================
+   머신이 하체에 8개, 가슴·어깨에 2개씩, 등·팔·코어에는 0개였습니다.
+   프리웨이트 위주로 짜여 있었다는 뜻인데, 헬스장에서 가장 붐비는 자리와
+   초보자가 가장 먼저 앉는 자리가 정확히 그 비어 있던 쪽입니다.
+
+   '같은 동작인데 기구만 다른 것' 은 이 라이브러리에서 원래 따로 둡니다 —
+   바벨 컬 · 덤벨 컬 · 케이블 컬이 이미 그렇게 나란히 있습니다. 무게가
+   걸리는 각도와 궤적이 달라 실제로 다른 운동이기 때문입니다. 다만 기구도
+   같고 동작도 같은 것은 중복입니다(그래서 '케이블 시티드 로우' 를
+   뺐습니다). 아래 항목은 전부 앞의 기준을 지킵니다.
+
+   동작 그림은 아직 없습니다. media/ 에 파일이 없으면 정보 시트가 그림
+   칸만 비우고 나머지(근육 지도·설명·팁)는 그대로 보여 주므로, 그림이
+   준비되는 대로 exercise-photos.js 에 한 줄씩 더하면 됩니다. */
+const MACHINE_EXERCISES = {
+  chest: [
+    { id:'incline-machine-press', name:'인클라인 체스트 프레스 머신', nameEn:'Incline Machine Press', equipment:'machine', difficulty:1,
+      primary:['chest'], secondary:['shoulders','triceps'],
+      description:'등받이를 세운 체스트 프레스로, 가슴 위쪽을 집중해서 씁니다. 궤적이 정해져 있어 인클라인 덤벨 프레스보다 무게를 올리기 쉽습니다.',
+      tips:['손잡이가 쇄골 아래 높이에 오도록 시트를 맞추세요','팔꿈치를 완전히 펴서 잠그지 마세요'] },
+    { id:'assisted-dip', name:'어시스티드 딥스', nameEn:'Assisted Dip', equipment:'machine', difficulty:1,
+      primary:['chest'], secondary:['triceps','shoulders'],
+      description:'무릎을 받침대에 올려 체중을 덜어 주는 딥스입니다. 맨몸 딥스가 아직 안 되는 구간을 채워 줍니다.',
+      tips:['보조 무게가 클수록 쉬워집니다 — 숫자가 줄수록 발전한 것입니다','상체를 살짝 앞으로 기울이면 가슴에 더 들어갑니다'] },
+  ],
+  back: [
+    { id:'assisted-pull-up', name:'어시스티드 풀업', nameEn:'Assisted Pull-Up', equipment:'machine', difficulty:1,
+      primary:['lats','back'], secondary:['biceps'],
+      description:'체중 일부를 기계가 밀어 올려 주는 턱걸이입니다. 랫풀다운과 달리 몸이 움직이므로 실제 풀업으로 넘어가는 다리가 됩니다.',
+      tips:['보조 무게를 조금씩 줄여 나가는 것이 목표입니다','어깨를 먼저 내리고 팔을 당기세요'] },
+    { id:'chest-supported-row', name:'체스트 서포티드 로우', nameEn:'Chest-Supported Row', equipment:'machine', difficulty:1,
+      primary:['back','rhomboids'], secondary:['lats','biceps'],
+      description:'가슴을 패드에 대고 당기는 로우입니다. 허리가 받는 부담이 거의 없어서, 데드리프트나 바벨 로우로 허리가 먼저 지치는 날에 등만 따로 채울 수 있습니다.',
+      tips:['가슴을 패드에서 떼지 마세요 — 떼는 순간 허리 운동이 됩니다','팔꿈치를 몸통 뒤까지 보내며 견갑골을 모으세요'] },
+    { id:'machine-pullover', name:'풀오버 머신', nameEn:'Machine Pullover', equipment:'machine', difficulty:2,
+      primary:['lats'], secondary:['chest','triceps'],
+      description:'팔을 편 채 위에서 아래로 당겨 광배근만 고립합니다. 이두가 거의 개입하지 않아, 등 운동에서 팔이 먼저 지치는 사람에게 특히 유용합니다.',
+      tips:['팔꿈치 각도를 처음부터 끝까지 고정하세요','광배가 늘어나는 맨 위 지점에서 잠시 멈추세요'] },
+  ],
+  shoulders: [
+    { id:'machine-lateral-raise', name:'레터럴 레이즈 머신', nameEn:'Machine Lateral Raise', equipment:'machine', difficulty:1,
+      primary:['shoulders'], secondary:[],
+      description:'팔을 옆으로 벌리는 궤적이 고정되어 있어, 덤벨로 하면 흔들리기 쉬운 마지막 몇 회를 안정적으로 채울 수 있습니다.',
+      tips:['팔꿈치를 손보다 먼저 올린다는 느낌으로 미세요','내릴 때 힘을 빼지 말고 버티며 내리세요'] },
+  ],
+  arms: [
+    { id:'machine-bicep-curl', name:'컬 머신', nameEn:'Machine Biceps Curl', equipment:'machine', difficulty:1,
+      primary:['biceps'], secondary:[],
+      description:'팔을 패드에 고정한 채 굽히므로 반동을 쓸 수가 없습니다. 지친 팔로도 자세가 무너지지 않아 마무리 운동으로 적합합니다.',
+      tips:['겨드랑이를 패드 윗선에 붙이세요','끝까지 펴서 늘어나는 구간을 버리지 마세요'] },
+    { id:'machine-preacher-curl', name:'프리처 컬 머신', nameEn:'Machine Preacher Curl', equipment:'machine', difficulty:1,
+      primary:['biceps'], secondary:[],
+      description:'경사 패드에 팔을 얹고 하는 컬입니다. 바벨 프리처 컬과 동작은 같지만, 머신은 아래쪽 늘어난 구간에서도 저항이 빠지지 않습니다.',
+      tips:['어깨가 앞으로 말리지 않게 하세요','내릴 때 팔꿈치가 패드에서 뜨지 않게 하세요'] },
+    { id:'machine-tricep-ext', name:'트라이셉 익스텐션 머신', nameEn:'Machine Triceps Extension', equipment:'machine', difficulty:1,
+      primary:['triceps'], secondary:[],
+      description:'앉은 자세로 팔꿈치를 고정하고 미는 삼두 고립 운동입니다. 스컬크러셔에서 팔꿈치가 아픈 사람에게 대안이 됩니다.',
+      tips:['팔꿈치를 벌리지 말고 몸통 옆에 붙이세요','다 편 지점에서 1초 멈추면 자극이 확실히 커집니다'] },
+  ],
+  legs: [
+    { id:'hip-adduction', name:'힙 어덕션', nameEn:'Hip Adduction', equipment:'machine', difficulty:1,
+      primary:['adductors'], secondary:[],
+      description:'다리를 안쪽으로 모으는 머신입니다. 이미 있는 힙 어브덕션(바깥으로 벌리기)과 정확히 반대 방향으로, 짝을 이루어야 골반 좌우 균형이 맞습니다.',
+      tips:['상체를 뒤로 기대고 골반을 고정하세요','모은 지점에서 잠시 조였다 천천히 벌리세요'] },
+    { id:'glute-machine', name:'글루트 머신', nameEn:'Glute Kickback Machine', equipment:'machine', difficulty:1,
+      primary:['glutes'], secondary:['hamstrings'],
+      description:'한 다리씩 뒤로 밀어 둔근만 따로 씁니다. 스쿼트나 힙 스러스트에서 허벅지 앞쪽이 먼저 타는 사람이 둔근만 채울 때 씁니다.',
+      tips:['허리를 젖혀서 밀지 말고 엉덩이로만 미세요','한쪽을 끝내고 반대쪽으로 넘어가세요'] },
+  ],
+  core: [
+    { id:'machine-crunch', name:'압도미널 크런치 머신', nameEn:'Machine Crunch', equipment:'machine', difficulty:1,
+      primary:['abs'], secondary:[],
+      description:'복근에 무게를 걸 수 있는 몇 안 되는 방법입니다. 맨몸 크런치가 20회씩 쉬워졌다면 여기서부터 다시 강도를 올릴 수 있습니다.',
+      tips:['목이 아니라 명치를 골반 쪽으로 말아 내리세요','반동으로 내려갔다 올라오지 마세요'] },
+    { id:'rotary-torso', name:'로터리 토르소', nameEn:'Rotary Torso', equipment:'machine', difficulty:2,
+      primary:['abs'], secondary:['lower_back'],
+      description:'상체를 좌우로 비트는 머신으로 옆구리를 씁니다. 가동 범위를 크게 잡으면 허리에 부담이 가므로 각도를 작게 두고 시작하세요.',
+      tips:['가동 범위를 욕심내지 마세요 — 작게 시작합니다','골반은 고정한 채 갈비뼈만 돌린다고 생각하세요'] },
+  ],
+};
+
+/* EXTRA_EXERCISES 와 같은 방식으로 이어 붙입니다. id 가 겹치면 건너뛰므로
+   위쪽에 같은 운동이 이미 있어도 덮어쓰지 않습니다. */
+for (const [part, list] of Object.entries(MACHINE_EXERCISES)) {
+  if (!DEFAULT_EXERCISES[part]) DEFAULT_EXERCISES[part] = [];
+  const seen = new Set(DEFAULT_EXERCISES[part].map((e) => e.id));
+  for (const item of list) if (!seen.has(item.id)) DEFAULT_EXERCISES[part].push(item);
+}
+

@@ -29,7 +29,6 @@ const EXERCISE_MEDIA = {
   "cable-crunch": { t: "svg", n: 3 },
   "cable-curl": { t: "svg", n: 3 },
   "cable-lateral-raise": { t: "svg", n: 3 },
-  "cable-row": { t: "svg", n: 3 },
   "calf-raise": { t: "svg", n: 3 },
   "chin-up": { t: "svg", n: 3 },
   "close-grip-bench": { t: "svg", n: 3 },

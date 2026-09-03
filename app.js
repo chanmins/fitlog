@@ -233,6 +233,11 @@ const APP_VERSION = (() => {
 
     /* '＋ 부위' 로 여는 부위 선택 시트 */
     partSheet: false,
+    /* 부위를 고르는 중일 때의 '아직 확정 안 된' 목록. null 이면 고르는 중이
+       아니고, 화면은 session.parts 를 그대로 보여 줍니다. 운동 피커의
+       pickSelection 과 같은 방식입니다 — 누르는 즉시 반영되면, 부위를 잘못
+       눌렀을 때 그 부위에 딸린 기록까지 지울지 묻는 대화가 곧바로 뜹니다. */
+    partSelection: null,
 
     /* 방금 마지막 세트를 채운 운동 — 접히기 전 잠깐 더 펼쳐 두는 유예. */
     justCompletedExId: null,
@@ -1601,6 +1606,9 @@ const APP_VERSION = (() => {
     state.customName = '';
     state.routineSheet = false;
     state.partSheet = false;
+    /* 확정하지 않고 시트를 닫으면 고르던 것은 버립니다 — 운동 피커의
+       pickSelection 과 같습니다. */
+    state.partSelection = null;
     /* routineEdit 는 시트가 아니라 화면이므로 여기서 닫지 않습니다 —
        운동을 고르고 나면 만들던 자리로 돌아와야 합니다. */
     state.exerciseInfoId = null;
@@ -2709,12 +2717,42 @@ const APP_VERSION = (() => {
 
   /* 8칸 부위 그리드. 아직 부위를 안 고른 날의 본문이자, 고르고 난 뒤에는
      '＋ 부위' 시트의 내용물입니다 — 같은 그리드를 두 곳에서 씁니다. */
+  /* 지금 화면에 '켜져 있다' 고 보여 줄 부위 목록. 고르는 중이면 확정 전
+     선택을, 아니면 실제로 저장된 부위를 씁니다. */
+  function stagedParts(s) {
+    return state.partSelection || s.parts;
+  }
+  function partsDirty(s) {
+    if (!state.partSelection) return false;
+    const a = state.partSelection.slice().sort().join(',');
+    const b = s.parts.slice().sort().join(',');
+    return a !== b;
+  }
+
+  /* 고른 것을 실제로 반영하는 버튼. 바뀐 게 없으면 눌러도 할 일이 없으므로
+     비활성으로 두고, 무엇이 일어날지를 그대로 적습니다 — '3개 부위 추가' 와
+     '1개 빼기' 는 결과가 아주 다른데 버튼이 '확인' 하나면 알 수 없습니다. */
+  function renderPartConfirm(s) {
+    const next = stagedParts(s);
+    const added = next.filter(id => !s.parts.includes(id)).length;
+    const removed = s.parts.filter(id => !next.includes(id)).length;
+    if (!added && !removed) {
+      return `<button class="picker-confirm ghost" disabled>부위를 선택해 주세요</button>`;
+    }
+    const bits = [];
+    if (added) bits.push(`${added}개 추가`);
+    if (removed) bits.push(`${removed}개 빼기`);
+    return `<button class="picker-confirm" data-act="commit-parts">${bits.join(' · ')}</button>`;
+  }
+
   function renderPartTiles(s) {
+    const staged = stagedParts(s);
     return PARTS.map(p => {
-      const on = s.parts.includes(p.id);
+      const on = staged.includes(p.id);
       const count = p.kind === 'weight' ? s.exercises.filter(e => e.part === p.id).length : 0;
-      const sub = on
-        ? (p.kind === 'weight' ? `${count}개 운동` : '기록 중')
+      const isNew = on && !s.parts.includes(p.id);
+      const sub = isNew ? '추가 예정'
+        : on ? (p.kind === 'weight' ? `${count}개 운동` : '기록 중')
         : '탭하여 추가';
       return `<button class="part-tile${on?' on':''}" style="--pt-color:${p.color}" data-act="toggle-part" data-part="${p.id}">
         <span class="pt-check"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
@@ -2757,7 +2795,8 @@ const APP_VERSION = (() => {
           </button>
         </div>
         <div class="part-grid">${renderPartTiles(s)}</div>
-        <button class="btn-ghost" style="margin-top:14px" data-act="open-routines">
+        <div style="margin-top:14px">${renderPartConfirm(s)}</div>
+        <button class="btn-ghost" style="margin-top:10px" data-act="open-routines">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
           루틴 불러오기${state.routines.length ? ` (${state.routines.length})` : ''}
         </button>
@@ -2790,7 +2829,8 @@ const APP_VERSION = (() => {
              루틴${state.routines.length ? ` ${state.routines.length}` : ''}
            </button>
          </div>
-         <div class="part-grid">${renderPartTiles(s)}</div>`;
+         <div class="part-grid">${renderPartTiles(s)}</div>
+         <div style="margin-top:12px">${renderPartConfirm(s)}</div>`;
 
     let blocks = '';
 
@@ -3171,12 +3211,17 @@ const APP_VERSION = (() => {
       /* .set-swipe 가 실제 목록 항목의 경계입니다 — 왼쪽으로 밀면 뒤에 깔린
          빨간 삭제 버튼이 드러납니다. 원래 있던 작은 X 버튼은 없앴습니다 —
          이제 지우는 길은 스와이프 하나뿐입니다. */
-      return `<div class="set-swipe" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}">
+      /* 등장 애니메이션은 .set-row 가 아니라 이 바깥 상자에 붙입니다.
+         .set-row 는 뒤에 깔린 빨간 '삭제' 버튼을 덮어 가리는 뚜껑인데,
+         거기에 opacity 0 → 1 을 걸면 뚜껑이 투명한 동안 빨간 버튼이 그대로
+         비쳐 보입니다. 세트를 추가할 때마다 완료 버튼 자리에 빨간 것이
+         번쩍이던 것이 이것이었습니다. */
+      return `<div class="set-swipe${enter}" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}">
         <button class="set-swipe-action" data-act="del-set" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="세트 삭제">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
           <span>삭제</span>
         </button>
-        <div class="set-row${done?' done':''}${warmup?' warmup':''}${hold?' hold':''}${enter}" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}">
+        <div class="set-row${done?' done':''}${warmup?' warmup':''}${hold?' hold':''}" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}">
         <button class="set-num${warmup?' warmup':''}" data-act="toggle-warmup" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}" aria-label="웜업 세트로 전환" title="탭하면 웜업/일반 세트 전환">${label}</button>
         ${hold ? '' : `<button class="val-chip${done?' done':''}" data-act="open-weight" data-ex="${esc(ex.id)}" data-set="${esc(set.id)}">
           <span class="val-chip-num">${kg}</span>
@@ -3416,7 +3461,10 @@ const APP_VERSION = (() => {
              `<img class="ex-photo-img" src="./media/${esc(libEx.id)}-${i + 1}.${esc(media.t)}"
                    alt="${esc(libEx.name)} 동작 ${i + 1}" decoding="sync">`).join('')}
          </div>`
-      : '';
+      /* 그림이 아직 없는 운동(머신 라이브러리)은 빈 자리를 그냥 두지 않고
+         한 줄로 말해 줍니다. 아무 말도 없으면 "왜 이것만 그림이 없지 —
+         고장인가" 가 되고, 그 질문에 답할 방법이 화면에 없습니다. */
+      : `<p class="ex-photo-none">동작 그림은 준비 중입니다. 아래 근육 지도와 팁을 참고하세요.</p>`;
 
     return `<div class="sheet-backdrop${overlayIn(`info:${exId}`)}">
       <div class="sheet-panel">
@@ -4957,6 +5005,15 @@ const APP_VERSION = (() => {
           el.style.marginTop = '0px';
           el.style.marginBottom = '0px';
           el.style.opacity = '0';
+          /* 안쪽 여백과 테두리도 같이 걷어야 합니다.
+             box-sizing 이 border-box 라 height:0 은 '내용 높이 0' 일 뿐,
+             운동 카드의 padding 15px 두 겹과 테두리 1px 두 겹은 그대로
+             남습니다. 그래서 카드가 32px 에서 멈춰 있다가 렌더가 끝나는
+             순간 사라졌고, 그 마지막 32px 이 툭 끊기는 것으로 보였습니다. */
+          el.style.paddingTop = '0px';
+          el.style.paddingBottom = '0px';
+          el.style.borderTopWidth = '0px';
+          el.style.borderBottomWidth = '0px';
         });
       });
       setTimeout(resolve, 220);
@@ -5461,7 +5518,8 @@ const APP_VERSION = (() => {
       return;
     }
     if (act === 'start-part') { await handleStartPart(btn.dataset.part); return; }
-    if (act === 'toggle-part') { await handleTogglePart(btn.dataset.part); return; }
+    if (act === 'toggle-part') { handleTogglePart(btn.dataset.part); return; }
+    if (act === 'commit-parts') { await handleCommitParts(); return; }
     if (act === 'delete-day') { await handleDeleteDay(); return; }
     if (act === 'export') { await exportJson(); return; }
     if (act === 'import') { importInput.click(); return; }
@@ -6044,24 +6102,48 @@ const APP_VERSION = (() => {
     render();
   }
 
-  async function handleTogglePart(partId) {
+  /* 타일을 누르면 '고르기' 만 합니다. 실제 반영은 아래 버튼(commit-parts)이
+     합니다. 예전에는 누르는 즉시 반영돼서, 부위를 잘못 누르면 그 자리에서
+     "이 부위 기록도 지울까요?" 가 떴습니다 — 고르는 중인 사람에게 되돌릴 수
+     없는 질문을 던지는 셈이었습니다. 이제 고르는 동안에는 아무것도 사라지지
+     않고, 지울 것이 있으면 확정하는 순간 한 번만 묻습니다. */
+  function handleTogglePart(partId) {
     const s = state.session;
-    const on = s.parts.includes(partId);
-    if (on) {
-      const hasEx = s.exercises.some(e=>e.part===partId);
-      const runBusy = partId === 'run' && hasRunData(s.run);
-      if (hasEx || runBusy) {
-        if (!await ask({ title: '이 부위 기록도 지울까요?',
-                         body: '부위를 해제하면 그 부위에 기록한 운동이 함께 사라집니다.',
-                         confirmText: '지우기', danger: true })) return;
-        s.exercises = s.exercises.filter(e=>e.part!==partId);
-        if (partId === 'run') s.run = { km:'', minutes:'', notes:'' };
-      }
-      s.parts = s.parts.filter(id=>id!==partId);
-    } else {
-      s.parts.push(partId);
+    const next = stagedParts(s).slice();
+    const i = next.indexOf(partId);
+    if (i === -1) next.push(partId); else next.splice(i, 1);
+    state.partSelection = next;
+    render();
+  }
+
+  async function handleCommitParts() {
+    const s = state.session;
+    const next = state.partSelection;
+    if (!next) return;
+    const removed = s.parts.filter(id => !next.includes(id));
+
+    /* 빼는 부위 중 실제로 기록이 들어 있는 것만 묻습니다. 비어 있는 부위를
+       빼는 데까지 확인을 받으면, 잘못 눌렀다 되돌리는 흔한 동작이 매번
+       대화 상자를 지나가야 합니다. */
+    const losing = removed.filter(id =>
+      s.exercises.some(e => e.part === id) || (id === 'run' && hasRunData(s.run)));
+    if (losing.length) {
+      const names = losing.map(id => (PARTS.find(p => p.id === id) || {}).label || id).join(', ');
+      if (!await ask({ title: '이 부위 기록도 지울까요?',
+                       body: `${names} — 부위를 빼면 그 부위에 기록한 운동이 함께 사라집니다.`,
+                       confirmText: '지우기', danger: true })) return;
     }
-    await persist(); render();
+    for (const id of removed) {
+      s.exercises = s.exercises.filter(e => e.part !== id);
+      if (id === 'run') s.run = { km:'', minutes:'', notes:'' };
+    }
+    /* PARTS 순서를 따릅니다 — 고른 순서대로 두면 같은 조합인데 날마다 화면
+       순서가 달라집니다. */
+    s.parts = PARTS.filter(p => next.includes(p.id)).map(p => p.id);
+    state.partSelection = null;
+    state.partSheet = false;
+    await persist();
+    render();
   }
 
   /* Appends one exercise to the session, pre-filling the first set from the
