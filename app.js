@@ -1771,6 +1771,29 @@ const APP_VERSION = (() => {
     try { renderNow(); } finally { commitOverlays(); }
   }
 
+  /* ── 부드럽게 바꾸기 ─────────────────────────────────────────────────────
+     화면 내용이 '크게' 바뀌는 순간에만 씁니다 — 부위를 확정해서 그리드가
+     운동 목록으로 바뀔 때처럼, 앞뒤가 서로 다른 화면인 경우입니다.
+
+     브라우저의 View Transition 이 바뀌기 직전 화면을 찍어 두었다가 새 화면과
+     겹쳐 넘겨 줍니다. render() 가 innerHTML 을 통째로 갈아 끼우는 구조에
+     정확히 맞는 도구입니다 — 우리가 무엇이 사라지고 무엇이 생겼는지 추적할
+     필요가 없습니다.
+
+     모든 render() 에 걸지 않는 이유가 중요합니다. 세트를 하나 체크할 때마다
+     화면 전체가 0.26초씩 겹쳐 넘어가면, 그건 v79 에서 걷어낸 그 깜빡임과
+     똑같은 것이 이름만 바꿔 돌아온 것입니다. 그래서 '화면이 바뀌었다' 고 할
+     만한 동작에만 손으로 붙입니다.
+
+     지원하지 않는 브라우저(사파리 17 이하 등)에서는 그냥 지금까지처럼
+     즉시 바뀝니다 — 없으면 없는 대로 동작합니다. */
+  function softRender() {
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce || typeof document.startViewTransition !== 'function') { render(); return; }
+    try { document.startViewTransition(() => render()); }
+    catch (_) { render(); }
+  }
+
   function renderNow() {
     /* 매 렌더마다 DOM 을 통째로 새로 그리므로, 스와이프로 열어 둔 세트나
        진행 중이던 드래그가 가리키던 노드는 더 이상 존재하지 않습니다.
@@ -1784,18 +1807,18 @@ const APP_VERSION = (() => {
        덮습니다. 타이핑 중에는 render() 가 아니라 결과 목록만 갈아 끼우므로
        (아래 search-log 참고) 정작 캐시가 필요한 구간에서는 살아 있습니다. */
     invalidateExIndex();
-    if (!state.authReady) { appEl.innerHTML = renderSplash(); return; }
+    if (!state.authReady) { appEl.innerHTML = renderSplash(); paintNav(false); return; }
     if (!state.user && !state.guest) {
       appEl.innerHTML = (state.authMode === 'signup' ? renderSignup()
                       : state.authMode === 'reset'  ? renderReset()
                       : renderLogin())
                       + (state.yearPicker ? renderYearPickerSheet() : '');
-      bindEvents(); positionYearWheel(); return;
+      paintNav(false); bindEvents(); positionYearWheel(); return;
     }
     /* Signed in but no 아이디 yet — finish setting the account up first. */
     if (state.user && state.onboarding) {
       appEl.innerHTML = renderOnboarding() + (state.yearPicker ? renderYearPickerSheet() : '');
-      bindEvents(); positionYearWheel(); return;
+      paintNav(false); bindEvents(); positionYearWheel(); return;
     }
 
     let html = '';
@@ -1823,7 +1846,6 @@ const APP_VERSION = (() => {
     if (state.routineSheet)   html += renderRoutineSheet();
     if (state.routineEdit)    html += renderRoutineEditor();
 
-    html += renderBottomNav();
     /* 전체 화면들은 전부 z-index 45 라 DOM 순서가 곧 쌓이는 순서입니다.
        검색 → 운동 이력 → 하루 요약 순으로 붙여야, 검색에서 운동을 열고 거기서
        날짜를 눌렀을 때 마지막에 연 것이 맨 위에 옵니다. */
@@ -1833,6 +1855,7 @@ const APP_VERSION = (() => {
        workout screen without any of them needing to know about it. */
     if (state.summaryDate) html += renderDaySummary(state.summaryDate);
     appEl.innerHTML = html;
+    paintNav(true);
     bindEvents();
     positionYearWheel();
     syncOverlayScroll();
@@ -2387,7 +2410,53 @@ const APP_VERSION = (() => {
   }
 
   /* ── Bottom Nav ───────────────────────────── */
-  function renderBottomNav() {
+  /* ── 하단 탭 ──────────────────────────────────────────────────────────────
+     탭 바는 #app 안이 아니라 <body> 에 직접 붙입니다.
+
+     render() 가 #app 을 통째로 갈아 끼우기 때문에, 탭 바가 그 안에 있으면
+     탭을 옮길 때마다 바가 통째로 새로 만들어집니다. 새로 만들어진 요소에는
+     '직전 위치' 가 없고 CSS 전환은 값이 바뀌어야 걸리므로, 강조 표시가
+     미끄러질 방법이 아예 없었습니다 — 매번 새 자리에 그냥 나타날 뿐이었죠.
+
+     body 에 한 번만 만들어 두면 그 요소가 계속 살아 있으므로, 자리만 바꿔
+     주면 브라우저가 그 사이를 채웁니다. 휴식 타이머 바를 body 에 둔 것과
+     같은 이유입니다. */
+  let navEl = null;
+
+  function ensureNavEl() {
+    if (navEl && navEl.isConnected) return navEl;
+    navEl = document.createElement('nav');
+    navEl.className = 'bottom-nav no-anim';
+    navEl.innerHTML = '<span class="nav-pill" aria-hidden="true"></span>' + navTabsHtml();
+    /* 클릭은 #app 에 묶여 있는데 이 바는 그 밖에 있으므로 따로 받아 넘깁니다.
+       같은 onClick 이라 data-act 처리 규칙은 완전히 같습니다. */
+    navEl.onclick = onClick;
+    document.body.appendChild(navEl);
+    /* 첫 그리기에서는 미끄러지면 안 됩니다 — 앱을 열자마자 알약이 왼쪽에서
+       현재 탭까지 날아오면 전환이 아니라 오작동으로 보입니다. */
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      try { navEl.classList.remove('no-anim'); } catch (_) {}
+    }));
+    return navEl;
+  }
+
+  /* render() 끝에서 부릅니다. DOM 을 다시 만들지 않고 상태만 칠합니다 —
+     다시 만들면 위에 적은 이유로 미끄러짐이 사라집니다. */
+  function paintNav(show) {
+    const el = ensureNavEl();
+    el.hidden = !show;
+    document.body.classList.toggle('has-nav', !!show);
+    if (!show) return;
+    const i = Math.max(0, TAB_ORDER.indexOf(state.tab));
+    el.style.setProperty('--nav-i', String(i));
+    el.querySelectorAll('.nav-tab').forEach((b, n) => {
+      const on = n === i;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-current', on ? 'page' : 'false');
+    });
+  }
+
+  function navTabsHtml() {
     const tabs = [
       { id:'home',     label:'홈',
         icon:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>` },
@@ -2398,10 +2467,12 @@ const APP_VERSION = (() => {
       { id:'settings', label:'설정',
         icon:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>` },
     ];
-    return `<nav class="bottom-nav">${tabs.map(t=>`
-      <button class="nav-tab${state.tab===t.id?' active':''}" data-act="go-tab" data-tab="${t.id}">
+    /* 순서는 TAB_ORDER 와 반드시 같아야 합니다 — 알약 위치를 그 인덱스로
+       계산하므로, 여기서만 순서를 바꾸면 알약이 엉뚱한 탭에 앉습니다. */
+    return tabs.map(t=>`
+      <button class="nav-tab" data-act="go-tab" data-tab="${t.id}">
         ${t.icon}<span>${t.label}</span>
-      </button>`).join('')}</nav>`;
+      </button>`).join('');
   }
 
   /* ── Training balance ─────────────────────────────────────────────────────
@@ -6143,7 +6214,9 @@ const APP_VERSION = (() => {
     state.partSelection = null;
     state.partSheet = false;
     await persist();
-    render();
+    /* 부위 그리드가 통째로 운동 목록으로 바뀌는 자리 — 앞뒤가 다른 화면이라
+       겹쳐 넘기는 편이 읽기 쉽습니다. */
+    softRender();
   }
 
   /* Appends one exercise to the session, pre-filling the first set from the
@@ -6424,7 +6497,9 @@ const APP_VERSION = (() => {
     await persist();
     state.routineSheet = false;
     state.tab = 'workout';
-    render();
+    /* 루틴을 적용하면 빈 화면이 운동 목록으로 통째로 바뀝니다 — 부위 확정과
+       같은 종류의 전환입니다. */
+    softRender();
     toast(added ? `${r.name} — ${added}개 운동을 담았습니다` : '이미 다 담겨 있습니다');
   }
 
