@@ -116,12 +116,6 @@ const APP_VERSION = (() => {
     applyTheme();
   }
 
-  /* 로그아웃 상태에서 가리키는 저장소 이름입니다.
-     손님 모드는 없앴지만 이름은 'guest' 그대로 둡니다 — 바꾸면 계정이 생기기
-     전에 이 기기에 쌓인 기록(fitlog-guest)을 더 이상 찾을 수 없게 되는데,
-     그 기록이 바로 로그인 후 홈에 뜨는 '가져오기' 의 원본입니다. */
-  const SIGNED_OUT_SCOPE = 'guest';
-
   /* ── State ──────────────────────────────── */
   const state = {
     tab: 'home',
@@ -137,12 +131,11 @@ const APP_VERSION = (() => {
     exerciseInfoId: null,
     weightPicker: null,   /* { exId, setId, str, fresh } */
     repsPicker:   null,   /* { exId, setId, str, fresh } */
-    /* 히스토리 몸무게 그래프에서 짚어 고른 날짜 — 수정·지우기의 대상 */
-    weightPicked: null,
 
-    /* Auth — 손님 모드는 없습니다. 로그인한 계정으로만 앱에 들어옵니다. */
+    /* Auth */
     authReady: false,
     user: null,
+    guest: false,
     /* 기기 저장이 실패한 적이 있는지 — 같은 경고를 반복하지 않으려고 둡니다. */
     saveBroken: false,
     /* 피커에서 '나만의 운동 직접 추가' 칸에 적고 있는 이름 */
@@ -964,23 +957,9 @@ const APP_VERSION = (() => {
 
   /* ── Persist queue ──────────────────────── */
   let _pq = Promise.resolve();
-  /* 디스크에 실제로 쓴 횟수. 백그라운드 동기화가 "내가 목록을 읽은 뒤에
-     사용자가 저장을 눌렀는가" 를 알아보는 데 씁니다. */
-  let saveSeq = 0;
   function persist() {
     _pq = _pq.then(doSave, doSave);
     return _pq;
-  }
-  /* 줄 서 있는 저장이 끝나기만 기다립니다 — 새 저장을 넣지 않습니다.
-
-     예전에는 이 자리에도 persist() 를 썼습니다. 그런데 persist() 는 과거
-     기록을 고치는 중이면 doSave 에서 곧바로 '저장하지 않은 변경이 있습니다'
-     로 표시하고 돌아갑니다. 그래서 사용자가 아무것도 건드리지 않았는데도
-     — 앱을 열자마자 도는 동기화나 당겨서 새로고침만으로 — 그 안내 바가
-     저절로 떠올랐고, 방금 저장을 누른 직후에도 다시 떠서 저장이 안 된 것처럼
-     보였습니다. 큐를 비우는 것과 '사용자가 뭔가 바꿨다' 는 다른 일입니다. */
-  function flushSaves() {
-    return _pq.catch(() => {});
   }
   /* Fire-and-forget. The local IndexedDB write has already succeeded by the time
      this runs, so a slow or unreachable Firestore must never block the UI. */
@@ -1004,7 +983,6 @@ const APP_VERSION = (() => {
     if (state.editingPast) { state.pastDirty = true; paintPastBar(); return; }
     if (!worthSaving(s)) {
       await WorkoutDB.deleteSession(s.date);
-      saveSeq++;
       state.sessions = state.sessions.filter(x => x.date !== s.date);
       await cloudSync(() => Cloud.deleteSession(s.date));
       return;
@@ -1017,14 +995,13 @@ const APP_VERSION = (() => {
        사용자는 90분을 채우고 앱을 닫은 뒤에야 알게 됩니다. */
     try {
       await WorkoutDB.putSession(clone(s));
-      saveSeq++;
       state.saveBroken = false;
     } catch (err) {
       console.warn('save failed', err);
       /* 매번 띄우면 세트를 누를 때마다 토스트가 뜹니다 — 한 번만 알립니다. */
       if (!state.saveBroken) {
         state.saveBroken = true;
-        toast('저장 공간을 확인해 주세요', true);
+        toast('저장에 실패했습니다 — 기기 저장 공간을 확인해 주세요');
       }
       throw err;
     }
@@ -1092,13 +1069,8 @@ const APP_VERSION = (() => {
   /* ask 와 같은 모양이되 한 줄을 받아 오는 대화상자. 브라우저 기본
      window.prompt 은 ask 를 걷어낸 이유와 똑같은 문제를 갖고 있어 쓰지
      않습니다. */
-  /* opts.dateValue 를 주면 날짜 칸이 하나 더 붙고, 결과가 문자열 대신
-     { text, date } 로 돌아옵니다. 몸무게를 '어느 날' 것으로 적을지 고를 수
-     있어야 해서 붙였습니다 — 예전에는 무조건 오늘로만 저장돼서, 어제 잰 것을
-     적을 방법도 잘못 적은 것을 고칠 방법도 없었습니다. */
   function promptText(opts) {
     const o = opts || {};
-    const withDate = !!o.dateValue;
     return new Promise(resolve => {
       const wrap = document.createElement('div');
       wrap.className = 'dialog-backdrop';
@@ -1106,8 +1078,6 @@ const APP_VERSION = (() => {
         <div class="dialog" role="dialog" aria-modal="true">
           <div class="dialog-title">${esc(o.title || '입력')}</div>
           ${o.message ? `<div class="dialog-body">${esc(o.message)}</div>` : ''}
-          ${withDate ? `<input class="dialog-input dialog-date" type="date" aria-label="날짜"
-                 value="${esc(o.dateValue)}"${o.dateMax ? ` max="${esc(o.dateMax)}"` : ''}>` : ''}
           <input class="dialog-input" type="text" maxlength="40"
                  value="${esc(o.value || '')}" placeholder="${esc(o.placeholder || '')}">
           <div class="dialog-actions">
@@ -1115,8 +1085,7 @@ const APP_VERSION = (() => {
             <button class="dialog-btn go" data-v="1">${esc(o.confirmText || '저장')}</button>
           </div>
         </div>`;
-      const dateEl = withDate ? wrap.querySelector('.dialog-date') : null;
-      const input = wrap.querySelector('.dialog-input:not(.dialog-date)');
+      const input = wrap.querySelector('.dialog-input');
       let settled = false;
       const close = (val) => {
         if (settled) return;
@@ -1126,11 +1095,7 @@ const APP_VERSION = (() => {
         document.removeEventListener('keydown', onKey);
         resolve(val);
       };
-      const submit = () => {
-        const text = input.value.trim();
-        if (!withDate) { close(text || null); return; }
-        close(text ? { text, date: (dateEl.value || o.dateValue) } : null);
-      };
+      const submit = () => close(input.value.trim() || null);
       const onKey = (e) => {
         if (e.key === 'Escape') close(null);
         if (e.key === 'Enter' && document.activeElement === input) submit();
@@ -1176,29 +1141,22 @@ const APP_VERSION = (() => {
     });
   }
 
-  /* ── Toast ────────────────────────────────────────────────────────────────
-     bad:true 면 빨간 점이 붙고 조금 더 오래 남습니다 — 잘된 알림과 안 된
-     알림이 똑같이 생기면 지나가는 동안 구분할 방법이 없습니다.
-
-     문구는 다른 앱에서 쓰는 말을 그대로 씁니다 — '저장에 실패했습니다',
-     '네트워크 연결을 확인해 주세요'. 스쳐 지나가는 알림은 읽는 게 아니라
-     알아보는 것이라, 처음 보는 표현이면 그 짧은 순간에 해석을 해야 합니다. */
-  function toast(msg, bad) {
+  /* ── Toast ──────────────────────────────── */
+  function toast(msg) {
     state.toast = msg;
     clearTimeout(state.toastTimer);
-    let el = document.querySelector('.toast');
-    if (!el) {
-      el = document.createElement('div');
-      document.body.appendChild(el);
+    const el = document.querySelector('.toast');
+    if (el) el.textContent = msg;
+    else {
+      const t = document.createElement('div');
+      t.className = 'toast';
+      t.textContent = msg;
+      document.body.appendChild(t);
     }
-    /* 이미 떠 있는 알림을 재사용할 때 className 도 같이 바꿉니다 — 안 그러면
-       성공 알림 바로 뒤에 온 실패 알림이 성공 차림새로 뜹니다. */
-    el.className = 'toast' + (bad ? ' is-bad' : '');
-    el.textContent = msg;
     state.toastTimer = setTimeout(() => {
       document.querySelector('.toast')?.remove();
       state.toast = '';
-    }, bad ? 2600 : 1800);
+    }, 1800);
   }
 
   /* ── Number pad buffer ────────────────────────────────────────────────────
@@ -1647,9 +1605,6 @@ const APP_VERSION = (() => {
        운동을 고르고 나면 만들던 자리로 돌아와야 합니다. */
     state.exerciseInfoId = null;
     state.weightPicker = null;
-    /* 그래프에서 짚어 둔 날짜도 놓습니다 — 화면을 떠났다 돌아왔는데 예전에
-       고른 점이 그대로 선택돼 있으면, 무심코 '지우기' 를 누를 수 있습니다. */
-    state.weightPicked = null;
     state.repsPicker = null;
     state.yearPicker = null;
     state.profileEditing = false;
@@ -1661,6 +1616,19 @@ const APP_VERSION = (() => {
     const saved = await WorkoutDB.getSession(date);
     state.session = normalizeSession(saved || emptySession(date));
     closeAllSheets();
+    /* 전체 화면으로 뜨는 것들도 같이 닫습니다.
+       loadDay 는 goTab 을 거치지 않고 state.tab 을 직접 바꿉니다. 그래서
+       goTab 에서만 닫으면, 검색 → 운동 이력 → 날짜 → '이 날 기록 편집하기'
+       로 들어왔을 때 편집 화면이 열리긴 하는데 그 위를 이력 화면이 그대로
+       덮고 있습니다. 사용자에게는 편집 버튼이 안 먹은 것처럼 보이고, 뒤로
+       두 번을 눌러야 비로소 편집 화면이 나옵니다. */
+    state.searchOpen = false;
+    state.exHistoryName = null;
+    state.logSearch = '';
+    state.summaryDate = null;
+    /* 히스토리 달력에서 펼쳐 둔 날짜도 접습니다 — 다른 날을 편집하러 들어온
+       뒤에 히스토리로 돌아가면 엉뚱한 날이 펼쳐진 채로 있습니다. */
+    state.histDay = null;
     state.tab = 'workout';
 
     /* A past day is edited against a snapshot, so 취소 has something to put
@@ -1734,25 +1702,11 @@ const APP_VERSION = (() => {
     /* Drop the hold, then run the normal save path so the record goes through
        exactly the same write and cloud sync as any other. */
     state.editingPast = false;
-    try {
-      await persist();
-    } catch (err) {
-      /* 저장이 실패했는데 편집 모드만 풀리면, 안내 바가 사라져서 저장된 것처럼
-         보입니다. 실패는 실패로 되돌려 놓고 그대로 말합니다 — 사용자가 다시
-         누를 수 있어야 하고, 그 전에 화면을 떠나면 물어봐야 합니다. */
-      console.warn('past save failed', err);
-      state.editingPast = true;
-      state.pastDirty = true;
-      render();
-      toast('저장에 실패했습니다', true);
-      return;
-    }
+    await persist();
     state.sessions = await WorkoutDB.getAllSessions();
     state.pastDirty = false;
     state.pastBaseline = JSON.stringify(state.session);
     state.editingPast = true;      // stay in edit mode, now clean
-    /* 이 시점부터 메모리와 디스크가 같습니다. overlayOpenSession 이 그것을
-       근거로 이 기록을 백그라운드 동기화의 낡은 스냅샷으로부터 지킵니다. */
     render();
     toast('기록을 저장했습니다');
   }
@@ -1775,7 +1729,41 @@ const APP_VERSION = (() => {
 
 
   /* ── Render Root ──────────────────────────── */
+
+  /* ── 열릴 때만 움직이기 ───────────────────────────────────────────────────
+     render() 는 #app 을 innerHTML 로 통째로 갈아 끼웁니다. 그래서 시트가 떠
+     있는 동안 부위를 하나 고르거나 세트를 하나 체크하면, 그 시트의 DOM 도
+     새로 만들어지고 CSS 진입 애니메이션(fadeIn, sheetUp, detail-in)이 처음
+     부터 다시 재생됩니다 — 화면에는 시트가 아래로 쑥 내려갔다 다시 올라오는
+     것으로 보입니다. 부위를 고를 때마다, 운동을 고를 때마다 그랬습니다.
+
+     그래서 애니메이션 클래스를 '이번 렌더에서 처음 열린' 것에만 붙입니다.
+     지난 렌더에 무엇이 열려 있었는지를 들고 있다가 대조합니다. 키에 대상까지
+     넣는 이유는(info:벤치프레스), 시트는 그대로인데 안의 내용만 바뀐 경우와
+     정말 다른 시트가 열린 경우를 구분해야 하기 때문입니다.
+
+     세트 추가(.set-row.enter)가 이미 같은 방식으로 한 번만 재생됩니다. */
+  let _openOverlays = new Set();
+  let _renderOverlays = null;
+  function overlayIn(key) {
+    if (!_renderOverlays) _renderOverlays = new Set();
+    _renderOverlays.add(key);
+    return _openOverlays.has(key) ? '' : ' anim-in';
+  }
+  function commitOverlays() {
+    _openOverlays = _renderOverlays || new Set();
+    _renderOverlays = null;
+  }
+
+  /* render() 는 이른 return 이 여럿이라 커밋을 빠뜨리기 쉽습니다. 한 군데를
+     놓치면 그 화면의 시트가 다시는 애니메이션을 안 하거나 매번 다시 하는데,
+     둘 다 원인을 짚기 어려운 종류입니다. finally 로 감싸 두면 어느 길로
+     나가든 반드시 지나갑니다. */
   function render() {
+    try { renderNow(); } finally { commitOverlays(); }
+  }
+
+  function renderNow() {
     /* 매 렌더마다 DOM 을 통째로 새로 그리므로, 스와이프로 열어 둔 세트나
        진행 중이던 드래그가 가리키던 노드는 더 이상 존재하지 않습니다.
        참조를 들고 있으면 다음 동작에서 죽은 노드를 건드리게 되니 비워 둡니다. */
@@ -1789,7 +1777,7 @@ const APP_VERSION = (() => {
        (아래 search-log 참고) 정작 캐시가 필요한 구간에서는 살아 있습니다. */
     invalidateExIndex();
     if (!state.authReady) { appEl.innerHTML = renderSplash(); return; }
-    if (!state.user) {
+    if (!state.user && !state.guest) {
       appEl.innerHTML = (state.authMode === 'signup' ? renderSignup()
                       : state.authMode === 'reset'  ? renderReset()
                       : renderLogin())
@@ -2167,7 +2155,7 @@ const APP_VERSION = (() => {
     const s = state.signup;
     const genders = [['male','남성'],['female','여성']];
     const uname = state.profile?.username || '';
-    return `<div class="sheet-backdrop">
+    return `<div class="sheet-backdrop${overlayIn('profile')}">
       <div class="sheet-panel" id="sheet-profile">
         <div class="sheet-grab"></div>
         <div class="sheet-head">
@@ -2252,7 +2240,7 @@ const APP_VERSION = (() => {
     const sel = Number(state.yearPicker) || 0;
     const years = yearList();
     const age = sel ? (new Date().getFullYear() - sel) : null;
-    return `<div class="sheet-backdrop">
+    return `<div class="sheet-backdrop${overlayIn('year')}">
       <div class="sheet-panel" id="sheet-year">
         <div class="sheet-grab"></div>
         <div class="sheet-head">
@@ -2759,7 +2747,7 @@ const APP_VERSION = (() => {
   function renderPartSheet() {
     const s = state.session;
     if (!s) return '';
-    return `<div class="sheet-backdrop">
+    return `<div class="sheet-backdrop${overlayIn('part')}">
       <div class="sheet-panel">
         <div class="sheet-grab"></div>
         <div class="sheet-head">
@@ -2780,7 +2768,7 @@ const APP_VERSION = (() => {
   /* ── Workout Tab ──────────────────────────── */
   function renderWorkout() {
     const s = state.session;
-    if (!s) return `<header class="topbar"><div class="topbar-brand">FIT<span>LOG</span></div></header>
+    if (!s) return `<header class="topbar"><div class="topbar-title">기록</div></header>
       <main class="screen${navDir ? ' nav-' + navDir : ''}"><div class="empty-state"><div class="empty-icon">🏋️</div>오늘의 운동을 시작하세요</div>
       <button class="btn-hero" data-act="today">오늘 기록 시작하기</button></main>`;
 
@@ -2926,14 +2914,15 @@ const APP_VERSION = (() => {
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
           운동 마치기
         </button>
-        <p class="finish-note">${state.editingPast
-          ? '지난 날 기록은 아래 <b>저장</b>을 눌러야 반영됩니다.'
-          : '입력하는 즉시 저장되니 도중에 나가도 사라지지 않아요.'}</p>
+        <p class="finish-note">입력하는 즉시 저장되니 도중에 나가도 사라지지 않아요.</p>
       </div>`);
 
     return `
       <header class="topbar">
-        <div class="topbar-brand">FIT<span>LOG</span></div>
+        <button class="btn-icon ghost" data-act="go-tab" data-tab="home" aria-label="홈으로">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <div class="topbar-title">운동 기록</div>
         <div class="topbar-spacer"></div>
         ${isToday ? '' : `<button class="btn-today" data-act="today">오늘로</button>`}
       </header>
@@ -3074,7 +3063,7 @@ const APP_VERSION = (() => {
   function renderDaySummary(date) {
     const s = findDay(date);
     if (!s) return '';
-    return `<div class="detail-screen">
+    return `<div class="detail-screen${overlayIn(`day:${date}`)}">
       <header class="topbar">
         <button class="btn-icon ghost" data-act="close-summary" aria-label="닫기">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -3257,7 +3246,7 @@ const APP_VERSION = (() => {
         return `<button class="${cls}" data-act="${act}" data-d="${k}">${k}</button>`;
       }).join('')}</div>`
     ).join('');
-    return `<div class="sheet-backdrop">
+    return `<div class="sheet-backdrop${overlayIn('weight')}">
       <div class="sheet-panel" id="sheet-weight">
         <div class="sheet-grab"></div>
         <div class="sheet-head">
@@ -3295,7 +3284,7 @@ const APP_VERSION = (() => {
         return `<button class="${cls}" data-act="${act}" data-d="${k}">${k}</button>`;
       }).join('')}</div>`
     ).join('');
-    return `<div class="sheet-backdrop">
+    return `<div class="sheet-backdrop${overlayIn('reps')}">
       <div class="sheet-panel" id="sheet-reps">
         <div class="sheet-grab"></div>
         <div class="sheet-head">
@@ -3429,7 +3418,7 @@ const APP_VERSION = (() => {
          </div>`
       : '';
 
-    return `<div class="sheet-backdrop">
+    return `<div class="sheet-backdrop${overlayIn(`info:${exId}`)}">
       <div class="sheet-panel">
         <div class="sheet-grab"></div>
         <div class="sheet-head">
@@ -3524,7 +3513,7 @@ const APP_VERSION = (() => {
   function renderExercisePickerSheet(partId) {
     const part = PARTS.find(p => p.id === partId);
     const n = state.pickSelection.length;
-    return `<div class="sheet-backdrop">
+    return `<div class="sheet-backdrop${overlayIn(`pick:${partId}`)}">
       <div class="sheet-panel picker-sheet">
         <div class="sheet-grab"></div>
         <div class="sheet-head">
@@ -3807,80 +3796,151 @@ const APP_VERSION = (() => {
      선 그래프를 쓰는 이유: 몸무게는 이어지는 값이라 막대로 끊어 보이면
      하루하루가 별개의 사건처럼 읽힙니다. 그리고 0 부터 그리지 않습니다 —
      80kg 대의 1kg 변화를 0 기준 축에 얹으면 아무 변화도 없어 보입니다. */
-  /* 이 기기에서 지운 날짜들.
-     mergeMetrics 는 이 기기와 클라우드를 '합치기' 만 하므로, 지운 줄이
-     클라우드 사본에 아직 남아 있으면 다음 동기화에서 그대로 되살아납니다
-     (삭제 직후 올리는 saveMetrics 보다 이미 떠 있던 pullAll 이 먼저면
-     반드시 그렇게 됩니다). 지운 사실을 이 세션 동안 기억해서 합치기에서
-     빼 둡니다 — 클라우드 쪽 사본이 갱신되고 나면 더 필요 없어집니다. */
-  const deletedMetricDates = new Set();
-
-  /* 몸무게 한 줄을 적거나 고칩니다.
-     date 를 주면 그 날 것을 고치는 것이고(그래프에서 점을 고른 경우),
-     주지 않으면 오늘 것을 새로 적는 것입니다. 어느 쪽이든 날짜 칸이 함께
-     떠서, 어제 잰 걸 오늘로 적어 버리는 일이 없습니다. */
-  async function openWeightEditor(date) {
-    const editing = !!date;
-    const target = date || todayISO();
-    const existing = state.metrics.find(m => m.date === target);
-    const fallbackKg = editing ? 0
-      : (state.metrics.length ? state.metrics[state.metrics.length - 1].weightKg
-                              : Number(state.profile?.weightKg) || 0);
-    const curKg = existing ? existing.weightKg : fallbackKg;
+  async function handleAddWeight() {
+    const last = state.metrics[state.metrics.length - 1];
+    const curKg = last ? last.weightKg : Number(state.profile?.weightKg) || '';
     const cur = curKg ? toDisplayWeight(curKg) : '';
     const v = await promptText({
-      title: editing ? '몸무게 수정' : '몸무게 기록',
-      message: editing ? '날짜와 몸무게를 바꿀 수 있어요.' : '잰 날짜와 몸무게를 적어 주세요.',
+      title: '몸무게 기록',
+      message: '오늘 몸무게를 적어 주세요.',
       value: cur ? String(cur) : '',
       placeholder: weightUnitLabel(),
-      confirmText: editing ? '저장' : '기록',
-      dateValue: target,
-      dateMax: todayISO(),
+      confirmText: '기록',
     });
     if (!v) return;
     /* 입력은 지금 단위(kg 또는 lb) 그대로 받고, 저장 직전에만 kg 로
        바꿉니다 — state.metrics 는 언제나 kg 입니다. */
-    const disp = Number(String(v.text).replace(/[^0-9.]/g, ''));
+    const disp = Number(String(v).replace(/[^0-9.]/g, ''));
     const kg = fromDisplayWeight(disp);
     if (!Number.isFinite(kg) || kg < 20 || kg > 300) {
-      toast(`${Math.round(toDisplayWeight(20))}~${Math.round(toDisplayWeight(300))}${weightUnitLabel()} 사이로 적어 주세요`, true);
+      toast(`${Math.round(toDisplayWeight(20))}~${Math.round(toDisplayWeight(300))}${weightUnitLabel()} 사이로 적어 주세요`);
       return;
     }
-    const newDate = /^\d{4}-\d{2}-\d{2}$/.test(v.date) ? v.date : target;
-    if (newDate > todayISO()) { toast('오늘 이후 날짜에는 적을 수 없습니다', true); return; }
-    const row = { date: newDate, weightKg: Math.round(kg * 10) / 10 };
-
-    /* 날짜를 옮겼으면 원래 있던 날은 비웁니다 — 안 그러면 한 번의 '수정'
-       가 두 줄이 됩니다. */
-    if (editing && newDate !== target) {
-      await WorkoutDB.deleteMetric(target).catch(() => {});
-      deletedMetricDates.add(target);
-    }
-    deletedMetricDates.delete(newDate);
-    state.metrics = state.metrics
-      .filter(m => m.date !== row.date && !(editing && m.date === target))
-      .concat(row)
+    const row = { date: todayISO(), weightKg: Math.round(kg * 10) / 10 };
+    state.metrics = state.metrics.filter(m => m.date !== row.date).concat(row)
       .sort((a, b) => a.date.localeCompare(b.date));
     await WorkoutDB.putMetric(row);
     cloudSync(() => Cloud.saveMetrics(state.metrics));
-    state.weightPicked = row.date;
     render();
-    toast(`${shortDate(row.date)} ${toDisplayWeight(row.weightKg)}${weightUnitLabel()} 기록했습니다`);
+    toast(`${toDisplayWeight(row.weightKg)}${weightUnitLabel()} 기록했습니다`);
   }
 
-  async function handleDeleteWeight(date) {
-    const row = state.metrics.find(m => m.date === date);
-    if (!row) return;
-    if (!await ask({ title: '이 날 몸무게를 지울까요?',
-                     body: `${longDate(date)} · ${toDisplayWeight(row.weightKg)}${weightUnitLabel()}`,
-                     confirmText: '지우기', danger: true })) return;
-    deletedMetricDates.add(date);
-    state.metrics = state.metrics.filter(m => m.date !== date);
-    state.weightPicked = null;
-    await WorkoutDB.deleteMetric(date);
-    cloudSync(() => Cloud.saveMetrics(state.metrics));
-    render();
-    toast('몸무게 기록을 지웠습니다');
+
+  /* ── 그래프 짚어 보기 ────────────────────────────────────────────────────
+     선 그래프의 점마다 <title> 을 달아 두었지만 그건 마우스를 올려야 뜹니다.
+     폰에는 올릴 마우스가 없어서, 화면에 보이는 숫자는 축에 적힌 최댓값·최솟값
+     둘뿐이었습니다. "8월 12일에 몇 kg 이었지" 는 눈대중해야 했습니다.
+
+     그래서 손가락을 대면 가장 가까운 점을 짚어 값을 띄웁니다. 좌우로 끌면
+     따라옵니다.
+
+     세로 스크롤을 막지 않는 것이 중요합니다 — 그래프가 카드 너비를 다 쓰기
+     때문에, 여기서 스크롤이 안 되면 화면 한가운데에 손가락을 먹는 띠가
+     생깁니다. CSS 의 touch-action: pan-y 가 그 일을 합니다: 세로 제스처는
+     브라우저가 가져가 스크롤하고(그때 pointercancel 이 와서 우리는 물러
+     납니다), 가로 제스처만 우리에게 옵니다.
+
+     말풍선과 세로선은 렌더 템플릿에 넣지 않고 처음 짚을 때 만들어 붙입니다.
+     render() 가 #app 을 통째로 갈아 끼우므로 어차피 매번 사라지고, 덕분에
+     '짚고 있는 중' 이라는 상태가 화면 갱신마다 되살아나는 일도 없습니다. */
+  let _scrub = null;
+
+  function chScrubData(box) {
+    const svg = box.querySelector('svg');
+    const vb = svg && svg.viewBox && svg.viewBox.baseVal;
+    if (!vb || !vb.width) return null;
+    const pts = Array.from(svg.querySelectorAll('circle[data-v]'))
+      .map(c => ({
+        cx: parseFloat(c.getAttribute('cx')),
+        cy: parseFloat(c.getAttribute('cy')),
+        d: c.getAttribute('data-d') || '',
+        v: c.getAttribute('data-v') || '',
+      }))
+      .filter(p => Number.isFinite(p.cx) && Number.isFinite(p.cy));
+    if (!pts.length) return null;
+    return { svg, vbW: vb.width, vbH: vb.height || 1, pts };
+  }
+
+  function chScrubUI(box) {
+    let tip = box.querySelector('.ch-tip');
+    if (!tip) {
+      box.insertAdjacentHTML('beforeend',
+        '<span class="ch-cursor"></span><span class="ch-dot"></span><span class="ch-tip"></span>');
+      tip = box.querySelector('.ch-tip');
+    }
+    return { tip, cur: box.querySelector('.ch-cursor'), dot: box.querySelector('.ch-dot') };
+  }
+
+  function chScrubTo(clientX) {
+    const s = _scrub;
+    if (!s) return;
+    const r = s.svg.getBoundingClientRect();
+    if (!r.width) return;
+    const boxR = s.box.getBoundingClientRect();
+    const offX = r.left - boxR.left, offY = r.top - boxR.top;
+
+    /* 손가락이 점 위에 정확히 있을 필요는 없습니다 — x 로만 가장 가까운 점을
+       고릅니다. 반지름 2.5px 짜리 점을 손끝으로 맞히라고 하면 아무도 못
+       씁니다. */
+    const vx = (clientX - r.left) / r.width * s.vbW;
+    let best = s.pts[0];
+    for (const p of s.pts) if (Math.abs(p.cx - vx) < Math.abs(best.cx - vx)) best = p;
+
+    const px = offX + best.cx / s.vbW * r.width;
+    const py = offY + best.cy / s.vbH * r.height;
+
+    s.cur.style.left = px + 'px';
+    s.dot.style.left = px + 'px';
+    s.dot.style.top = py + 'px';
+    s.tip.innerHTML = '<b>' + esc(best.v) + '</b>' + (best.d ? '<span>' + esc(best.d) + '</span>' : '');
+    /* 양 끝 점을 짚었을 때 말풍선이 카드 밖으로 잘리지 않게 가둡니다.
+       가운데 정렬은 그대로 두고 좌우 끝에서만 안쪽으로 밀어 넣습니다. */
+    const half = s.tip.offsetWidth / 2 + 4;
+    s.tip.style.left = Math.max(half, Math.min(boxR.width - half, px)) + 'px';
+    s.tip.style.top = py + 'px';
+    s.box.classList.add('scrubbing');
+  }
+
+  function chScrubEnd(hold) {
+    const s = _scrub;
+    if (!s) return;
+    _scrub = null;
+    /* 손을 떼자마자 지우면 정작 읽을 시간이 없습니다. 잠깐 두었다 사라집니다.
+       스크롤에 뺏긴 경우(hold=0)에는 짚은 적이 없던 것처럼 곧바로 지웁니다. */
+    const box = s.box;
+    setTimeout(function () { try { box.classList.remove('scrubbing'); } catch (_) {} }, hold);
+  }
+
+  function watchChartScrub() {
+    document.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      const box = e.target.closest && e.target.closest('.ch-scrub');
+      if (!box) return;
+      const data = chScrubData(box);
+      if (!data) return;
+      if (_scrub) chScrubEnd(0);
+      _scrub = Object.assign({ box, pointerId: e.pointerId }, data, chScrubUI(box));
+      /* 포인터를 잡아 두면 손가락이 그래프 밖으로 나가도 계속 따라옵니다. */
+      try { box.setPointerCapture(e.pointerId); } catch (_) {}
+      chScrubTo(e.clientX);
+    }, { passive: true });
+
+    document.addEventListener('pointermove', (e) => {
+      if (!_scrub || _scrub.pointerId !== e.pointerId) return;
+      chScrubTo(e.clientX);
+    }, { passive: true });
+
+    document.addEventListener('pointerup', (e) => {
+      if (!_scrub || _scrub.pointerId !== e.pointerId) return;
+      chScrubEnd(1800);
+    }, { passive: true });
+
+    /* 브라우저가 세로 스크롤을 가져갔거나 전화가 왔거나 — 어느 쪽이든 이
+       제스처는 우리 것이 아니었습니다. */
+    document.addEventListener('pointercancel', (e) => {
+      if (!_scrub || _scrub.pointerId !== e.pointerId) return;
+      chScrubEnd(0);
+    }, { passive: true });
   }
 
   function renderWeightCard() {
@@ -3904,31 +3964,16 @@ const APP_VERSION = (() => {
     const y = v => PAD_T + plotH - ((v - lo) / (hi - lo)) * plotH;
     const line = rows.map((r, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(r.dv).toFixed(1)}`).join(' ');
     const area = `${line} L${x(rows.length - 1).toFixed(1)} ${PAD_T + plotH} L${x(0).toFixed(1)} ${PAD_T + plotH} Z`;
+    /* data-d / data-v 는 손가락으로 짚었을 때 띄울 값입니다. <title> 은
+       마우스가 있는 환경과 스크린리더를 위해 그대로 둡니다. */
     const dots = rows.map((r, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(r.dv).toFixed(1)}" r="${i === rows.length - 1 ? 4 : 2.5}"
-      fill="var(--wt-color)"><title>${r.date} · ${r.dv}${weightUnitLabel()}</title></circle>`).join('');
-    /* 손가락으로 짚으면 그 날 몇 kg 였는지 나옵니다.
-       <title> 은 마우스를 올려 둘 수 있는 화면에서만 뜹니다 — 폰에서는 점이
-       보이는데 값을 알 방법이 아예 없었습니다. 값은 그림 위에 겹쳐 그리므로
-       (아래 wt-tip) 다시 그리지 않고, 짚는 동안 화면이 흔들리지 않습니다.
-       좌표는 viewBox 기준으로 넘기고, 읽는 쪽에서 %로 환산합니다. */
-    const pts = rows.map((r, i) => [
-      x(i).toFixed(1), y(r.dv).toFixed(1), r.date, r.dv,
-    ].join(',')).join(';');
+      fill="var(--wt-color)" data-d="${esc(shortDate(r.date))}" data-v="${r.dv}${esc(weightUnitLabel())}"><title>${esc(r.date)} · ${r.dv}${esc(weightUnitLabel())}</title></circle>`).join('');
 
     const first = rows[0], last = rows[rows.length - 1];
     const diff = Math.round((last.dv - first.dv) * 10) / 10;
     const trend = diff > 0.1 ? `<span class="pa-up">+${diff}${weightUnitLabel()}</span>`
                 : diff < -0.1 ? `<span class="pa-down">${diff}${weightUnitLabel()}</span>`
                 : `<span class="pa-flat">변화 없음</span>`;
-
-    /* 짚어서 고른 점은 손을 떼도 그대로 둡니다 — 값을 읽자마자 사라지면
-       '수정' 을 누를 틈이 없고, 다시 그릴 때마다 선택이 풀리면 고친 직후에
-       어느 날을 보고 있었는지 잃어버립니다. 그래서 선택은 state 에 있고,
-       여기서 표시 상태까지 같이 그립니다. */
-    const selIdx = state.weightPicked ? rows.findIndex(r => r.date === state.weightPicked) : -1;
-    const sel = selIdx >= 0 ? rows[selIdx] : null;
-    const selX = sel ? x(selIdx) : 0;
-    const selY = sel ? y(sel.dv) : 0;
 
     return `<div class="stats-card">
       <div class="stats-head">
@@ -3937,34 +3982,18 @@ const APP_VERSION = (() => {
       </div>
       <div class="wt-now"><b>${last.dv}</b><span>${weightUnitLabel()}</span> ${trend}
         <em>${esc(shortDate(first.date))} → ${esc(shortDate(last.date))}</em></div>
-      <div class="wt-chart${sel ? ' is-probing' : ''}" data-wt-pts="${esc(pts)}"
-           data-wt-unit="${esc(weightUnitLabel())}" data-wt-w="${W}" data-wt-h="${H}">
-        <svg class="ch" viewBox="0 0 ${W} ${H}" role="img" aria-label="몸무게 추이">
-          <text x="${PAD_L - 6}" y="${PAD_T + 4}" class="ch-axis" text-anchor="end">${hi.toFixed(1)}</text>
-          <text x="${PAD_L - 6}" y="${PAD_T + plotH + 4}" class="ch-axis" text-anchor="end">${lo.toFixed(1)}</text>
-          <path d="${area}" fill="var(--wt-fill)"/>
-          <path d="${line}" fill="none" stroke="var(--wt-color)" stroke-width="2"
-                stroke-linecap="round" stroke-linejoin="round"/>
-          ${dots}
-          <line class="wt-guide" x1="${selX.toFixed(1)}" y1="${PAD_T}" x2="${selX.toFixed(1)}" y2="${PAD_T + plotH}"/>
-          <circle class="wt-mark" cx="${selX.toFixed(1)}" cy="${selY.toFixed(1)}" r="5.5"/>
-        </svg>
-        <div class="wt-tip${sel && (selY / H) < 0.34 ? ' below' : ''}"
-             style="left:${sel ? Math.min(86, Math.max(14, (selX / W) * 100)).toFixed(1) : 0}%;top:${((selY / H) * 100).toFixed(1)}%"
-        >${sel ? esc(`${shortDate(sel.date)} · ${sel.dv}${weightUnitLabel()}`) : ''}</div>
-      </div>
-      ${sel ? `
-      <div class="wt-sel">
-        <div class="wt-sel-day">${esc(longDate(sel.date))}<b>${sel.dv}${weightUnitLabel()}</b></div>
-        <button class="stats-tab" data-act="edit-weight" data-date="${esc(sel.date)}">수정</button>
-        <button class="stats-tab wt-sel-del" data-act="del-weight" data-date="${esc(sel.date)}">지우기</button>
-        <button class="btn-icon ghost wt-sel-x" data-act="clear-weight-pick" aria-label="선택 해제">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-      </div>`
-      : `<p class="wt-hint">그래프에서 점을 짚으면 그 날 몸무게가 나오고, 수정하거나 지울 수 있어요.</p>`}
-    </div>`;
+      <div class="ch-scrub" style="--ch-accent:var(--wt-color)">
+      <svg class="ch" viewBox="0 0 ${W} ${H}" role="img" aria-label="몸무게 추이">
+        <text x="${PAD_L - 6}" y="${PAD_T + 4}" class="ch-axis" text-anchor="end">${hi.toFixed(1)}</text>
+        <text x="${PAD_L - 6}" y="${PAD_T + plotH + 4}" class="ch-axis" text-anchor="end">${lo.toFixed(1)}</text>
+        <path d="${area}" fill="var(--wt-fill)"/>
+        <path d="${line}" fill="none" stroke="var(--wt-color)" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round"/>
+        ${dots}
+      </svg>
+      </div>`;
   }
+
   /* ── 부위별 분석 카드 ── */
   function renderPartAnalysisCard() {
     const w = partWindows();
@@ -4303,7 +4332,7 @@ const APP_VERSION = (() => {
   }
 
   function renderSearchScreen() {
-    return `<div class="detail-screen search-screen">
+    return `<div class="detail-screen search-screen${overlayIn('search')}">
       <header class="topbar">
         <button class="btn-icon ghost" data-act="close-search" aria-label="닫기">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -4363,17 +4392,21 @@ const APP_VERSION = (() => {
     const y = v => PAD_T + plotH - ((v - lo) / (hi - lo)) * plotH;
     const line = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(p.kg).toFixed(1)}`).join(' ');
     const area = `${line} L${x(pts.length - 1).toFixed(1)} ${PAD_T + plotH} L${x(0).toFixed(1)} ${PAD_T + plotH} Z`;
-    /* 점이 아주 많으면(1년, 전체) 원을 다 찍으면 선이 안 보입니다. */
-    const dots = pts.length > 40 ? '' : pts.map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.kg).toFixed(1)}"
-      r="${i === pts.length - 1 ? 4 : 2.4}" fill="var(--accent)"><title>${esc(p.date)} · ${p.kg}${weightUnitLabel()}</title></circle>`).join('');
+    /* 점이 아주 많으면(1년, 전체) 원을 다 찍으면 선이 안 보입니다. 다만
+       지우지는 않고 투명하게만 둡니다 — 짚기 기능이 이 원들의 cx 를 읽어
+       가장 가까운 점을 찾기 때문에, 없애 버리면 그 구간만 안 짚힙니다. */
+    const faint = pts.length > 40 ? ' opacity="0"' : '';
+    const dots = pts.map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.kg).toFixed(1)}"
+      r="${i === pts.length - 1 ? 4 : 2.4}" fill="var(--accent)"${faint}
+      data-d="${esc(p.date)}" data-v="${p.kg}${esc(weightUnitLabel())}"><title>${esc(p.date)} · ${p.kg}${esc(weightUnitLabel())}</title></circle>`).join('');
 
-    return `<svg class="ch" viewBox="0 0 ${W} ${H}" role="img" aria-label="무게 추이">
+    return `<div class="ch-scrub"><svg class="ch" viewBox="0 0 ${W} ${H}" role="img" aria-label="무게 추이">
       <text x="${PAD_L - 6}" y="${PAD_T + 4}" class="ch-axis" text-anchor="end">${hi.toFixed(0)}</text>
       <text x="${PAD_L - 6}" y="${PAD_T + plotH + 4}" class="ch-axis" text-anchor="end">${lo.toFixed(0)}</text>
       <path d="${area}" fill="var(--accent-soft)"/>
       <path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       ${dots}
-    </svg>
+    </svg></div>
     <div class="exh-chart-foot"><span>${esc(shortDate(pts[0].date))}</span><span>${esc(shortDate(pts[pts.length - 1].date))}</span></div>`;
   }
 
@@ -4447,7 +4480,7 @@ const APP_VERSION = (() => {
         <div class="recent-list">${list}</div>`;
     }
 
-    return `<div class="detail-screen exh-screen">
+    return `<div class="detail-screen exh-screen${overlayIn(`exh:${name}`)}">
       <header class="topbar">
         <button class="btn-icon ghost" data-act="close-ex-history" aria-label="닫기">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -4558,7 +4591,7 @@ const APP_VERSION = (() => {
     body += '<div style="height:18px"></div>';
 
     return `<header class="topbar">
-        <div class="topbar-brand">FIT<span>LOG</span></div>
+        <div class="topbar-title">히스토리</div>
         <div class="topbar-spacer"></div>
         <button class="btn-icon ghost" data-act="open-search" aria-label="기록 검색">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7.5"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
@@ -4989,8 +5022,8 @@ const APP_VERSION = (() => {
   }
   function canPullFrom(target) {
     if (!PULL_TABS[state.tab] || state.syncing || !state.authReady) return false;
-    /* 로그인·가입 화면은 빼고, 계정으로 앱에 들어온 뒤에만. */
-    if (!state.user) return false;
+    /* 로그인·가입 화면은 빼고, 앱 안에 들어온 뒤(계정·게스트)만. */
+    if (!state.user && !state.guest) return false;
     if (target && target.closest('.detail-screen, .sheet-backdrop, .dialog, .bottom-nav, .set-swipe-action')) return false;
     return isPageAtTop();
   }
@@ -5006,7 +5039,7 @@ const APP_VERSION = (() => {
       /* 저장 큐를 먼저 비웁니다. 안 그러면 방금 체크한 세트가 디스크에
          닿기도 전에 옛 목록을 읽어 화면을 덮습니다. 열린 기록은 디스크
          것으로 갈아끼우지 않습니다 — 그게 기록을 지우던 경로입니다. */
-      await flushSaves();
+      try { await persist(); } catch (_) {}
       state.sessions = await WorkoutDB.getAllSessions();
       state.customExercises = await WorkoutDB.getCustomExercises();
       applyOpenSessionToList();
@@ -5096,85 +5129,6 @@ const APP_VERSION = (() => {
     appEl.onpointermove = onSwipePointerMove;
     appEl.onpointerup = onSwipePointerUp;
     appEl.onpointercancel = onSwipePointerUp;
-    bindWeightChart();
-  }
-
-  /* ── 몸무게 그래프 짚어 보기 ──────────────────────────────────────────────
-     점 위에 <title> 을 달아 두면 마우스가 있는 화면에서는 값이 뜨지만, 폰에는
-     올려 둘 마우스가 없습니다. 그래서 이 앱을 실제로 쓰는 화면에서는 점이
-     보여도 그게 몇 kg 인지 알 방법이 없었습니다.
-
-     다시 그리지 않고 이미 있는 노드만 움직입니다 — 짚고 미는 동안 render()
-     가 돌면 손가락 밑에서 화면이 통째로 새로 만들어집니다.
-     세로 스크롤은 그대로 둡니다(touch-action: pan-y): 가로로 밀면 값을 훑고,
-     세로로 밀면 평소처럼 화면이 넘어갑니다. */
-  function bindWeightChart() {
-    const wrap = appEl.querySelector('.wt-chart');
-    if (!wrap) return;
-    const svg = wrap.querySelector('svg');
-    const guide = wrap.querySelector('.wt-guide');
-    const mark = wrap.querySelector('.wt-mark');
-    const tip = wrap.querySelector('.wt-tip');
-    if (!svg || !guide || !mark || !tip) return;
-
-    const W = Number(wrap.dataset.wtW) || 320;
-    const H = Number(wrap.dataset.wtH) || 108;
-    const unit = wrap.dataset.wtUnit || 'kg';
-    const pts = (wrap.dataset.wtPts || '').split(';').filter(Boolean).map(chunk => {
-      const [px, py, date, val] = chunk.split(',');
-      return { x: Number(px), y: Number(py), date, val };
-    });
-    if (!pts.length) return;
-
-    /* 보이고 숨기는 것은 감싼 div 의 클래스 하나로 합니다.
-       SVG 안의 <line>·<circle> 은 HTMLElement 가 아니라서 el.hidden = true 가
-       아무 일도 하지 않습니다(속성이 아니라 그냥 JS 프로퍼티가 붙습니다). */
-    let probed = state.weightPicked || null;
-    const showAt = (clientX) => {
-      const rect = svg.getBoundingClientRect();
-      if (!rect.width) return;
-      const vx = ((clientX - rect.left) / rect.width) * W;
-      let best = pts[0];
-      for (const p of pts) {
-        if (Math.abs(p.x - vx) < Math.abs(best.x - vx)) best = p;
-      }
-      probed = best.date;
-      guide.setAttribute('x1', best.x); guide.setAttribute('x2', best.x);
-      mark.setAttribute('cx', best.x); mark.setAttribute('cy', best.y);
-      tip.textContent = `${shortDate(best.date)} · ${best.val}${unit}`;
-      /* 양 끝 점을 짚어도 말풍선이 카드 밖으로 나가지 않도록 가둡니다. */
-      tip.style.left = Math.min(86, Math.max(14, (best.x / W) * 100)) + '%';
-      tip.style.top = ((best.y / H) * 100) + '%';
-      /* 점이 그래프 위쪽에 있으면 말풍선을 아래로 뒤집습니다 — 안 그러면
-         카드 제목 위로 삐져나갑니다. */
-      tip.classList.toggle('below', (best.y / H) < 0.34);
-      wrap.classList.add('is-probing');
-    };
-
-    let tracking = false;
-    wrap.addEventListener('pointerdown', (e) => {
-      tracking = true;
-      try { wrap.setPointerCapture(e.pointerId); } catch (_) {}
-      showAt(e.clientX);
-    });
-    wrap.addEventListener('pointermove', (e) => {
-      if (!tracking) return;
-      showAt(e.clientX);
-    });
-    /* 손을 뗀 자리의 날짜를 선택으로 확정합니다. 미는 동안은 DOM 만 직접
-       칠하고(다시 그리면 손가락 밑에서 화면이 통째로 새로 만들어집니다),
-       여기서 한 번만 render() 해서 아래 수정·지우기 줄을 띄웁니다. */
-    const release = () => {
-      if (!tracking) return;
-      tracking = false;
-      if (probed && probed !== state.weightPicked) {
-        state.weightPicked = probed;
-        render();
-      }
-    };
-    wrap.addEventListener('pointerup', release);
-    wrap.addEventListener('pointercancel', release);
-    wrap.addEventListener('pointerleave', release);
   }
 
   async function onClick(e) {
@@ -5211,10 +5165,7 @@ const APP_VERSION = (() => {
     if (act === 'stats-range') { state.statsRange = btn.dataset.range; render(); return; }
     if (act === 'pr-toggle') { state.prAll = !state.prAll; render(); return; }
     if (act === 'hist-all')  { state.histAll = !state.histAll; render(); return; }
-    if (act === 'add-weight') { await openWeightEditor(null); return; }
-    if (act === 'edit-weight') { await openWeightEditor(btn.dataset.date); return; }
-    if (act === 'del-weight') { await handleDeleteWeight(btn.dataset.date); return; }
-    if (act === 'clear-weight-pick') { state.weightPicked = null; render(); return; }
+    if (act === 'add-weight') { await handleAddWeight(); return; }
     if (act === 'vol-info')   { await showVolumeInfo(); return; }
     if (act === 'open-routines') { state.partSheet = false; state.routineSheet = true; render(); return; }
     if (act === 'open-part-sheet') { state.partSheet = true; render(); return; }
@@ -5442,7 +5393,7 @@ const APP_VERSION = (() => {
          경우가 있어, state 만 믿으면 방금 붙여넣은 이름을 놓칩니다. */
       const input = document.getElementById('custom-name');
       const name = ((input ? input.value : state.customName) || '').trim();
-      if (!name) { toast('운동 이름을 적어 주세요', true); return; }
+      if (!name) { toast('운동 이름을 적어 주세요'); return; }
       state.customName = '';
       await handleAddCustom(btn.dataset.part, name);
       return;
@@ -5457,7 +5408,7 @@ const APP_VERSION = (() => {
          터집니다. */
       const from = (state.session && state.session.date) || state.date;
       if (!await confirmLeavePast()) return;
-      await flushSaves();
+      await persist();
       await loadDay(shiftDate(from, Number(btn.dataset.delta)));
       return;
     }
@@ -5592,6 +5543,8 @@ const APP_VERSION = (() => {
     }
     if (act === 'close-profile') { state.profileEditing = false; render(); return; }
     if (act === 'show-login') {
+      state.guest = false;
+      localStorage.removeItem('fitlog-guest');
       state.authError = '';
       render(); return;
     }
@@ -5676,7 +5629,7 @@ const APP_VERSION = (() => {
     const t = e.target;
     if (t.dataset.act === 'change-date' && t.value) {
       if (!await confirmLeavePast()) { render(); return; }
-      await flushSaves();
+      await persist();
       await loadDay(t.value);
     }
   }
@@ -5912,7 +5865,7 @@ const APP_VERSION = (() => {
        남아 다음에 앱을 켜면 되살아납니다 — 저장한 것도 아니고 안 한 것도
        아닌 상태입니다. 받을 수 없는 값이면 받지 않았다고 말합니다. */
     const bad = onboardingMissing();
-    if (bad) { toast(bad, true); return; }
+    if (bad) { toast(bad); return; }
     state.authBusy = true;
     render();
     try {
@@ -5927,7 +5880,7 @@ const APP_VERSION = (() => {
          전부 다시 입력해야 하는데, 실패 이유는 대개 잠깐의 네트워크 문제라
          한 번 더 누르면 되는 일입니다. */
       render();
-      toast('저장에 실패했습니다', true);
+      toast('프로필 저장에 실패했습니다 — 잠시 후 다시 눌러 주세요');
       console.warn('profile save failed', err);
     }
   }
@@ -6062,18 +6015,7 @@ const APP_VERSION = (() => {
          클라우드 동기화까지 다른 저장과 동일하게 지나갑니다. 저장 바는
          깨끗해진 상태로 되돌려 놓습니다. */
       state.editingPast = false;
-      try {
-        await persist();
-      } catch (err) {
-        console.warn('past finish save failed', err);
-        s.completed = false;
-        s.completedAt = 0;
-        state.editingPast = true;
-        state.pastDirty = true;
-        render();
-        toast('저장에 실패했습니다', true);
-        return;
-      }
+      await persist();
       state.pastDirty = false;
       state.pastBaseline = JSON.stringify(state.session);
       state.editingPast = true;
@@ -6272,8 +6214,8 @@ const APP_VERSION = (() => {
     const d = state.routineEdit;
     if (!d) return;
     const name = (document.getElementById('routine-name')?.value || d.name).trim();
-    if (!name) { toast('루틴 이름을 적어 주세요', true); document.getElementById('routine-name')?.focus(); return; }
-    if (!d.exercises.length) { toast('운동을 하나 이상 골라 주세요', true); return; }
+    if (!name) { toast('루틴 이름을 적어 주세요'); document.getElementById('routine-name')?.focus(); return; }
+    if (!d.exercises.length) { toast('운동을 하나 이상 골라 주세요'); return; }
     const row = {
       id: d.id || uid(),
       name: name.slice(0, 40),
@@ -6326,7 +6268,7 @@ const APP_VERSION = (() => {
       </button>`;
     }).join('');
 
-    return `<div class="detail-screen">
+    return `<div class="detail-screen${overlayIn('routine')}">
       <header class="topbar">
         <button class="btn-icon ghost" data-act="close-routine-editor" aria-label="닫기">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -6368,7 +6310,7 @@ const APP_VERSION = (() => {
         </button>
         <button class="custom-del" data-act="del-routine" data-id="${esc(r.id)}">삭제</button>
       </div>`).join('');
-    return `<div class="sheet-backdrop">
+    return `<div class="sheet-backdrop${overlayIn('routines')}">
       <div class="sheet-panel">
         <div class="sheet-grab"></div>
         <div class="sheet-head">
@@ -6428,7 +6370,7 @@ const APP_VERSION = (() => {
   async function handleDeleteSet(exId, setId) {
     const ex = state.session.exercises.find(e=>e.id===exId);
     if (!ex) return;
-    if (ex.sets.length <= 1) { toast('마지막 세트는 지울 수 없습니다', true); return; }
+    if (ex.sets.length <= 1) { toast('마지막 세트는 지울 수 없습니다'); return; }
     await animateRemoval(document.querySelector(`.set-swipe[data-ex="${CSS.escape(exId)}"][data-set="${CSS.escape(setId)}"]`));
     ex.sets = ex.sets.filter(s => s.id !== setId);
     await persist(); render();
@@ -6529,8 +6471,7 @@ const APP_VERSION = (() => {
 
   async function importJson(file) {
     let payload;
-    try { payload = JSON.parse(await file.text()); }
-    catch { toast('파일을 불러올 수 없습니다', true); return; }
+    try { payload = JSON.parse(await file.text()); } catch { toast('JSON을 읽을 수 없습니다'); return; }
 
     /* 물어보기 '전에' 파일을 들여다봅니다.
        예전에는 아무것도 확인하지 않고 "교체할까요?" 부터 띄웠습니다. 다른 앱의
@@ -6542,7 +6483,7 @@ const APP_VERSION = (() => {
       ? payload.sessions.filter(r => r && typeof r.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.date)).length
       : 0;
     const customs = Array.isArray(payload?.customExercises) ? payload.customExercises.length : 0;
-    if (!days && !customs) { toast('불러올 기록이 없습니다', true); return; }
+    if (!days && !customs) { toast('이 파일에는 불러올 기록이 없습니다'); return; }
 
     const extra = [];
     if (Array.isArray(payload?.routines) && payload.routines.length) extra.push(`루틴 ${payload.routines.length}개`);
@@ -6560,7 +6501,7 @@ const APP_VERSION = (() => {
       /* 예전에는 여기서 던진 오류를 아무도 받지 않아, 사용자가 가져오기를
          눌러도 화면에 아무 일도 일어나지 않았습니다. */
       console.warn('import failed', err);
-      toast('불러오기에 실패했습니다', true);
+      toast(err?.message || '가져오지 못했습니다');
       return;
     }
     state.sessions = await WorkoutDB.getAllSessions();
@@ -6582,18 +6523,9 @@ const APP_VERSION = (() => {
 
   /* 지금 화면에 열린 기록은 메모리가 최신입니다. 디스크/클라우드 합친
      결과 위에 덮어, replaceAll 이 방금 입력한 세트를 지우지 않게 합니다.
-
-     빠지는 경우는 '아직 저장하지 않은 과거 편집' 하나뿐입니다(hasUnsavedPast).
-     예전에는 editingPast 만 봤습니다. 그런데 savePastEdit 은 저장한 뒤에도
-     편집 모드에 그대로 머무릅니다 — 그래서 저장을 누른 다음에도 이 보호가
-     계속 꺼져 있었고, 그 사이 돌던 백그라운드 동기화가 자기가 예전에 읽어 둔
-     목록으로 replaceAll·pushAll 을 하면서 방금 저장한 어제 기록을 디스크와
-     클라우드 양쪽에서 옛 내용으로 되돌려 놓았습니다. 저장은 분명히 됐는데
-     히스토리에는 옛날 것이 그대로 있는 이유가 이것이었습니다.
-     저장이 끝난 편집은 메모리와 디스크가 같으므로 덮어도 안전하고, 오히려
-     덮어야 낡은 스냅샷으로부터 지켜집니다. */
+     과거 편집(editingPast)은 아직 저장 전이라 디스크에 올리지 않습니다. */
   function overlayOpenSession(rows) {
-    if (!state.session || !state.session.date || hasUnsavedPast()) return rows;
+    if (!state.session || !state.session.date || state.editingPast) return rows;
     const live = clone(state.session);
     /* 저장할 것이 없는 세션은 얹지 않습니다 — doSave() 가 지우는 것과 같은
        기준입니다. 얹으면 이 결과가 그대로 replaceAll 로 디스크에, pushAll 로
@@ -6611,9 +6543,7 @@ const APP_VERSION = (() => {
     return [...map.values()].sort((a, b) => b.date.localeCompare(a.date));
   }
   function applyOpenSessionToList() {
-    /* overlayOpenSession 과 같은 기준입니다 — 저장하지 않은 과거 편집만
-       빼고, 저장이 끝난 편집은 목록에도 반영합니다. */
-    if (!state.session || !state.session.date || hasUnsavedPast()) return;
+    if (!state.session || !state.session.date || state.editingPast) return;
     const copy = clone(state.session);
     const idx = state.sessions.findIndex(x => x.date === copy.date);
     /* doSave() 는 worthSaving 이 아닌 세션을 디스크에서도 목록에서도 지웁니다.
@@ -6691,10 +6621,6 @@ const APP_VERSION = (() => {
     for (const row of localRows || []) {
       if (row && row.date && Number(row.weightKg) > 0) map.set(row.date, row);
     }
-    /* 이 기기에서 지운 날은 다시 들이지 않습니다. 합치기에는 '지웠다' 는
-       표시가 없어서, 클라우드 사본이 아직 갱신되기 전이면 방금 지운 줄이
-       그대로 되살아납니다 — 사용자에게는 지우기가 안 먹는 것으로 보입니다. */
-    for (const date of deletedMetricDates) map.delete(date);
     return [...map.values()].sort((a, b) => a.date.localeCompare(b.date));
   }
 
@@ -6714,7 +6640,7 @@ const APP_VERSION = (() => {
      and it waits until the user chooses. Dismissing it is remembered, so it
      asks once and never nags. */
   function importDismissKey() {
-    return `fitlog-import-dismissed:${state.user ? state.user.uid : 'none'}`;
+    return `fitlog-import-dismissed:${state.user ? state.user.uid : 'guest'}`;
   }
   function importDismissed() {
     try { return localStorage.getItem(importDismissKey()) === '1'; } catch (_) { return false; }
@@ -6725,14 +6651,11 @@ const APP_VERSION = (() => {
        is real history, merging in stray device data would be a surprise. */
     if (cloudData.sessions && cloudData.sessions.length) return null;
     if (importDismissed()) return null;
-    /* 손님 모드는 없앴지만, 그 시절 이 기기에 남은 저장소는 계속 읽습니다 —
-       모드가 아니라 '계정 이전에 쌓인 기록' 이고, 이 카드가 그것을 계정으로
-       옮기는 유일한 길입니다. */
-    const preAccount = await WorkoutDB.readGuest();
+    const guest = await WorkoutDB.readGuest();
     const legacy = await WorkoutDB.readLegacy();
-    const sessions = [...(preAccount.sessions || []), ...(legacy.sessions || [])]
+    const sessions = [...(guest.sessions || []), ...(legacy.sessions || [])]
       .filter(s => s && s.date && hasAnyWork(s));
-    const customExercises = [...(preAccount.customExercises || []), ...(legacy.customExercises || [])];
+    const customExercises = [...(guest.customExercises || []), ...(legacy.customExercises || [])];
     if (!sessions.length && !customExercises.length) return null;
     return { sessions, customExercises };
   }
@@ -6750,22 +6673,37 @@ const APP_VERSION = (() => {
     state.tab = 'home';
   }
 
-  /* 로그인한 계정으로만 들어옵니다. 손님 모드는 없어졌습니다 — 들어오는 길이
-     이 함수 하나뿐이므로 user 가 없으면 아무것도 하지 않습니다. */
-  async function enterApp(user) {
-    if (!user) return;
-    if (state.user && state.user.uid === user.uid && state.authReady) return;
-    const arrivedFromLogin = !state.authReady || !state.user;
+  async function enterApp(user, opts = {}) {
+    if (user && state.user && state.user.uid === user.uid && state.authReady && !opts.force) return;
+    const arrivedFromLogin = !state.authReady || (!state.user && !state.guest);
     /* Whether an account needs the gate is a fact about that account, decided
        below by reading its profile. Carrying the previous answer into a new
        entry is how a stale true survived a sign-out and gated an account that
        had already finished. */
     state.onboarding = false;
-    state.user = user;
+    state.user = user || null;
+    state.guest = !user && !!opts.guest;
     state.authBusy = false;
     state.authError = '';
-    WorkoutDB.setScope(user.uid);
+    if (state.guest) localStorage.setItem('fitlog-guest', '1');
+    else localStorage.removeItem('fitlog-guest');
+    WorkoutDB.setScope(user ? user.uid : 'guest');
     await WorkoutDB.open();
+
+    if (!user) {
+      const current = await WorkoutDB.getAllSessions();
+      const currentCustom = await WorkoutDB.getCustomExercises();
+      /* 옛 저장소에서 옮겨오는 건 '이 기기에 아직 아무것도 없을 때' 만입니다.
+         예전에는 세션만 보고 판단했는데, replaceAll 은 나만의 운동 저장소까지
+         비웁니다. 그래서 운동은 아직 안 했지만 나만의 운동을 다섯 개 만들어 둔
+         사람이 앱을 다시 열면 그 다섯 개가 사라졌습니다. */
+      if (!current.length && !currentCustom.length) {
+        const legacy = await WorkoutDB.readLegacy();
+        if ((legacy.sessions || []).length || (legacy.customExercises || []).length) {
+          await WorkoutDB.replaceAll(legacy.sessions, legacy.customExercises);
+        }
+      }
+    }
 
     /* Show the app immediately. Cloud sync runs in the background and must never
        block entry — the Firestore SDK retries silently forever when the database
@@ -6951,11 +6889,8 @@ const APP_VERSION = (() => {
     try {
       /* 클라우드를 받기 전·후에 저장 큐를 비우고, 디스크는 네트워크가
          끝난 뒤에 다시 읽습니다. 예전에 시작 시점 스냅샷으로 replaceAll
-         하면, 그 사이 persist 된 세트가 통째로 사라졌습니다.
-         비우기는 flushSaves 로 합니다 — persist() 를 쓰면 과거 기록을 고치는
-         중인 사람에게 아무 이유 없이 '저장하지 않은 변경이 있습니다' 가
-         떠오릅니다(persist 정의의 주석 참고). */
-      await flushSaves();
+         하면, 그 사이 persist 된 세트가 통째로 사라졌습니다. */
+      try { await persist(); } catch (_) {}
       if (!stillMe()) return;
       await withTimeout(Cloud.touchProfile(), 8000, '프로필');
       if (!stillMe()) return;
@@ -6963,35 +6898,23 @@ const APP_VERSION = (() => {
       if (!stillMe()) return;
       /* Detect only — importing is the user's call, made from the home screen. */
       state.pendingImport = await detectImportableLocal(cloudData);
-      await flushSaves();
+      try { await persist(); } catch (_) {}
       if (!stillMe()) return;
-
-      /* 합본을 만드는 동안 사용자가 저장을 누를 수 있습니다 — 과거 기록의
-         '저장' 버튼이 정확히 그렇습니다. 그러면 방금 읽은 목록은 이미 낡은
-         것이고, 그대로 replaceAll 하면 디스크에서, 이어지는 pushAll 이
-         클라우드에서 그 저장을 지웁니다. 사용자에게는 저장이 됐다는 토스트만
-         뜨고 기록은 옛날 것으로 돌아가 있습니다.
-         그래서 디스크에 쓴 횟수(saveSeq)를 앞뒤로 견줘, 그 사이에 저장이
-         있었으면 다시 읽어 합칩니다. */
-      let sessions = [], customExercises = [], junkDates = [];
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const seq = saveSeq;
-        const localSessions = await WorkoutDB.getAllSessions();
-        const localCustom = await WorkoutDB.getCustomExercises();
-        if (!stillMe()) return;
-        sessions = overlayOpenSession(mergeByDate(localSessions, cloudData.sessions));
-        /* 빈 껍데기 기록을 털어냅니다 — doSave() 가 저장하지 않는 것과 같은
-           기준입니다. 옛 버전이 클라우드에 올려 둔 빈 기록은 pullAll 로 매번
-           다시 내려오는데 pushAll 은 덮어쓰기만 하고 지우지는 않아서, 그냥 두면
-           새로고침할 때마다 오늘이 '운동한 날' 로 되살아납니다. */
-        junkDates = sessions.filter(s => !worthSaving(s)).map(s => s.date);
-        if (junkDates.length) sessions = sessions.filter(worthSaving);
-        customExercises = mergeCustom(localCustom, cloudData.customExercises);
-        if (!stillMe()) return;
-        await WorkoutDB.replaceAll(sessions, customExercises);
-        if (!stillMe()) return;
-        if (seq === saveSeq) break;   /* 그 사이 저장이 없었으면 이 합본이 맞습니다 */
-      }
+      const localSessions = await WorkoutDB.getAllSessions();
+      const localCustom = await WorkoutDB.getCustomExercises();
+      if (!stillMe()) return;
+      let sessions = mergeByDate(localSessions, cloudData.sessions);
+      sessions = overlayOpenSession(sessions);
+      /* 빈 껍데기 기록을 털어냅니다 — doSave() 가 저장하지 않는 것과 같은
+         기준입니다. 옛 버전이 클라우드에 올려 둔 빈 기록은 pullAll 로 매번
+         다시 내려오는데 pushAll 은 덮어쓰기만 하고 지우지는 않아서, 그냥 두면
+         새로고침할 때마다 오늘이 '운동한 날' 로 되살아납니다. */
+      const junkDates = sessions.filter(s => !worthSaving(s)).map(s => s.date);
+      if (junkDates.length) sessions = sessions.filter(worthSaving);
+      const customExercises = mergeCustom(localCustom, cloudData.customExercises);
+      if (!stillMe()) return;
+      await WorkoutDB.replaceAll(sessions, customExercises);
+      if (!stillMe()) return;
       await withTimeout(Cloud.pushAll(sessions, customExercises), 15000, '저장');
       if (!stillMe()) return;
       /* pushAll 은 덮어쓰기만 하므로, 위에서 걸러낸 빈 기록은 여기서 직접
@@ -7041,8 +6964,7 @@ const APP_VERSION = (() => {
          없습니다 — 자기가 하지도 않은 일이 실패했다고 나옵니다. */
       if (stillMe()) {
         render();
-        /* 끊긴 것과 늦는 것은 사용자가 할 일이 달라서 따로 말합니다. */
-        toast(navigator.onLine === false ? '네트워크 연결을 확인해 주세요' : '동기화에 실패했습니다', true);
+        toast('클라우드 동기화 실패 — 기록은 이 기기에 저장됩니다');
       }
     } finally {
       state.syncing = false;
@@ -7196,8 +7118,8 @@ const APP_VERSION = (() => {
       await WorkoutDB.replaceAll(sessions, customExercises);
       state.sessions = await WorkoutDB.getAllSessions();
       state.customExercises = await WorkoutDB.getCustomExercises();
-      /* 동기화 쪽과 같은 이유 — 아직 저장하지 않은 과거 편집은 덮지 않습니다. */
-      if (!hasUnsavedPast()) {
+      /* 동기화 쪽과 같은 이유 — 편집 중인 과거 기록은 덮지 않습니다. */
+      if (!state.editingPast) {
         const saved = await WorkoutDB.getSession(state.date);
         if (saved) state.session = normalizeSession(saved);
       }
@@ -7209,7 +7131,7 @@ const APP_VERSION = (() => {
       console.warn('import failed', err);
       state.pendingImport = p;
       render();
-      toast('불러오기에 실패했습니다', true);
+      toast('가져오기에 실패했습니다');
     }
   }
 
@@ -7218,6 +7140,7 @@ const APP_VERSION = (() => {
                      body: '이 기기의 기록은 그대로 남고, 계정 기록은 클라우드에 유지됩니다.',
                      confirmText: '로그아웃' })) return;
     state.user = null;
+    state.guest = false;
     /* Clear the gate's own state too. Leaving it set meant a later render —
        one triggered by anything that arrives after logout — could put the
        setup screen back on top of a signed-out app. */
@@ -7229,6 +7152,7 @@ const APP_VERSION = (() => {
     hideSyncIndicator();
     state.pendingImport = null;
     resetSignup();
+    localStorage.removeItem('fitlog-guest');
 
     /* Nothing about the local workspace may be allowed to stop the sign-out.
 
@@ -7239,7 +7163,7 @@ const APP_VERSION = (() => {
        somewhere they had not asked to go. A broken local database should cost
        an empty list, not a half-finished logout. */
     try {
-      WorkoutDB.setScope(SIGNED_OUT_SCOPE);
+      WorkoutDB.setScope('guest');
       await WorkoutDB.open();
       await loadWorkspace();
     } catch (err) {
@@ -7259,11 +7183,15 @@ const APP_VERSION = (() => {
     toast('로그아웃했습니다');
   }
 
-  /* Clears only this device's local cache (IndexedDB). 계정 기록은 클라우드에
-     그대로 있으므로 다음 접속 때 다시 내려받습니다. */
+  /* Clears only this device's local cache (IndexedDB). Safe to offer to both
+     guest and logged-in users — for a logged-in user the cloud copy is
+     untouched and re-syncs back down on next load; for a guest it's a real
+     wipe, so that path gets its own, stronger confirmation. */
   async function handleClearLocalData() {
     const cloudBacked = !!state.user;
-    const msg = '이 기기에 저장된 기록만 지웁니다. 클라우드 기록은 남아 있고, 다음에 접속하면 다시 내려받습니다. 계속할까요?';
+    const msg = cloudBacked
+      ? '이 기기에 저장된 기록만 지웁니다. 클라우드 기록은 남아 있고, 다음에 접속하면 다시 내려받습니다. 계속할까요?'
+      : '로그인하지 않은 상태라 이 기기 기록이 유일한 사본입니다. 삭제하면 되돌릴 수 없습니다. 계속할까요?';
     if (!await ask({ title: '이 기기 기록을 초기화할까요?', body: msg,
                      confirmText: '초기화', danger: true })) return;
     await WorkoutDB.replaceAll([], []);
@@ -7296,7 +7224,9 @@ const APP_VERSION = (() => {
       await deleteAccountWithReauth();
       await WorkoutDB.replaceAll([], []);
       state.user = null;
-      WorkoutDB.setScope(SIGNED_OUT_SCOPE);
+      state.guest = false;
+      localStorage.removeItem('fitlog-guest');
+      WorkoutDB.setScope('guest');
       await WorkoutDB.open();
       await loadWorkspace();
       state.accountBusy = false;
@@ -7309,9 +7239,9 @@ const APP_VERSION = (() => {
       if (err && err.message === 'cancelled') {
         toast('삭제를 취소했습니다 — 기록은 그대로 있습니다');
       } else if (err && err.code === 'fitlog/reauth-failed') {
-        toast('본인 확인에 실패했습니다', true);
+        toast(`본인 확인에 실패해 삭제하지 않았습니다 — ${err.message}`);
       } else {
-        toast('삭제에 실패했습니다', true);
+        toast(`삭제 실패: ${Cloud.authMessage(err)}`);
       }
     }
   }
@@ -7422,6 +7352,7 @@ const APP_VERSION = (() => {
     render();
     startRestTicker();
     watchWakeLock();
+    watchChartScrub();
     /* 앱을 껐다 켜도 쉬던 중이었다면 남은 시간이 이어집니다. */
     restoreRestTimer();
     watchForGateGoingStale();
@@ -7477,7 +7408,9 @@ const APP_VERSION = (() => {
       }
       if (!user && state.user) {
         state.user = null;
-        WorkoutDB.setScope(SIGNED_OUT_SCOPE);
+        state.guest = false;
+        localStorage.removeItem('fitlog-guest');
+        WorkoutDB.setScope('guest');
         await WorkoutDB.open();
         await loadWorkspace();
         render();
@@ -7500,27 +7433,45 @@ const APP_VERSION = (() => {
       await enterApp(existing);
       return;
     }
-    /* 손님 모드는 없앴습니다 — 앱으로 들어오는 길은 로그인 하나입니다.
-       이 기기에 남아 있던 옛 기록(계정이 생기기 전에 쓰던 것)은 사라지지
-       않습니다: 로그인하면 detectImportableLocal 이 찾아내어 홈에서
-       '가져오기' 로 계정에 옮길 수 있습니다. */
+    WorkoutDB.setScope('guest');
+    await WorkoutDB.open();
+    const legacy = await WorkoutDB.readLegacy();
+    const hasLegacy = (legacy.sessions || []).length || (legacy.customExercises || []).length;
+    /* Guest mode can no longer be CHOSEN — the button that started it is gone,
+       so signing in is the only way into the app from here.
+
+       This resume path stays, deliberately. It only fires for a device that
+       already has local records: someone who used the app before the button was
+       removed, or whose records predate accounts entirely. Deleting it would not
+       tighten anything — the records are already on the device — it would just
+       strand them behind a login the owner may never have created. Their 설정
+       screen still offers 로그인, which is how those records get carried into an
+       account. */
+    if (localStorage.getItem('fitlog-guest') === '1' || hasLegacy) {
+      await enterApp(null, { guest: true });
+      return;
+    }
+
     state.authReady = true;
     render();
   }
 
   init().catch(err => {
     console.error('init failed', err);
-    /* 여기까지 왔다는 건 로그인 확인 자체가 실패했다는 뜻입니다. 예전에는
-       손님 모드로 떨어뜨렸는데, 그러면 로그인해 둔 사람에게 자기 계정이 아닌
-       빈 저장소가 열려 기록이 전부 사라진 것처럼 보였습니다. 로그인 화면을
-       보여 주고 다시 시도하게 하는 편이 정직합니다. */
-    state.authReady = true;
-    try {
-      render();
-      toast('다시 로그인해 주세요', true);
-    } catch (e) {
-      appEl.innerHTML = `<main style="padding:40px 24px;color:#f87171;font-family:system-ui">
-        시작 오류: ${String(e)}</main>`;
-    }
+    /* Fall back to local-only mode rather than showing a dead screen. */
+    (async () => {
+      try {
+        WorkoutDB.setScope('guest');
+        await WorkoutDB.open();
+        await loadWorkspace();
+        state.guest = true;
+        state.authReady = true;
+        render();
+        toast('오프라인 모드로 시작했습니다');
+      } catch (e) {
+        appEl.innerHTML = `<main style="padding:40px 24px;color:#f87171;font-family:system-ui">
+          저장소 오류: ${String(e)}</main>`;
+      }
+    })();
   });
 })();

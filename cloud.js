@@ -86,10 +86,33 @@ const Cloud = (() => {
      comment there. Wrapped defensively: App Check is an anti-abuse layer, not
      something that should ever be able to take the app down if it's missing,
      misconfigured, or the compat script failed to load. */
+  /* reCAPTCHA 사이트 키는 도메인에 묶여 있습니다. localhost 나 file:// 에서
+     열면 reCAPTCHA 가 거부하고, 그 실패가 콘솔에 빨간 줄 네 개로 남습니다 —
+     App Check 오류 두 개, Auth 의 "App Check 토큰을 못 받았다" 경고, 그리고
+     토큰 갱신 재시도. 기능은 (미적용 상태라면) 멀쩡히 도는데 콘솔만
+     망가져서, 정작 진짜 오류를 찾을 때 그 사이에 묻힙니다.
+
+     로컬에서 App Check 는 어차피 성립할 수 없으므로 아예 켜지 않습니다.
+     배포 도메인 이름을 여기 적어 두지 않는 이유는, 나중에 커스텀 도메인을
+     붙였을 때 조용히 App Check 가 꺼지는 쪽이 훨씬 위험하기 때문입니다 —
+     '로컬일 때만 끈다' 는 규칙은 도메인이 늘어도 안전합니다. */
+  function appCheckImpossibleHere() {
+    try {
+      if (location.protocol === "file:") return true;
+      const h = location.hostname;
+      return h === "localhost" || h === "127.0.0.1" || h === "[::1]" || h === "::1"
+             || h.endsWith(".local") || /^192\.168\./.test(h) || /^10\./.test(h);
+    } catch (_) { return false; }
+  }
+
   function activateAppCheck() {
     try {
       const key = typeof RECAPTCHA_V3_SITE_KEY !== "undefined" ? RECAPTCHA_V3_SITE_KEY : "";
       if (!key || typeof firebase.appCheck !== "function") return;
+      if (appCheckImpossibleHere()) {
+        console.info("[fitlog] App Check skipped on " + location.hostname + " — reCAPTCHA 사이트 키는 배포 도메인 전용입니다.");
+        return;
+      }
       firebase.appCheck().activate(key, true);
     } catch (err) {
       /* 키가 설정된 뒤에도 activate() 가 조용히 실패하면 App Check 가 꺼진

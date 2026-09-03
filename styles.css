@@ -219,7 +219,17 @@ html.is-standalone { --safe-bot: env(safe-area-inset-bottom, 0px); }
    깨집니다 — zoom 은 그 전부를 비율대로 같이 키워서 지금 레이아웃을
    그대로 유지한 채 커집니다. --ui-scale 은 app.js 의 applyFontScale() 이
    설정을 읽어 :root 에 씁니다. */
-html { zoom: var(--ui-scale, 1); }
+/* overflow-x 가 없으면 탭 전환 애니메이션이 화면을 실제로 넓힙니다.
+   screenSlideFwd 는 새 화면을 translateX(28px) 에서 시작하는데, 화면은 이미
+   뷰포트 너비를 다 쓰므로 그 28px 이 문서를 오른쪽으로 늘립니다. 모바일
+   브라우저는 넓어진 문서에 맞추려고 레이아웃을 잠깐 축소했다 되돌리고,
+   그것이 '화면이 커졌다 작아지는' 느낌으로 보입니다. 왼쪽으로 가는
+   screenSlideBack(-28px)은 문서를 넓히지 않아서 멀쩡했습니다 — 오른쪽으로
+   넘길 때만 생기던 이유입니다.
+
+   html 에 준 값은 뷰포트로 전달되고 html 자신은 visible 로 남기 때문에,
+   상단바의 position:sticky 는 그대로 동작합니다. */
+html { zoom: var(--ui-scale, 1); overflow-x: hidden; }
 
 html, body {
   height: 100%;
@@ -304,11 +314,15 @@ em { font-style: normal; }
 /* ============================================================
    App shell
    ============================================================ */
+/* 진입 애니메이션을 기본값에서 뺐습니다.
+   render() 가 #app 을 통째로 갈아 끼우므로 .screen 은 매 렌더마다 새로
+   만들어집니다. 여기에 animation 이 붙어 있으면 세트를 하나 체크할 때도,
+   부위를 하나 고를 때도 화면 전체가 0.32초짜리 페이드인을 다시 재생합니다 —
+   앱을 쓰는 내내 깜빡이는 것처럼 보이던 것의 대부분이 이것이었습니다.
+   화면이 실제로 바뀔 때(탭 이동)는 아래 nav-fwd/nav-back 이 맡습니다. */
 .screen {
   padding: 8px 18px calc(var(--nav-h) + var(--safe-bot) + 24px);
-  animation: screenIn .32s cubic-bezier(.22,.9,.32,1);
 }
-@keyframes screenIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 /* 하단 탭을 눌러 옮겨갈 때만 씁니다(render() 가 매번 화면을 통째로 다시
    그리므로, 방향 표시가 없으면 체크박스 하나 누른 것도 탭 이동과 똑같이
@@ -338,7 +352,7 @@ em { font-style: normal; }
 /* 제목이 길어도 버튼을 밀어내지 않고 말줄임 처리합니다. */
 .topbar-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .topbar-title { font-size: 18px; font-weight: 800; letter-spacing: -0.03em; }
-.topbar-brand { font-size: 21px; font-weight: 900; letter-spacing: -0.04em; flex-shrink: 0; }
+.topbar-brand { font-size: 21px; font-weight: 900; letter-spacing: -0.04em; }
 .topbar-brand span { color: var(--accent); }
 .topbar-spacer { flex: 1; }
 /* The wordmark doubles as a tap target on pre-login screens (login/signup/
@@ -680,37 +694,41 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 /* ============================================================
    WORKOUT — body part selection (redesigned)
    ============================================================ */
+/* 4칸에서 3칸으로. 360px 폭 기준으로 타일 하나가 75px → 103px 이 됩니다.
+   4칸일 때는 '스트레칭' 같은 이름이 아이콘 밑에 겨우 들어가서, 부위를 고르는
+   화면인데 정작 부위 이름이 제일 안 읽혔습니다. 부위가 8개라 3칸이면 세 줄이
+   되지만, 한 줄 늘어나는 값보다 눌러야 할 것이 크게 보이는 값이 큽니다. */
 .part-grid {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px;
   margin-bottom: 8px;
 }
 .part-tile {
   position: relative; display: flex; flex-direction: column; align-items: center;
-  gap: 5px; padding: 8px 4px; border-radius: var(--r-md);
+  gap: 7px; padding: 14px 6px; border-radius: var(--r-md);
   background: var(--surface); border: 1.5px solid var(--line);
   transition: transform .12s, border-color .18s, background .18s;
   overflow: hidden; text-align: center;
 }
 .part-tile:active { transform: scale(.95); }
 .part-tile .pt-icon {
-  width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+  width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center;
   background: var(--surface-2); color: var(--pt-color, var(--sub));
   transition: background .18s, color .18s;
 }
-.part-tile .pt-icon svg { width: 17px; height: 17px; }
-.part-tile .pt-name { font-size: 12px; font-weight: 800; letter-spacing: -0.02em; }
+.part-tile .pt-icon svg { width: 21px; height: 21px; }
+.part-tile .pt-name { font-size: 13.5px; font-weight: 800; letter-spacing: -0.02em; }
 /* 개수는 선택된 부위에만 — 안 고른 타일의 "탭하여 추가"는 군더더기라 숨깁니다. */
 .part-tile .pt-count { display: none; }
 .part-tile.on .pt-count {
   display: block; font-size: 11px; font-weight: 700; margin-top: -2px;
 }
 .part-tile .pt-check {
-  position: absolute; top: 5px; right: 5px; width: 15px; height: 15px; border-radius: 50%;
+  position: absolute; top: 7px; right: 7px; width: 17px; height: 17px; border-radius: 50%;
   display: grid; place-items: center; opacity: 0; transform: scale(.5);
   background: var(--pt-color, var(--accent)); color: #0b0e05;
   transition: opacity .18s, transform .18s;
 }
-.part-tile .pt-check svg { width: 9px; height: 9px; }
+.part-tile .pt-check svg { width: 10px; height: 10px; }
 .part-tile.on {
   border-color: var(--pt-color, var(--accent));
   background: color-mix(in srgb, var(--pt-color, var(--accent)) 12%, var(--surface));
@@ -786,14 +804,18 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
    유일한 길이 된 뒤로는, 줄 사이가 좁으면 스와이프를 시작한 손끝이 바로
    위/아래 세트로 잘못 물릴 수 있습니다. */
 .set-table { display: flex; flex-direction: column; gap: 12px; }
+/* 마지막 칸은 44px 입니다 — .done-toggle 이 정확히 44px 이라, 40px 짜리 칸에
+   넣으면 4px 이 삐져나와 그 칸만 좌우 여백이 어긋나 보였습니다. 그리고 머리
+   줄의 좌우 패딩을 없앴습니다: 같은 grid 를 쓰면서 한쪽에만 padding 이 있으면
+   두 격자의 칸 위치가 애초에 맞을 수가 없습니다. */
 .set-table-head {
-  display: grid; grid-template-columns: 26px 1fr 1fr 40px; gap: 6px;
-  align-items: center; padding: 0 2px 2px; font-size: 11px; font-weight: 800;
+  display: grid; grid-template-columns: 26px 1fr 1fr 44px; gap: 6px;
+  align-items: center; padding: 0 0 2px; font-size: 11px; font-weight: 800;
   color: var(--muted); text-transform: uppercase; letter-spacing: .05em;
 }
 .set-table-head span:nth-child(2), .set-table-head span:nth-child(3), .set-table-head span:nth-child(4) { text-align: center; }
 .set-row {
-  display: grid; grid-template-columns: 26px 1fr 1fr 40px; gap: 6px; align-items: center;
+  display: grid; grid-template-columns: 26px 1fr 1fr 44px; gap: 6px; align-items: center;
   background: var(--surface); position: relative; z-index: 1;
   /* pan-y 로 두면 브라우저가 세로 팬을 독점해서, 맨 위에서 아래로 당기는
      새로고침의 preventDefault 가 무시됩니다. manipulation 은 더블탭 줌만
@@ -854,7 +876,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
    column and leave 완료/삭제 floating mid-row instead of at the right edge.
    The header above it loses the same column so 시간/완료 stay over what they
    label. */
-.set-row.hold, .set-table-head.hold { grid-template-columns: 26px 1fr 40px; }
+.set-row.hold, .set-table-head.hold { grid-template-columns: 26px 1fr 44px; }
 .set-row.done .set-num { background: var(--accent-soft); color: var(--accent); }
 .set-num.warmup { background: color-mix(in srgb, var(--orange) 18%, var(--surface-2)); color: var(--orange); }
 .set-row.warmup .val-chip { opacity: .78; }
@@ -947,15 +969,19 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   background: rgba(0,0,0,.82); backdrop-filter: blur(14px) saturate(70%);
   -webkit-backdrop-filter: blur(14px) saturate(70%);
   display: flex; align-items: flex-end; justify-content: center;
-  animation: fadeIn .2s ease;
 }
+/* 애니메이션은 '열린 그 렌더' 에만 붙는 .anim-in 이 있을 때만 재생됩니다
+   (app.js 의 overlayIn 참고). 예전에는 여기에 그냥 걸려 있어서, 시트가 떠
+   있는 동안 부위를 하나 고를 때마다 시트가 아래로 내려갔다 다시 올라왔습니다. */
+.sheet-backdrop.anim-in { animation: fadeIn .2s ease; }
+.sheet-backdrop.anim-in > .sheet-panel { animation: sheetUp .34s cubic-bezier(.22,.9,.32,1); }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 .sheet-panel {
   width: 100%; max-width: 480px; max-height: 92dvh; overflow-y: auto;
   background: var(--surface); border-radius: var(--r-2xl) var(--r-2xl) 0 0;
   padding: 0 18px calc(20px + var(--safe-bot));
   box-shadow: var(--sh-pop); border-top: 1px solid var(--line-2);
-  overscroll-behavior: contain; animation: sheetUp .34s cubic-bezier(.22,.9,.32,1);
+  overscroll-behavior: contain;
 }
 @keyframes sheetUp { from { transform: translateY(100%); } to { transform: none; } }
 .sheet-grab { width: 40px; height: 5px; border-radius: 999px; background: var(--line-2); margin: 10px auto 0; }
@@ -1059,7 +1085,12 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
    .picker-footer comment below) — so this sheet scrolls only inside
    .picker-scroll, and the panel itself just lays its children out top to
    bottom. */
-.picker-sheet { display: flex; flex-direction: column; overflow: hidden; }
+/* 높이를 고정합니다. 예전에는 내용에 따라 높이가 정해졌는데(max-height 만
+   있었습니다), 운동을 검색해서 20개가 2개로 줄면 시트가 그만큼 쪼그라들고
+   지우면 다시 커졌습니다. 시트는 바닥에 붙어 있으므로 그 변화가 전부 위쪽
+   모서리에서 일어나, 글자를 칠 때마다 시트가 내려갔다 올라오는 것처럼
+   보였습니다. */
+.picker-sheet { display: flex; flex-direction: column; overflow: hidden; height: 88dvh; }
 .picker-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .search-bar { position: relative; margin-bottom: 14px; }
 .search-bar svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); }
@@ -1595,25 +1626,9 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   transform: translateX(-50%); z-index: 100;
   background: var(--surface-3); color: var(--text); border: 1px solid var(--line-2);
   padding: 12px 20px; border-radius: 999px; font-size: 13px; font-weight: 700;
-  box-shadow: var(--sh-pop); animation: toastIn .3s cubic-bezier(.2,.9,.3,1); text-align: center;
-  /* left:50% 로 띄운 fixed 요소라, 폭을 정해 주지 않으면 '들어갈 수 있는
-     자리' 가 화면 오른쪽 절반뿐입니다 — 긴 문장이 절반 폭에 갇혀 네 줄로
-     접혔습니다. max-content 로 내용만큼 벌리고 위에서 잘라 냅니다. */
-  width: max-content; max-width: min(86vw, 380px);
+  box-shadow: var(--sh-pop); animation: toastIn .3s cubic-bezier(.2,.9,.3,1); max-width: 88%; text-align: center;
 }
 @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
-
-/* 뭔가 안 됐을 때. 잘된 알림과 같은 차림새면 지나가는 1~2초 동안 둘을
-   구분할 방법이 없습니다. 빨간 점 하나와 테두리 색만 바꿉니다 — 화면을
-   덮는 경고창은 이 정도 일에는 과합니다. */
-.toast.is-bad {
-  display: flex; align-items: center; gap: 8px;
-  border-color: color-mix(in srgb, var(--red) 42%, var(--line-2));
-}
-.toast.is-bad::before {
-  content: ''; flex: none; width: 7px; height: 7px;
-  border-radius: 50%; background: var(--red);
-}
 
 /* ============================================================
    REST TIMER — appended to <body> directly, outside #app, so its
@@ -1706,10 +1721,13 @@ body.has-rest-timer .screen { padding-bottom: calc(var(--nav-h) + var(--safe-bot
   z-index: 45;
   max-width: 480px; margin: 0 auto;
   background: var(--bg); overflow-y: auto;
-  animation: detail-in .22s cubic-bezier(.2,.8,.3,1);
 }
 @keyframes detail-in { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
 .detail-screen .screen { padding-bottom: 24px; }
+/* 시트와 같은 이유 — 전체 화면도 열릴 때만 슬라이드합니다. 이력 화면에서
+   기간 탭(3개월/1년/전체)을 누를 때마다 화면 전체가 다시 미끄러져 들어오던
+   것이 이것이었습니다. */
+.detail-screen.anim-in { animation: detail-in .22s cubic-bezier(.2,.8,.3,1); }
 
 /* While a full-screen overlay is up, the page underneath must not scroll —
    two scrollable layers under one finger is what made closing the summary
@@ -2081,43 +2099,6 @@ body.overlay-open { overflow: hidden; }
 .wt-now span { font-size: 12px; font-weight: 700; color: var(--muted); }
 .wt-now em { margin-left: auto; font-style: normal; font-size: 10px; font-weight: 700; color: var(--muted); }
 
-/* 그래프를 손가락으로 짚으면 그 날 값이 뜹니다.
-   pan-y 로 두어야 세로 스크롤은 평소대로 넘어가고, 가로로 훑는 동작만
-   그래프가 가져갑니다. */
-.wt-chart { position: relative; touch-action: pan-y; -webkit-user-select: none; user-select: none; }
-.wt-chart .ch { margin-bottom: 4px; }
-.wt-guide, .wt-mark, .wt-tip { display: none; }
-.wt-chart.is-probing .wt-guide,
-.wt-chart.is-probing .wt-mark { display: inline; }
-.wt-chart.is-probing .wt-tip { display: block; }
-.wt-guide { stroke: var(--wt-color); stroke-width: 1; stroke-dasharray: 3 3; opacity: .55; }
-.wt-mark { fill: var(--surface); stroke: var(--wt-color); stroke-width: 2.5; }
-.wt-tip {
-  position: absolute; top: 0; left: 0; transform: translate(-50%, -145%);
-  padding: 5px 9px; border-radius: 999px; white-space: nowrap;
-  background: var(--wt-color); color: #fff;
-  font-size: 11px; font-weight: 800; letter-spacing: -0.01em;
-  box-shadow: var(--sh-card); pointer-events: none;
-}
-.wt-tip.below { transform: translate(-50%, 45%); }
-.wt-hint { margin: 2px 0 0; font-size: 11px; font-weight: 600; color: var(--muted); }
-
-/* 짚어서 고른 날 — 그 자리에서 고치거나 지울 수 있게 */
-.wt-sel {
-  display: flex; align-items: center; gap: 7px; margin-top: 6px;
-  padding: 9px 6px 0; border-top: 1px solid var(--line);
-}
-.wt-sel-day {
-  display: flex; align-items: baseline; gap: 7px; margin-right: auto;
-  font-size: 12px; font-weight: 700; color: var(--sub);
-}
-.wt-sel-day b { font-size: 14px; font-weight: 800; color: var(--text); }
-.wt-sel-del { color: var(--red); }
-.wt-sel-x { width: 28px; height: 28px; flex: none; }
-
-/* 몸무게 대화상자의 날짜 칸 */
-.dialog-date { margin-bottom: 8px; }
-
 .dsum-timing { margin: 6px 0 14px; font-size: 12px; font-weight: 600; color: var(--muted); }
 
 /* 위험 구역은 접어 둡니다 — 펼쳐 두면 되돌릴 수 없는 버튼 두 개가 설정 화면
@@ -2184,3 +2165,40 @@ body.overlay-open { overflow: hidden; }
   font-size: 10px; font-weight: 800; border: 1px solid var(--accent-line);
 }
 .exh-screen .topbar-title { display: flex; align-items: center; }
+
+/* ── 그래프 짚어 보기 ────────────────────────────────────────────────────
+   touch-action: pan-y 가 이 기능의 핵심입니다. 그래프가 카드 너비를 다 쓰기
+   때문에, 세로 스크롤까지 가져가면 화면 한가운데에 손가락을 먹는 띠가
+   생깁니다. 세로는 브라우저에게 넘기고 가로만 받습니다. */
+.ch-scrub { position: relative; touch-action: pan-y; }
+.ch-scrub .ch { display: block; margin-bottom: 0; }
+.ch-cursor, .ch-dot, .ch-tip {
+  position: absolute; opacity: 0; pointer-events: none;
+  transition: opacity .14s ease;
+}
+.ch-scrub.scrubbing .ch-cursor,
+.ch-scrub.scrubbing .ch-dot,
+.ch-scrub.scrubbing .ch-tip { opacity: 1; }
+
+.ch-cursor {
+  top: 0; bottom: 0; width: 1px; margin-left: -.5px;
+  background: var(--line-2);
+}
+.ch-dot {
+  width: 11px; height: 11px; border-radius: 50%;
+  background: var(--surface); border: 2.5px solid var(--ch-accent, var(--accent));
+  transform: translate(-50%, -50%);
+}
+/* 말풍선은 항상 점 위에 붙습니다. 아래로 뒤집는 경우를 두지 않는 이유는,
+   그래프 높이가 108px 이라 위쪽으로 넘칠 일이 거의 없고, 위치가 상황마다
+   바뀌면 연달아 짚을 때 눈이 따라가기 어렵기 때문입니다. */
+.ch-tip {
+  transform: translate(-50%, calc(-100% - 13px));
+  display: flex; align-items: baseline; gap: 6px; white-space: nowrap;
+  background: var(--surface-3); color: var(--text);
+  border: 1px solid var(--line-2); border-radius: 9px;
+  padding: 5px 9px; box-shadow: var(--sh-card);
+  font-size: 13px; font-weight: 800; letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.ch-tip span { font-size: 10.5px; font-weight: 700; color: var(--muted); }
