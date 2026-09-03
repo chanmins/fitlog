@@ -1756,11 +1756,77 @@ const APP_VERSION = (() => {
   function overlayIn(key) {
     if (!_renderOverlays) _renderOverlays = new Set();
     _renderOverlays.add(key);
-    return _openOverlays.has(key) ? '' : ' anim-in';
+    /* _armedReveals 에 있는 키는 '클래스는 붙였지만 아직 화면 밖이라 재생을
+       시작하지 않은' 것입니다. 그 사이에 재렌더가 한 번 끼면(주/월 토글, 세트
+       체크) 이미 열려 있다는 이유로 클래스가 떨어져서, 스크롤해 내려갔을 때
+       그래프는 한 번도 안 움직이고 완성된 채로 서 있게 됩니다. */
+    return (_openOverlays.has(key) && !_armedReveals.has(key)) ? '' : ' anim-in';
   }
   function commitOverlays() {
     _openOverlays = _renderOverlays || new Set();
     _renderOverlays = null;
+  }
+
+  /* ── 보일 때 재생하기 ─────────────────────────────────────────────────────
+     그래프 애니메이션은 지금까지 '그려지는 순간' 시작했습니다. 그런데 홈의
+     부위 밸런스도, 히스토리의 그래프들도 대부분 첫 화면 아래에 있습니다.
+     0.5초짜리 애니메이션은 사용자가 엄지를 올리기도 전에 끝나 있고, 내려가
+     보면 이미 다 자란 막대만 남아 있습니다 — 효과를 만든 값은 치르고 효과는
+     못 보는 셈입니다.
+
+     그래서 '언제 그려졌나' 대신 '언제 보이나' 를 기준으로 바꿉니다. 화면 밖
+     카드는 anim-arm 으로 0 상태에 붙들어 두고, 뷰포트에 들어오는 순간
+     anim-in 으로 바꿔 그때부터 재생합니다. 한 번 재생한 카드는 다시 올라갔다
+     내려와도 반복하지 않습니다 — 스크롤할 때마다 다시 솟아오르면 읽으려는
+     사람을 방해합니다.
+
+     스크롤 위치를 직접 듣지 않고 IntersectionObserver 를 쓰는 이유: 이 앱은
+     본문(.screen)과 전체화면 오버레이(.detail-screen)가 각자 스크롤합니다.
+     스크롤 이벤트를 직접 듣자면 어느 쪽이 스크롤 중인지 매번 따져야 하는데,
+     옵저버는 '뷰포트에 대해 보이는가' 만 보므로 둘 다 그냥 맞습니다. */
+  const _armedReveals = new Set();
+  let _revealObs = null;
+  function revealObserver() {
+    if (_revealObs) return _revealObs;
+    if (typeof IntersectionObserver === 'undefined') return null;
+    _revealObs = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (!e.isIntersecting) return;
+        _revealObs.unobserve(e.target);
+        _armedReveals.delete(e.target.dataset.akey);
+        e.target.classList.remove('anim-arm');
+        e.target.classList.add('anim-in');
+      });
+    }, {
+      /* 아래쪽 12% 를 잘라 두면, 카드가 화면 끄트머리에 빼꼼 걸친 순간이
+         아니라 실제로 눈에 들어오는 자리까지 올라왔을 때 재생됩니다. */
+      root: null, rootMargin: '0px 0px -12% 0px', threshold: 0
+    });
+    return _revealObs;
+  }
+
+  /* innerHTML 직후, 브라우저가 화면을 칠하기 전에 부릅니다. 같은 프레임 안에서
+     클래스를 바꾸므로 '다 그려진 그래프가 한 번 번쩍했다가 0 으로 돌아가는'
+     장면은 나오지 않습니다. */
+  function armReveals() {
+    try {
+      const obs = revealObserver();
+      if (obs) obs.disconnect();
+      _armedReveals.clear();
+      document.querySelectorAll('[data-akey].anim-in').forEach(el => {
+        if (!obs) return;                 // 미지원 브라우저: 지금까지처럼 즉시 재생
+        const r = el.getBoundingClientRect();
+        const vh = window.innerHeight || document.documentElement.clientHeight;
+        if (r.top < vh * 0.88 && r.bottom > 0) return;  // 이미 보임 → 바로 재생
+        el.classList.remove('anim-in');
+        el.classList.add('anim-arm');
+        _armedReveals.add(el.dataset.akey);
+        obs.observe(el);
+      });
+    } catch (_) {
+      /* 옵저버가 어떤 이유로든 실패하면 anim-in 이 그대로 남아 예전처럼
+         즉시 재생됩니다. 그래프가 안 보이는 것보다는 낫습니다. */
+    }
   }
 
   /* render() 는 이른 return 이 여럿이라 커밋을 빠뜨리기 쉽습니다. 한 군데를
@@ -1855,6 +1921,9 @@ const APP_VERSION = (() => {
        workout screen without any of them needing to know about it. */
     if (state.summaryDate) html += renderDaySummary(state.summaryDate);
     appEl.innerHTML = html;
+    /* 칠하기 전에 잡아야 합니다 — 뒤로 미루면 화면 밖 카드가 한 프레임 동안
+       재생을 시작했다가 0 으로 되돌아갑니다. */
+    armReveals();
     paintNav(true);
     bindEvents();
     positionYearWheel();
@@ -2607,14 +2676,16 @@ const APP_VERSION = (() => {
     }
 
     const max = Math.max(...rows.map(r => r.days), 1);
-    const bars = rows.map(r => {
+    /* --i 는 줄 번호입니다. CSS 가 이걸로 지연을 계산해 위에서부터 차례로
+       자라게 합니다 — 히스토리의 부위별 분석(.pa-bar)과 같은 장치입니다. */
+    const bars = rows.map((r, i) => {
       const pct = Math.round((r.days / max) * 100);
       const gap = daysSince(r.last);
       const meta = r.days
         ? `${r.days}일 · ${r.sets}세트`
         : `${BALANCE_WINDOW}일간 없음`;
       const staleCls = r.days === 0 ? ' stale' : (gap >= 7 ? ' warn' : '');
-      return `<div class="balance-row${staleCls}">
+      return `<div class="balance-row${staleCls}" style="--i:${i}">
         <span class="balance-name">${esc(r.part.label)}</span>
         <span class="balance-track"><span class="balance-fill" style="width:${Math.max(pct, r.days ? 8 : 3)}%;background:${r.part.color}"></span></span>
         <span class="balance-meta">${esc(meta)}</span>
@@ -2630,7 +2701,10 @@ const APP_VERSION = (() => {
       : gap >= 7 ? `마지막으로 한 지 ${gap}일 됐어요`
       : `다른 부위보다 적게 했어요`;
 
-    return `<div class="balance-card">
+    /* 그래프와 같은 장치를 씁니다: 홈에 처음 들어온 그 렌더에만 애니메이션이
+       붙고, 세트를 체크하거나 무엇을 저장해서 다시 그려질 때는 붙지 않습니다.
+       (그리고 화면 밖이면 armReveals 가 스크롤해 내려올 때까지 붙들어 둡니다.) */
+    return `<div class="balance-card${overlayIn('balance')}" data-akey="balance">
       <div class="balance-head">
         <div class="sec-title">부위 밸런스</div>
         <span class="balance-window">최근 ${BALANCE_WINDOW}일</span>
@@ -3917,7 +3991,7 @@ const APP_VERSION = (() => {
        바꿀 때도 다시 붙는데, 그때는 그래프가 통째로 다른 데이터가 되므로
        다시 그려지는 편이 맞습니다. 시트에 쓰는 것과 같은 장치입니다 —
        안 그러면 날짜 하나만 눌러도 그래프 전체가 다시 솟아오릅니다. */
-    return `<div class="stats-card${overlayIn('stats:' + mode)}">
+    return `<div class="stats-card${overlayIn('stats:' + mode)}" data-akey="stats:${mode}">
       <div class="stats-head"><div class="sec-title">운동량 추이</div>${toggle}</div>
 
       <div class="stats-sum">
@@ -4126,7 +4200,7 @@ const APP_VERSION = (() => {
                 : diff < -0.1 ? `<span class="pa-down">${diff}${weightUnitLabel()}</span>`
                 : `<span class="pa-flat">변화 없음</span>`;
 
-    return `<div class="stats-card${overlayIn('weight')}">
+    return `<div class="stats-card${overlayIn('weight')}" data-akey="weight">
       <div class="stats-head">
         <div class="sec-title">몸무게</div>
         <button class="stats-tab on" data-act="add-weight">+ 기록</button>
@@ -4181,7 +4255,7 @@ const APP_VERSION = (() => {
       </div>`;
     }).join('');
 
-    return `<div class="stats-card${overlayIn('partanalysis')}">
+    return `<div class="stats-card${overlayIn('partanalysis')}" data-akey="partanalysis">
       <div class="stats-head">
         <div class="sec-title">부위별 분석</div>
         <button class="stats-tab" data-act="vol-info">최근 ${w.weeks}주 ⓘ</button>
