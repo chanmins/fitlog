@@ -590,17 +590,37 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 60px;
   background: var(--surface); pointer-events: none;
 }
+/* ── 아이콘과 알약을 같은 자리에 두기 ────────────────────────────────────
+   알약의 위치가 top: 7px 로 박혀 있었습니다. 아이콘 쪽은 flex 로 가운데
+   정렬되어 글자 줄 높이에 따라 자리가 정해졌으니, 둘은 서로를 전혀 모르는
+   채 각자 계산되고 있었던 셈입니다. 실제로 2px 정도 어긋나서 아이콘 위
+   여백이 아래보다 넓어 보였습니다.
+
+   그래서 두 값을 하나로 묶습니다. 아이콘은 --pill-h 높이의 칸 한가운데에
+   놓고(23px 아이콘에 위아래로 남는 만큼 margin 을 줍니다), 알약도 정확히
+   그 칸입니다 — 이제 어긋날 수가 없습니다. 글자 높이를 못 박는 이유는
+   그래야 위에서부터 쌓은 전체(30 + 4 + 14 = 48px)가 탭 바 64px 안에서
+   위아래 8px 로 딱 떨어지기 때문입니다. */
+/* 7.5px = (탭 바 64px − 위쪽 경계선 1px − 내용 48px) ÷ 2 */
+.bottom-nav { --pill-h: 30px; --pill-top: 7.5px; }
 .nav-tab {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 4px; color: var(--muted); font-size: 11px; font-weight: 700;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+  padding-top: var(--pill-top); gap: 4px;
+  color: var(--muted); font-size: 11px; font-weight: 700;
   letter-spacing: -0.01em; transition: color .18s; position: relative;
 }
-.nav-tab svg { width: 23px; height: 23px; }
+.nav-tab svg {
+  width: 23px; height: 23px;
+  margin: calc((var(--pill-h) - 23px) / 2) 0;
+}
+.nav-tab > span { height: 14px; line-height: 14px; }
 .nav-tab.active { color: var(--accent); }
-/* 아이콘도 같이 반응해야 알약만 따로 노는 것처럼 보이지 않습니다. 살짝 뜨고
-   조금 커지는데, 되튕기는 곡선이라 알약이 뭉치는 순간과 박자가 맞습니다. */
+/* 아이콘도 같이 반응해야 알약만 따로 노는 것처럼 보이지 않습니다. 예전에는
+   2px 떠오르기도 했는데, 그러면 알약 안에서 아이콘이 위로 치우쳐 앉아
+   방금 고친 어긋남이 그대로 돌아옵니다 — 커지는 것만 남깁니다. 되튕기는
+   곡선이라 알약이 뭉치는 순간과 박자는 그대로입니다. */
 .nav-tab svg { transition: transform .38s cubic-bezier(.34, 1.5, .5, 1); }
-.nav-tab.active svg { transform: translateY(-2px) scale(1.07); }
+.nav-tab.active svg { transform: scale(1.09); }
 
 /* 강조 알약은 탭마다 하나씩이 아니라 '하나' 입니다. 탭마다 ::before 로
    두면 켜지고 꺼질 뿐 움직일 수가 없습니다 — 서로 다른 요소니까요. 하나만
@@ -614,7 +634,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
    곡선이 1 을 살짝 넘습니다(1.34). 목적지에서 아주 조금 지나쳤다 돌아오는
    움직임인데, 이것이 '미끄러졌다' 와 '튕겨서 붙었다' 를 가릅니다. */
 .nav-pill {
-  position: absolute; top: 7px; left: 0; width: 25%; height: 30px;
+  position: absolute; top: var(--pill-top); left: 0; width: 25%; height: var(--pill-h);
   display: grid; place-items: center; pointer-events: none; z-index: 0;
   transform: translateX(calc(var(--nav-i, 0) * 100%));
   /* 옮기는 곡선은 앞이 빠르고 뒤가 길게 남습니다. 액체는 던져지듯 출발했다가
@@ -624,7 +644,7 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 /* 실제로 보이는 알약. 바깥은 '옮기는 일' 만, 여기는 '모양이 바뀌는 일' 만
    맡습니다 — 한 요소에 둘 다 걸면 transform 이 서로를 덮어씁니다. */
 .nav-pill::before {
-  content: ""; width: 34px; height: 30px;
+  content: ""; width: 34px; height: var(--pill-h);
   background: var(--accent-soft); border-radius: 10px;
   will-change: transform, border-radius;
 }
@@ -706,9 +726,15 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   height: 34px; padding: 0 13px; border-radius: 999px;
   background: var(--accent-soft); color: var(--accent);
   font-size: 13px; font-weight: 800; border: 1px solid var(--accent-line);
-  transition: transform .1s;
+  transition: transform .1s, background .16s, color .16s, border-color .16s;
 }
 .btn-add-sm:active { transform: scale(.95); }
+/* 적을 게 없으면 누를 수도 없습니다. 눌러 본 뒤에 '이름을 적어 주세요' 를
+   읽는 것보다, 버튼이 처음부터 꺼져 있는 편이 한 걸음 짧습니다. */
+.btn-add-sm:disabled {
+  background: var(--surface-3); color: var(--muted); border-color: transparent;
+}
+.btn-add-sm:disabled:active { transform: none; }
 
 /* ============================================================
    Section headers
@@ -1341,8 +1367,11 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   font-size: 16px; font-weight: 800; box-shadow: var(--sh-glow); transition: transform .1s;
 }
 .picker-confirm:active { transform: scale(.97); }
+/* 아직 아무것도 안 고른 상태. --surface-2 였는데 그건 운동 줄과 같은 색이라,
+   목록의 마지막 항목이 하나 더 있는 것처럼 보였습니다. 한 단계 위 면으로
+   올리고 글자를 흐리게 두면 '지금은 못 누르는 버튼' 으로 읽힙니다. */
 .picker-confirm.ghost {
-  background: var(--surface-2); color: var(--sub); box-shadow: none; border: 1px solid var(--line);
+  background: var(--surface-3); color: var(--muted); box-shadow: none; border: 0;
 }
 
 /* ============================================================
@@ -1369,6 +1398,18 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .search-bar input::placeholder { color: var(--muted); }
 
 .pick-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px; }
+/* 별을 준 것들과 나머지를 가르는 머리글. 별표가 '무엇을 하는 버튼인지'
+   화면에서 설명해 주는 유일한 자리라, 개수까지 붙여 둡니다. */
+.pick-group {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 11px; font-weight: 800; color: var(--muted);
+  letter-spacing: .05em; padding: 6px 2px 0;
+}
+.pick-group:not(:first-child) { margin-top: 6px; }
+.pick-group span {
+  font-size: 10.5px; font-weight: 800; color: var(--sub);
+  background: var(--surface-3); border-radius: 999px; padding: 1px 7px;
+}
 .pick-item {
   display: flex; align-items: center; gap: 10px;
   background: var(--surface-2); border: 1.5px solid var(--line);
@@ -1386,10 +1427,15 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   flex: 1; text-align: left; padding: 15px 8px; font-size: 15px; font-weight: 700;
   display: flex; flex-direction: column; gap: 3px; min-width: 0;
 }
+/* ⓘ 를 이름 바로 뒤에 붙입니다. 오른쪽 끝에 따로 서 있을 때는 체크
+   동그라미와 나란해서 '이 줄의 오른쪽 버튼' 두 개 중 어느 것이 무엇인지
+   매번 확인해야 했습니다. 이름 옆에 있으면 '이 운동에 대한 설명' 이라는
+   뜻이 자리만으로 읽힙니다. */
+.pick-item-title { display: flex; align-items: center; gap: 2px; min-width: 0; }
 .pick-item-en { font-size: 12px; color: var(--muted); font-weight: 600; }
 /* 고르기 전에 어떤 동작인지 볼 수 있어야 합니다. 44px 은 손가락 탭 최소 크기. */
 .pick-info {
-  flex-shrink: 0; width: 34px; height: 34px; display: grid; place-items: center;
+  flex-shrink: 0; width: 28px; height: 28px; display: grid; place-items: center;
   border: none; background: none; color: var(--muted); border-radius: 999px;
   cursor: pointer; -webkit-tap-highlight-color: transparent;
 }
@@ -1415,7 +1461,12 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
   border-color: transparent; color: var(--accent-ink);
 }
-.pick-item-name:disabled { opacity: .6; }
+.pick-item.added .pick-item-name { opacity: .6; }
+/* 줄 전체가 눌립니다. 눌린 순간 면이 한 단계 밝아져서, 손가락이 어디에
+   닿았는지가 아니라 '이 줄이 눌렸다' 가 보입니다. */
+.pick-item[data-act] { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.pick-item[data-act]:active { background: var(--surface-3); }
+.pick-item.on[data-act]:active { background: color-mix(in srgb, var(--accent) 14%, var(--surface-2)); }
 /* .picker-sheet is a flex column: header stays put, .picker-scroll (search +
    list + custom-add) scrolls in its own box, and this footer sits below it as
    a normal flex child. It used to be position:sticky inside the same scroll
@@ -1431,10 +1482,28 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   background: var(--surface);
 }
 .picker-confirm:disabled { opacity: .75; }
-.custom-add-row { display: flex; gap: 8px; margin-top: 10px; padding-top: 14px; border-top: 1px solid var(--line); }
+/* ── 직접 추가 영역 ──────────────────────────────────────────────────────
+   이 시트에는 회색 덩어리가 셋 있었고 셋 다 --surface-2 였습니다: 운동 줄,
+   이 입력칸, 그리고 아직 아무것도 안 고른 하단 버튼. 전부 같은 색이라
+   목록이 어디서 끝나고 무엇이 버튼인지 눈으로 가를 수가 없었습니다.
+
+   채도가 아니라 '층' 으로 나눕니다 — 목록은 채워진 면(--surface-2), 여기는
+   비어 있는 자리(투명 + 점선), 하단 버튼은 컨트롤(--surface-3, 고르면
+   강조색). 같은 회색이라도 테두리와 배경의 조합이 다르면 역할이 읽힙니다. */
+.custom-add { margin-top: 12px; padding-top: 14px; border-top: 1px solid var(--line); }
+.custom-add-head {
+  font-size: 12px; font-weight: 800; color: var(--muted); margin-bottom: 8px; padding-left: 2px;
+}
+.custom-add-row { display: flex; gap: 8px; }
 .custom-add-row input {
-  flex: 1; height: 46px; background: var(--surface-2); border: 1px solid var(--line);
+  flex: 1; height: 46px; background: transparent; border: 1.5px dashed var(--line-2);
   border-radius: var(--r-sm); padding: 0 14px; font-size: 14px; font-weight: 600;
+  transition: border-color .15s, background .15s;
+}
+/* 쓰기 시작하면 점선이 실선 강조색이 됩니다 — 옆의 '추가' 버튼이 살아나는
+   것과 같은 순간이라, 둘이 한 짝이라는 게 눈에 들어옵니다. */
+.custom-add-row input:focus {
+  border-style: solid; border-color: var(--accent-line); background: var(--surface-2);
 }
 .custom-add-row input::placeholder { color: var(--muted); }
 .custom-add-row .btn-add-sm { height: 46px; padding: 0 18px; border-radius: var(--r-sm); }
@@ -1452,6 +1521,8 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   background: var(--surface-2); font-size: 12px; font-weight: 700; color: var(--sub);
 }
 .info-badge.eq { background: var(--accent-soft); color: var(--accent); }
+.info-badge.diff { gap: 6px; }
+.info-badge.diff b { color: var(--text); font-weight: 800; }
 .diff-stars { color: var(--orange); font-size: 13px; letter-spacing: 1px; }
 
 /* ── 근육 지도 ──────────────────────────────────────────────────────────
@@ -1553,11 +1624,23 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .cal-cell.empty { pointer-events: none; }
 .cal-cell:not(.empty):not(.future):active { transform: scale(.9); }
 .cal-num { font-size: 13px; font-weight: 700; color: var(--sub); line-height: 1; }
+/* 요일 머리글과 같은 규칙 — 토요일 파랑, 일요일 빨강. 달력에서 눈이 찾는
+   것은 머리글이 아니라 숫자라, 색이 숫자까지 내려와야 주말이 보입니다. */
+.cal-cell.sun .cal-num { color: var(--red); }
+.cal-cell.sat .cal-num { color: var(--blue); }
 .cal-cell.future .cal-num { color: var(--muted); opacity: .45; }
 .cal-cell.done { background: var(--surface-2); }
 .cal-cell.done .cal-num { color: var(--text); font-weight: 800; }
+/* 운동한 날은 주말 색을 유지하되 한 톤 진하게 — '이날 운동했다' 와
+   '이날은 토요일이다' 는 서로 다른 정보라 둘 다 남겨 둡니다. */
+.cal-cell.done.sun .cal-num { color: var(--red); }
+.cal-cell.done.sat .cal-num { color: var(--blue); }
+/* 오늘은 어느 요일이든 강조색이 이깁니다 — 지금 어디에 서 있는지가
+   무슨 요일인지보다 먼저 보여야 합니다. */
 .cal-cell.today { border-color: var(--accent); }
-.cal-cell.today .cal-num { color: var(--accent); font-weight: 900; }
+.cal-cell.today .cal-num,
+.cal-cell.today.sun .cal-num,
+.cal-cell.today.sat .cal-num { color: var(--accent); font-weight: 900; }
 .cal-dots { display: flex; gap: 2px; height: 5px; align-items: center; }
 .cal-dot { width: 4px; height: 4px; border-radius: 50%; }
 .cal-foot {
@@ -1698,6 +1781,11 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
    강조색이 되고 조각이 뒤늦게 따라와, 조각이 글자를 쫓아가 보입니다. */
 .mini-seg-btn.on { color: var(--accent); }
 .mini-seg-btn:active { transform: scale(.94); }
+/* 카드 머리글에 들어가는 작은 판. 생김새는 그대로 두고 치수만 줄입니다 —
+   크기가 달라도 같은 물건으로 보여야 같은 동작이라는 게 전달됩니다. */
+.mini-seg.sm { padding: 2.5px; }
+.mini-seg.sm .mini-seg-thumb { top: 2.5px; bottom: 2.5px; left: 2.5px; width: calc((100% - 5px) / var(--n, 2)); }
+.mini-seg.sm .mini-seg-btn { height: 26px; min-width: 0; padding: 0 11px; font-size: 12px; }
 
 /* 선택지가 서넛이면 가로 스크롤 대신 격자로 깔아 한 화면에 다 보입니다.
    스크롤 줄은 오른쪽 끝 항목이 잘려서, 있는 줄도 모르고 지나갑니다. */
@@ -1946,6 +2034,24 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 }
 .wheel-item.on { color: var(--accent); font-size: 21px; font-weight: 900; }
 
+/* ── 두 칸 휠 (몸무게) ────────────────────────────────────────────────────
+   정수와 소수를 나란히 굴립니다. 띠는 각 휠이 아니라 짝 전체에 하나만
+   그려서, '57' 과 '5' 가 따로 고른 두 값이 아니라 하나의 숫자로 읽히게
+   합니다. 가운데 점과 단위는 굴러가지 않고 제자리에 서 있습니다. */
+.wheel-pair {
+  position: relative; height: 220px; margin: 4px 0 18px;
+  display: flex; align-items: center; justify-content: center; gap: 2px;
+}
+.wheel-pair .wheel-band { left: 14px; right: 14px; }
+.wheel-pair .wheel { height: 100%; margin: 0; width: 104px; }
+.wheel-pair .wheel.narrow { width: 62px; }
+.wheel-dot, .wheel-unit {
+  font-size: 20px; font-weight: 900; color: var(--text);
+  align-self: center; pointer-events: none;
+}
+.wheel-dot { transform: translateY(4px); }
+.wheel-unit { font-size: 15px; font-weight: 800; color: var(--muted); margin-left: 6px; }
+
 .seg-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 4px; }
 .seg-btn {
   height: 46px; border-radius: var(--r-md); background: var(--surface-2);
@@ -1978,6 +2084,15 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
   box-shadow: var(--sh-pop); animation: toastIn .3s cubic-bezier(.2,.9,.3,1); max-width: 88%; text-align: center;
 }
 @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
+/* 뭔가 안 됐을 때. 성공과 실패가 같은 회색 알약이면 실패한 줄 모르고 같은
+   버튼을 다시 누르게 됩니다. 배경까지 빨갛게 칠하지는 않습니다 — 왼쪽의
+   굵은 띠와 테두리만으로 충분히 다르고, 글자는 원래 대비를 지킵니다. */
+.toast.warn {
+  background: color-mix(in srgb, var(--red) 14%, var(--surface-3));
+  border-color: var(--red);
+  border-left: 4px solid var(--red);
+  padding-left: 17px;
+}
 
 /* ============================================================
    REST TIMER — appended to <body> directly, outside #app, so its
@@ -2277,7 +2392,9 @@ body.overlay-open { overflow: hidden; }
   border-radius: var(--r-lg); padding: 16px; margin-top: 18px;
 }
 .stats-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.stats-toggle { display: flex; gap: 4px; background: var(--surface-2); border-radius: 999px; padding: 3px; }
+/* 주간/월간처럼 '둘 중 하나' 는 이제 설정 화면과 같은 .mini-seg 를 씁니다.
+   여기 남은 .stats-tab 은 짝이 없는 단독 버튼들입니다 — '+ 기록', '접기',
+   '동작 보기' 처럼 누르면 무슨 일이 일어나는 것들. */
 .stats-tab {
   padding: 5px 13px; border-radius: 999px; border: none; background: transparent;
   font-size: 12px; font-weight: 800; color: var(--muted); cursor: pointer;
