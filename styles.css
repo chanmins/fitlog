@@ -2288,3 +2288,65 @@ body.overlay-open { overflow: hidden; }
    이름을 주면 별도 조각으로 잡혀, 위치가 그대로일 때는 아무 일도 하지
    않습니다 — 알약이 미끄러지는 것도 방해받지 않습니다. */
 .bottom-nav { view-transition-name: fitlog-nav; }
+
+/* ── 그래프가 그려지는 순간 ────────────────────────────────────────────────
+   히스토리 탭에 들어온 그 렌더에서만 재생됩니다(app.js 의 overlayIn).
+   render() 가 매번 DOM 을 새로 만들기 때문에, 조건 없이 걸어 두면 날짜
+   하나만 눌러도 그래프 전체가 다시 솟아오릅니다 — v79 에서 걷어낸 그
+   깜빡임이 그래프 모양으로 돌아오는 셈입니다.
+
+   막대는 바닥을 축으로 자랍니다. SVG 도형의 transform 은 기본적으로
+   뷰박스 원점을 기준으로 도는데, transform-box: fill-box 를 주면 그 도형
+   자신의 상자가 기준이 되어 'transform-origin: 바닥 가운데' 가 뜻대로
+   동작합니다. 이게 없으면 막대가 자라는 게 아니라 화면 왼쪽 위로 빨려
+   들어갑니다. */
+.stats-card.anim-in .ch-bar {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  /* backwards 를 붙여야 지연되는 동안 '0에서 기다립니다'. 없으면 늦게
+     시작하는 막대가 다 자란 채로 서 있다가 갑자기 줄었다 다시 자랍니다. */
+  animation: chBarGrow .5s cubic-bezier(.2,.85,.3,1) backwards;
+  animation-delay: calc(var(--i, 0) * 42ms);
+}
+@keyframes chBarGrow { from { transform: scaleY(0); } to { transform: none; } }
+
+/* 숫자는 막대가 다 자란 뒤에 옵니다 — 같이 뜨면 숫자가 막대를 타고
+   올라가는 것처럼 보여 눈이 어디를 봐야 할지 헷갈립니다. */
+.stats-card.anim-in .ch-val {
+  animation: chValIn .3s ease backwards;
+  animation-delay: calc(220ms + var(--i, 0) * 42ms);
+}
+@keyframes chValIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+
+/* 선 그래프는 '그어집니다'. pathLength="1" 을 주면 경로가 실제로 몇 px 이든
+   길이가 1 로 정규화되므로, 길이를 JS 로 재서 넣지 않고도 dasharray 하나로
+   끝납니다. */
+.stats-card.anim-in .ch-line {
+  stroke-dasharray: 1;
+  animation: chLineDraw .85s cubic-bezier(.3,.8,.35,1) backwards;
+}
+@keyframes chLineDraw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+
+.stats-card.anim-in .ch-area {
+  transform-box: fill-box; transform-origin: 50% 100%;
+  animation: chAreaIn .7s cubic-bezier(.2,.85,.3,1) backwards;
+  animation-delay: .12s;
+}
+@keyframes chAreaIn { from { opacity: 0; transform: scaleY(.4); } to { opacity: 1; transform: none; } }
+
+/* 점은 선이 지나간 뒤에 하나씩 찍힙니다 — 선이 그어지는 속도에 맞춰
+   비율(--i/--n)로 지연을 잡아, 점이 몇 개든 선 끝과 함께 끝납니다. */
+.stats-card.anim-in .ch-dotm {
+  transform-box: fill-box; transform-origin: 50% 50%;
+  animation: chDotIn .26s cubic-bezier(.34,1.5,.5,1) backwards;
+  animation-delay: calc(var(--i, 0) / var(--n, 1) * .8s);
+}
+@keyframes chDotIn { from { opacity: 0; transform: scale(0); } to { opacity: 1; transform: none; } }
+
+/* 부위별 분석은 가로 막대라 왼쪽에서 자랍니다. */
+.stats-card.anim-in .pa-bar > span {
+  transform-origin: left center;
+  animation: chBarWide .52s cubic-bezier(.2,.85,.3,1) backwards;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+@keyframes chBarWide { from { transform: scaleX(0); } to { transform: none; } }

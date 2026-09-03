@@ -3825,11 +3825,14 @@ const APP_VERSION = (() => {
     });
   }
 
-  /* 세로 막대 하나. 위쪽 끝만 둥글게 깎아 바닥선에 붙어 있게 둡니다. */
-  function bar(x, y, w, h, color, round) {
+  /* 세로 막대 하나. 위쪽 끝만 둥글게 깎아 바닥선에 붙어 있게 둡니다.
+     i 는 왼쪽부터의 순번입니다 — 카드가 처음 그려질 때 이 순서대로 조금씩
+     늦게 올라옵니다. 전부 한꺼번에 솟으면 '그래프가 그려졌다' 가 아니라
+     '화면이 한 번 번쩍했다' 로 보입니다. */
+  function bar(x, y, w, h, color, round, i) {
     if (h <= 0) return '';
     const r = Math.min(round || 0, w / 2, h);
-    return `<path d="M${x} ${y + h} L${x} ${y + r} Q${x} ${y} ${x + r} ${y}
+    return `<path class="ch-bar" style="--i:${i || 0}" d="M${x} ${y + h} L${x} ${y + r} Q${x} ${y} ${x + r} ${y}
       L${x + w - r} ${y} Q${x + w} ${y} ${x + w} ${y + r} L${x + w} ${y + h} Z"
       fill="${color}"/>`;
   }
@@ -3864,8 +3867,8 @@ const APP_VERSION = (() => {
       const x = PAD_L + slot * i + (slot - bw) / 2;
       const h = r.km ? Math.max(3, (r.km / maxKm) * plotH) : 0;
       const y = PAD_T + plotH - h;
-      return bar(x, y, bw, h, 'var(--run-color)', 4)
-        + (r.km ? `<text x="${x + bw / 2}" y="${y - 4}" class="ch-val">${r.km % 1 ? r.km.toFixed(1) : r.km}</text>` : '')
+      return bar(x, y, bw, h, 'var(--run-color)', 4, i)
+        + (r.km ? `<text x="${x + bw / 2}" y="${y - 4}" class="ch-val" style="--i:${i}">${r.km % 1 ? r.km.toFixed(1) : r.km}</text>` : '')
         + `<title>${r.label} · ${r.km}km${r.min ? ` · ${r.min}분` : ''}</title>`;
     }).join('');
 
@@ -3881,12 +3884,12 @@ const APP_VERSION = (() => {
         if (!v) continue;
         const h = (v / maxSets) * plotH;
         const y = PAD_T + plotH - acc - h;
-        out += bar(x, y + (first ? 0 : 1), bw, Math.max(1, h - (first ? 0 : 2)), part.color, first ? 4 : 0);
+        out += bar(x, y + (first ? 0 : 1), bw, Math.max(1, h - (first ? 0 : 2)), part.color, first ? 4 : 0, i);
         acc += h; first = false;
       }
       const detail = weightParts.filter(p => r.sets[p.id]).map(p => `${p.label} ${r.sets[p.id]}`).join(', ');
       return out
-        + (r.total ? `<text x="${x + bw / 2}" y="${PAD_T + plotH - acc - 4}" class="ch-val">${r.total}</text>` : '')
+        + (r.total ? `<text x="${x + bw / 2}" y="${PAD_T + plotH - acc - 4}" class="ch-val" style="--i:${i}">${r.total}</text>` : '')
         + `<title>${r.label} · ${r.total}세트${detail ? ` (${detail})` : ''}</title>`;
     }).join('');
 
@@ -3910,7 +3913,11 @@ const APP_VERSION = (() => {
 
     /* 요약 줄은 운동일·세트·러닝 세 가지입니다. 볼륨은 요약에서도
        그래프에서도 뺐습니다. */
-    return `<div class="stats-card">
+    /* 히스토리 탭에 들어온 그 렌더에서만 애니메이션이 붙습니다. 주/달을
+       바꿀 때도 다시 붙는데, 그때는 그래프가 통째로 다른 데이터가 되므로
+       다시 그려지는 편이 맞습니다. 시트에 쓰는 것과 같은 장치입니다 —
+       안 그러면 날짜 하나만 눌러도 그래프 전체가 다시 솟아오릅니다. */
+    return `<div class="stats-card${overlayIn('stats:' + mode)}">
       <div class="stats-head"><div class="sec-title">운동량 추이</div>${toggle}</div>
 
       <div class="stats-sum">
@@ -4110,7 +4117,7 @@ const APP_VERSION = (() => {
     const area = `${line} L${x(rows.length - 1).toFixed(1)} ${PAD_T + plotH} L${x(0).toFixed(1)} ${PAD_T + plotH} Z`;
     /* data-d / data-v 는 손가락으로 짚었을 때 띄울 값입니다. <title> 은
        마우스가 있는 환경과 스크린리더를 위해 그대로 둡니다. */
-    const dots = rows.map((r, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(r.dv).toFixed(1)}" r="${i === rows.length - 1 ? 4 : 2.5}"
+    const dots = rows.map((r, i) => `<circle class="ch-dotm" style="--i:${i};--n:${rows.length}" cx="${x(i).toFixed(1)}" cy="${y(r.dv).toFixed(1)}" r="${i === rows.length - 1 ? 4 : 2.5}"
       fill="var(--wt-color)" data-d="${esc(shortDate(r.date))}" data-v="${r.dv}${esc(weightUnitLabel())}"><title>${esc(r.date)} · ${r.dv}${esc(weightUnitLabel())}</title></circle>`).join('');
 
     const first = rows[0], last = rows[rows.length - 1];
@@ -4119,7 +4126,7 @@ const APP_VERSION = (() => {
                 : diff < -0.1 ? `<span class="pa-down">${diff}${weightUnitLabel()}</span>`
                 : `<span class="pa-flat">변화 없음</span>`;
 
-    return `<div class="stats-card">
+    return `<div class="stats-card${overlayIn('weight')}">
       <div class="stats-head">
         <div class="sec-title">몸무게</div>
         <button class="stats-tab on" data-act="add-weight">+ 기록</button>
@@ -4130,8 +4137,8 @@ const APP_VERSION = (() => {
       <svg class="ch" viewBox="0 0 ${W} ${H}" role="img" aria-label="몸무게 추이">
         <text x="${PAD_L - 6}" y="${PAD_T + 4}" class="ch-axis" text-anchor="end">${hi.toFixed(1)}</text>
         <text x="${PAD_L - 6}" y="${PAD_T + plotH + 4}" class="ch-axis" text-anchor="end">${lo.toFixed(1)}</text>
-        <path d="${area}" fill="var(--wt-fill)"/>
-        <path d="${line}" fill="none" stroke="var(--wt-color)" stroke-width="2"
+        <path class="ch-area" d="${area}" fill="var(--wt-fill)"/>
+        <path class="ch-line" pathLength="1" d="${line}" fill="none" stroke="var(--wt-color)" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round"/>
         ${dots}
       </svg>
@@ -4154,7 +4161,7 @@ const APP_VERSION = (() => {
        길이만 볼륨으로 남겨 두면 "주 5세트" 라고 적힌 줄이 옆줄보다 짧아
        보이는 이유를 화면 어디에서도 설명하지 못합니다. */
     const maxSets = Math.max(...trained.map(p => w.cur[p.id].setsPerWeek), 1);
-    const rows = trained.map(part => {
+    const rows = trained.map((part, i) => {
       const c = w.cur[part.id], pv = w.prev[part.id];
       const v = volumeVerdict(c.setsPerWeek);
       const dSets = pctChange(c.setsPerWeek, pv.setsPerWeek);
@@ -4169,12 +4176,12 @@ const APP_VERSION = (() => {
           <span class="pa-verdict ${v.cls}">${v.label}</span>
           ${arrow}
         </div>
-        <div class="pa-bar"><span style="width:${width}%;background:${part.color}"></span></div>
+        <div class="pa-bar"><span style="width:${width}%;background:${part.color};--i:${i}"></span></div>
         <div class="pa-meta">주 ${c.setsPerWeek.toFixed(1)}세트</div>
       </div>`;
     }).join('');
 
-    return `<div class="stats-card">
+    return `<div class="stats-card${overlayIn('partanalysis')}">
       <div class="stats-head">
         <div class="sec-title">부위별 분석</div>
         <button class="stats-tab" data-act="vol-info">최근 ${w.weeks}주 ⓘ</button>
