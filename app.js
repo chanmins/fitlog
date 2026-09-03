@@ -1990,6 +1990,7 @@ const APP_VERSION = (() => {
     bindEvents();
     positionYearWheel();
     syncPresetScroll();
+    syncSegThumbs();
     syncOverlayScroll();
     flushPendingFlash();
     /* 탭이 바뀌었는지, 설정이 바뀌었는지를 여기서 따로 추적하지 않습니다 —
@@ -2008,6 +2009,50 @@ const APP_VERSION = (() => {
      매 렌더마다 되돌리면, 루틴을 만들다 운동을 하나 담을 때마다 화면이
      맨 위로 튀어 방금 보던 자리를 잃습니다. 무엇이 열려 있는지를 키로 삼아
      바뀐 순간에만 초기화합니다. */
+  /* ── 알약 토글 ────────────────────────────────────────────────────────────
+     kg/lb 처럼 둘 중 하나인 설정입니다. 고른 쪽에 배경색을 칠하는 대신,
+     알약 안을 미끄러지는 조각(thumb)을 하나 두고 그것만 움직입니다 —
+     '무엇이 선택됐나' 를 색이 아니라 위치로 말하는 쪽이 읽기 쉽고, 움직임이
+     '내가 방금 무엇을 바꿨는지' 를 눈으로 따라가게 해 줍니다.
+
+     --n 은 칸 수, --i 는 지금 고른 칸입니다. thumb 의 폭이 정확히 한 칸이라
+     translateX(--i * 100%) 가 그 칸에 딱 맞습니다. */
+  function renderMiniSeg(key, act, opts, cur) {
+    const i = Math.max(0, opts.findIndex(o => o[0] === cur));
+    return `<div class="mini-seg" data-seg="${key}" data-i="${i}" style="--n:${opts.length};--i:${i}">
+      <i class="mini-seg-thumb" aria-hidden="true"></i>
+      ${opts.map(([v, l]) => `<button class="mini-seg-btn${v === cur ? ' on' : ''}"
+        data-act="${act}" data-val="${v}" aria-pressed="${v === cur}">${esc(l)}</button>`).join('')}
+    </div>`;
+  }
+
+  /* 그런데 render() 는 화면을 통째로 새로 만듭니다. 새로 만들어진 조각은
+     '방금 전에 어디 있었는지' 를 모르므로, 이동할 거리가 없어 그냥 새 자리에
+     그려집니다 — 애니메이션이 없습니다.
+
+     그래서 직전 위치를 여기서 기억해 둡니다. 자리가 바뀌었으면 새 조각을
+     '옛 자리에' 순간이동시켰다가(transition: none) 곧바로 놓아 줍니다.
+     그러면 브라우저가 옛 자리 → 새 자리를 보고 그 사이를 미끄러집니다.
+     offsetWidth 를 한 번 읽는 줄이 그 사이에 꼭 필요합니다: 이게 없으면
+     브라우저가 두 번의 스타일 변경을 한 번으로 합쳐 버려서 '옛 자리에
+     있었던 적' 자체가 사라집니다. */
+  const _segPos = new Map();
+  function syncSegThumbs() {
+    document.querySelectorAll('.mini-seg[data-seg]').forEach(seg => {
+      const key = seg.dataset.seg;
+      const now = Number(seg.dataset.i || 0);
+      const prev = _segPos.get(key);
+      _segPos.set(key, now);
+      const thumb = seg.querySelector('.mini-seg-thumb');
+      if (!thumb || prev == null || prev === now) return;
+      thumb.style.transition = 'none';
+      thumb.style.transform = `translateX(${prev * 100}%)`;
+      void thumb.offsetWidth;
+      thumb.style.transition = '';
+      thumb.style.transform = '';   // CSS 의 --i 자리로 미끄러집니다
+    });
+  }
+
   /* 가로로 스크롤되는 칩 줄(글자 크기·테마)에서, 지금 고른 칩이 오른쪽
      끝에 잘려 있으면 사람은 자기가 무엇을 골랐는지 볼 수 없습니다. 테마가
      여섯 개가 되면서 '크림' 은 처음부터 화면 밖입니다. 줄이 실제로 넘칠
@@ -5053,28 +5098,22 @@ const APP_VERSION = (() => {
               <div class="settings-item-title">주 시작 요일</div>
               <div class="settings-item-sub">달력과 주간 통계 기준</div>
             </div>
-            <div class="mini-seg">
-              <button class="mini-seg-btn${weekStartsMon()?' on':''}" data-act="set-week-start" data-val="mon">월</button>
-              <button class="mini-seg-btn${!weekStartsMon()?' on':''}" data-act="set-week-start" data-val="sun">일</button>
-            </div>
+            ${renderMiniSeg('week-start', 'set-week-start',
+              [['mon','월'],['sun','일']], weekStartsMon() ? 'mon' : 'sun')}
           </div>
           <div class="settings-item settings-block settings-inline">
             <div class="settings-item-text">
               <div class="settings-item-title">무게 단위</div>
             </div>
-            <div class="mini-seg">
-              <button class="mini-seg-btn${unitWeight()==='kg'?' on':''}" data-act="set-unit-weight" data-val="kg">kg</button>
-              <button class="mini-seg-btn${unitWeight()==='lb'?' on':''}" data-act="set-unit-weight" data-val="lb">lb</button>
-            </div>
+            ${renderMiniSeg('unit-weight', 'set-unit-weight',
+              [['kg','kg'],['lb','lb']], unitWeight())}
           </div>
           <div class="settings-item settings-block settings-inline">
             <div class="settings-item-text">
               <div class="settings-item-title">키 단위</div>
             </div>
-            <div class="mini-seg">
-              <button class="mini-seg-btn${unitHeight()==='cm'?' on':''}" data-act="set-unit-height" data-val="cm">cm</button>
-              <button class="mini-seg-btn${unitHeight()==='in'?' on':''}" data-act="set-unit-height" data-val="in">in</button>
-            </div>
+            ${renderMiniSeg('unit-height', 'set-unit-height',
+              [['cm','cm'],['in','in']], unitHeight())}
           </div>
         </div>
 

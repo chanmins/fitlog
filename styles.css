@@ -1671,17 +1671,32 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .settings-inline { flex-direction: row; align-items: center; gap: 12px; }
 .settings-inline .settings-item-text { flex: 1; min-width: 0; }
 
-.mini-seg { display: inline-flex; flex-shrink: 0; background: var(--surface-2); border-radius: 999px; padding: 3px; }
-.mini-seg-btn {
-  height: 32px; min-width: 46px; padding: 0 13px; border-radius: 999px;
-  background: transparent; border: 0; color: var(--muted);
-  font-size: 13px; font-weight: 800; transition: color .14s, background .14s;
+/* 이름이 .seg-btn 이 아닌 이유: 그 이름은 이미 성별 선택(.seg-row)의 46px
+   짜리 네모 버튼이 쓰고 있어서, 같은 이름을 쓰면 나중에 쓰인 쪽이 상대를
+   덮어씁니다. */
+.mini-seg {
+  position: relative; display: inline-flex; flex-shrink: 0;
+  background: var(--surface-2); border-radius: 999px; padding: 3px;
 }
-/* 고른 쪽만 카드처럼 떠오릅니다 — 알약 안에서 위치로도 읽히므로 색을
-   크게 쓰지 않아도 어느 쪽인지 압니다. 이름이 .seg-btn 이 아닌 이유는
-   그 이름을 이미 성별 선택(.seg-row)의 46px 짜리 네모 버튼이 쓰고 있어서,
-   같은 이름을 쓰면 둘 중 나중에 쓰인 쪽이 상대를 덮어씁니다. */
-.mini-seg-btn.on { background: var(--surface); color: var(--accent); box-shadow: var(--sh-card); }
+/* 고른 칸을 칠하는 대신 이 조각 하나가 미끄러집니다. 폭이 정확히 한 칸이라
+   translateX(100%) 가 옆 칸에 딱 맞습니다 — 칸이 셋으로 늘어도 그대로입니다.
+   위치가 곧 선택 표시이므로, 색을 크게 쓰지 않아도 어느 쪽인지 읽힙니다. */
+.mini-seg-thumb {
+  position: absolute; top: 3px; bottom: 3px; left: 3px;
+  width: calc((100% - 6px) / var(--n, 2));
+  border-radius: 999px; background: var(--surface); box-shadow: var(--sh-card);
+  transform: translateX(calc(var(--i, 0) * 100%));
+  transition: transform .3s cubic-bezier(.25,.8,.3,1);
+}
+.mini-seg-btn {
+  position: relative; z-index: 1;   /* 미끄러지는 조각 위에 글자가 옵니다 */
+  flex: 1; height: 32px; min-width: 46px; padding: 0 13px; border-radius: 999px;
+  background: transparent; border: 0; color: var(--muted);
+  font-size: 13px; font-weight: 800; transition: color .22s ease;
+}
+/* 글자색도 조각이 도착하는 속도에 맞춰 바뀝니다. 즉시 바꾸면 글자가 먼저
+   강조색이 되고 조각이 뒤늦게 따라와, 조각이 글자를 쫓아가 보입니다. */
+.mini-seg-btn.on { color: var(--accent); }
 .mini-seg-btn:active { transform: scale(.94); }
 
 /* 선택지가 서넛이면 가로 스크롤 대신 격자로 깔아 한 화면에 다 보입니다.
