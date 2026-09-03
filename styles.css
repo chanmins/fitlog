@@ -250,42 +250,119 @@ html[data-theme="midnight"] {
   --part-ink: transparent;
 }
 
-/* ── 순검정 (OLED) ────────────────────────────────────────────────────────
-   OLED 는 검은 픽셀을 아예 끄기 때문에 #000 바탕은 전기를 안 씁니다. 대신
-   카드가 바탕에 녹아 사라지는 게 이 테마의 함정이라, 다크보다 경계선을 한
-   단계 밝게 잡고 표면도 완전한 검정 대신 아주 어두운 회색을 씁니다 —
-   그림자는 검정 위에서 아무 일도 하지 못하므로 선이 그 역할을 대신합니다. */
-html[data-theme="oled"] {
-  --bg:        #000000;
-  --bg-grad:   radial-gradient(120% 80% at 50% -10%, #0C0D12 0%, #000000 60%);
-  --surface:   #0C0D11;
-  --surface-2: #14161C;
-  --surface-3: #1E2129;
-  --line:      rgba(255,255,255,0.13);
-  --line-2:    rgba(255,255,255,0.22);
+/* ── 포레스트 ─────────────────────────────────────────────────────────────
+   짙은 녹색 바탕에 금빛 강조색. 라임을 그대로 두면 배경과 같은 계열이라
+   '강조' 가 아니라 배경의 밝은 부분처럼 읽혀서, 여기서만 색상환 반대쪽으로
+   보냅니다 — 녹색 위의 금색은 서로를 밀어내며 또렷해집니다.
+   경고색(--orange)은 그 금색과 붙어 버리므로 주황 쪽으로 더 밀어 둡니다. */
+html[data-theme="forest"] {
+  --bg:        #0A130E;
+  --bg-grad:   radial-gradient(120% 80% at 50% -10%, #14251A 0%, #0A130E 60%);
+  --surface:   #111C15;
+  --surface-2: #17251C;
+  --surface-3: #1F3227;
+  --line:      rgba(160,220,180,0.11);
+  --line-2:    rgba(160,220,180,0.19);
 
-  --text:  #F5F6F8;
-  --sub:   #B7BBC5;
-  --muted: #868A93;
+  --text:  #EDF3EE;
+  --sub:   #AFC0B4;
+  --muted: #85978B;
 
-  --accent:      #C2EC46;
-  --accent-2:    #A6DC34;
-  --accent-ink:  #080A03;
-  --accent-soft: rgba(194,236,70,0.13);
-  --accent-line: rgba(194,236,70,0.30);
+  --accent:      #E9B949;
+  --accent-2:    #D3A32F;
+  --accent-ink:  #16110A;
+  --accent-soft: rgba(233,185,73,0.13);
+  --accent-line: rgba(233,185,73,0.30);
 
-  --red:    #FF6579;
-  --red-soft: rgba(255,101,121,0.14);
-  --blue:   #5AAEFF;
-  --orange: #FFB933;
-  --orange-line: rgba(255,185,51,0.32);
+  --red:    #FF6B7E;
+  --red-soft: rgba(255,107,126,0.14);
+  --blue:   #6FB6FF;
+  --orange: #FF9F45;
+  --orange-line: rgba(255,159,69,0.32);
 
-  --sh-card: 0 0 0 1px rgba(255,255,255,.04);
-  --sh-pop:  0 -8px 40px rgba(0,0,0,.85);
-  --sh-glow: 0 3px 12px rgba(194,236,70,.16);
+  --sh-card: 0 1px 1px rgba(2,14,7,.40), 0 2px 10px rgba(2,14,7,.24);
+  --sh-pop:  0 -8px 40px rgba(2,14,7,.62);
+  --sh-glow: 0 3px 12px rgba(233,185,73,.16);
 
   --part-mix: 100%;
   --part-ink: transparent;
+}
+
+/* ── 플럼 ─────────────────────────────────────────────────────────────────
+   자주빛 바탕에 민트 강조색. 자주에 어울리는 색은 장미빛이지만 그러면
+   경고에 쓰는 --red 와 구별이 안 갑니다 — 완료 표시와 '오래 쉬었다' 경고가
+   같은 색으로 보이는 건 예쁜 것보다 나쁜 일입니다. 그래서 반대쪽 민트로
+   갑니다. 자주 위의 민트는 서로 섞이지 않아 둘 다 살아납니다. */
+html[data-theme="plum"] {
+  --bg:        #120A16;
+  --bg-grad:   radial-gradient(120% 80% at 50% -10%, #241130 0%, #120A16 60%);
+  --surface:   #1A1020;
+  --surface-2: #22162A;
+  --surface-3: #2E1F38;
+  --line:      rgba(220,180,255,0.12);
+  --line-2:    rgba(220,180,255,0.20);
+
+  --text:  #F2ECF6;
+  --sub:   #BEB1C8;
+  --muted: #96899F;
+
+  --accent:      #6EE7C0;
+  --accent-2:    #4FD0A6;
+  --accent-ink:  #06231A;
+  --accent-soft: rgba(110,231,192,0.13);
+  --accent-line: rgba(110,231,192,0.30);
+
+  --red:    #FF6B85;
+  --red-soft: rgba(255,107,133,0.14);
+  --blue:   #7FB6FF;
+  --orange: #FFB45C;
+  --orange-line: rgba(255,180,92,0.32);
+
+  --sh-card: 0 1px 1px rgba(10,2,16,.42), 0 2px 10px rgba(10,2,16,.26);
+  --sh-pop:  0 -8px 40px rgba(10,2,16,.64);
+  --sh-glow: 0 3px 12px rgba(110,231,192,.16);
+
+  --part-mix: 100%;
+  --part-ink: transparent;
+}
+
+/* ── 미스트 ───────────────────────────────────────────────────────────────
+   라이트가 흰 종이라면 이쪽은 흐린 날 창밖입니다. 바탕이 순백이 아니라
+   푸른기 도는 회색이라, 그 위에 놓인 흰 카드가 스스로 떠 보입니다 —
+   라이트에서 카드와 배경이 거의 같은 밝기라 그림자에만 기대던 것을,
+   여기서는 밝기 차이가 대신합니다. 강조색은 깊은 청록이라 흰 카드 위
+   글자로 써도 대비가 넉넉합니다. */
+html[data-theme="mist"] {
+  --bg:        #EBEFF4;
+  --bg-grad:   radial-gradient(120% 80% at 50% -10%, #DFE6EF 0%, #EBEFF4 60%);
+  --surface:   #FCFDFE;
+  --surface-2: #E7EDF4;
+  --surface-3: #D8E0EA;
+  --line:      rgba(28,42,62,0.11);
+  --line-2:    rgba(28,42,62,0.19);
+
+  --text:  #1B2430;
+  --sub:   #55606E;
+  --muted: #5E6976;
+
+  --accent:      #0F6E6E;
+  --accent-2:    #0B5757;
+  --accent-ink:  #FFFFFF;
+  --accent-soft: rgba(15,110,110,0.12);
+  --accent-line: rgba(15,110,110,0.32);
+
+  --red:    #C62839;
+  --red-soft: rgba(198,40,57,0.10);
+  --blue:   #17559E;
+  --orange: #8F6408;
+  --orange-line: rgba(143,100,8,0.32);
+
+  --sh-card: 0 1px 1px rgba(28,42,62,.06), 0 2px 8px rgba(28,42,62,.07);
+  --sh-pop:  0 -8px 40px rgba(28,42,62,.16);
+  --sh-glow: 0 3px 12px rgba(15,110,110,.16);
+
+  --part-mix: 62%;
+  --part-ink: #0B0E14;
 }
 
 /* ── 크림 ─────────────────────────────────────────────────────────────────
@@ -306,11 +383,11 @@ html[data-theme="paper"] {
   --sub:   #5A5145;
   --muted: #6C6355;
 
-  --accent:      #5E7A16;
-  --accent-2:    #4A6111;
+  --accent:      #597312;
+  --accent-2:    #465C0F;
   --accent-ink:  #FFFDF9;
-  --accent-soft: rgba(94,122,22,0.13);
-  --accent-line: rgba(94,122,22,0.34);
+  --accent-soft: rgba(89,115,18,0.13);
+  --accent-line: rgba(89,115,18,0.34);
 
   --red:    #C22B3D;
   --red-soft: rgba(194,43,61,0.11);
@@ -320,7 +397,7 @@ html[data-theme="paper"] {
 
   --sh-card: 0 1px 1px rgba(74,56,32,.07), 0 2px 8px rgba(74,56,32,.07);
   --sh-pop:  0 -8px 40px rgba(74,56,32,.16);
-  --sh-glow: 0 3px 12px rgba(94,122,22,.18);
+  --sh-glow: 0 3px 12px rgba(89,115,18,.18);
 
   --part-mix: 62%;
   --part-ink: #1A140C;
@@ -1586,6 +1663,72 @@ button.topbar-brand { padding: 0; text-align: left; flex-shrink: 0; }
 .settings-block { flex-direction: column; align-items: stretch; gap: 11px; cursor: default; }
 .settings-block:active { background: transparent; }
 .settings-block .presets-scroll { margin: 0; }
+
+/* ── 개인화 컨트롤 ───────────────────────────────────────────────────────
+   선택지가 둘뿐인 설정(kg/lb, cm/in)은 제목 아래에 줄을 하나 더 만들지
+   않고 오른쪽에 붙입니다. 세로로 쌓으면 'kg / lb' 한 줄이 화면의 8분의
+   1을 차지해서, 개인화 항목을 전부 보려면 계속 스크롤해야 합니다. */
+.settings-inline { flex-direction: row; align-items: center; gap: 12px; }
+.settings-inline .settings-item-text { flex: 1; min-width: 0; }
+
+.mini-seg { display: inline-flex; flex-shrink: 0; background: var(--surface-2); border-radius: 999px; padding: 3px; }
+.mini-seg-btn {
+  height: 32px; min-width: 46px; padding: 0 13px; border-radius: 999px;
+  background: transparent; border: 0; color: var(--muted);
+  font-size: 13px; font-weight: 800; transition: color .14s, background .14s;
+}
+/* 고른 쪽만 카드처럼 떠오릅니다 — 알약 안에서 위치로도 읽히므로 색을
+   크게 쓰지 않아도 어느 쪽인지 압니다. 이름이 .seg-btn 이 아닌 이유는
+   그 이름을 이미 성별 선택(.seg-row)의 46px 짜리 네모 버튼이 쓰고 있어서,
+   같은 이름을 쓰면 둘 중 나중에 쓰인 쪽이 상대를 덮어씁니다. */
+.mini-seg-btn.on { background: var(--surface); color: var(--accent); box-shadow: var(--sh-card); }
+.mini-seg-btn:active { transform: scale(.94); }
+
+/* 선택지가 서넛이면 가로 스크롤 대신 격자로 깔아 한 화면에 다 보입니다.
+   스크롤 줄은 오른쪽 끝 항목이 잘려서, 있는 줄도 모르고 지나갑니다. */
+.preset-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.preset-grid .preset-chip { width: 100%; padding: 0 4px; font-size: 14px; }
+
+/* ── 테마 견본 ────────────────────────────────────────────────────────────
+   이름만 적힌 칩으로는 '미드나이트' 와 '플럼' 중 무엇이 무슨 색인지 눌러
+   보기 전에 알 수 없습니다. 칸마다 그 테마의 축소판을 그립니다 — 배경 위에
+   카드가 하나, 그 위에 강조색 점 하나. 색은 app.js 가 --sw-* 로 넘깁니다. */
+.theme-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.theme-card { background: transparent; border: 0; padding: 0; text-align: center; }
+.theme-swatch {
+  display: block; position: relative; height: 52px; border-radius: var(--r-md);
+  background: var(--sw-bg, var(--surface-2));
+  border: 1.5px solid var(--line-2); overflow: hidden;
+  transition: border-color .14s, transform .1s;
+}
+/* 고른 칸은 테두리가 강조색이 되고 바깥으로 한 겹 더 두릅니다 — 견본
+   자체가 색을 쓰고 있어서, 테두리 색만으로는 선택 표시가 묻힙니다. */
+.theme-card.on .theme-swatch { border-color: var(--accent); box-shadow: 0 0 0 2.5px var(--accent-soft); }
+.theme-card:active .theme-swatch { transform: scale(.95); }
+.theme-sw-card {
+  position: absolute; left: 7px; right: 7px; bottom: 7px; height: 18px;
+  border-radius: 6px; background: var(--sw-sf, var(--surface));
+  /* 다크 계열은 카드와 배경의 밝기 차이가 작아, 52px 짜리 축소판에서는
+     카드가 아예 안 보입니다. 어느 테마에서든 통하는 중간 회색 실선을
+     한 겹 둘러 윤곽만 살립니다. */
+  box-shadow: inset 0 0 0 1px rgba(128,128,128,.30);
+}
+.theme-sw-dot {
+  position: absolute; top: 8px; left: 8px; width: 13px; height: 13px;
+  border-radius: 999px; background: var(--sw-ac, var(--accent));
+}
+.theme-sw-check {
+  position: absolute; top: 5px; right: 5px; width: 19px; height: 19px; border-radius: 999px;
+  display: grid; place-items: center; background: var(--accent); color: var(--accent-ink);
+}
+.theme-sw-check svg { width: 11px; height: 11px; }
+/* '자동' 은 시스템에 따라 달라지는 상태라 색 하나로 못 그립니다. 어둠과
+   빛을 반씩 가른 칸으로 그려서 '둘 다' 를 보여 줍니다. */
+.theme-swatch.auto { background: linear-gradient(114deg, #0B0D14 0 50%, #F7F8FA 50% 100%); }
+.theme-swatch.auto .theme-sw-card { background: rgba(150,160,180,.45); }
+.theme-swatch.auto .theme-sw-dot { background: #B8E23C; }
+.theme-name { display: block; margin-top: 6px; font-size: 11.5px; font-weight: 800; color: var(--sub); }
+.theme-card.on .theme-name { color: var(--accent); }
 
 /* Identity row: avatar, name, handle, and the body stats on one line under it. */
 .profile-row { padding: 16px 14px; }

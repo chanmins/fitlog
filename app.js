@@ -83,20 +83,35 @@ const APP_VERSION = (() => {
      color 는 그 테마의 --bg 와 같은 값입니다. 두 곳에 같은 색을 적는 게
      마음에 걸리지만, 상태바는 CSS 변수를 읽지 못합니다(meta 태그라 계산된
      스타일이 없습니다). getComputedStyle 로 --bg 를 읽어 오는 방법도 있는데,
-     첫 페인트 전에는 아직 값이 없어서 한 번 더 깜빡이게 됩니다. */
+     첫 페인트 전에는 아직 값이 없어서 한 번 더 깜빡이게 됩니다.
+
+     sw 는 설정 화면의 견본 색입니다 — [배경, 카드, 강조]. 이름만 적힌 칩은
+     '미드나이트' 와 '플럼' 중 무엇이 무슨 색인지 눌러 보기 전에는 알 수
+     없어서, 고르는 일이 여덟 번의 시행착오가 됩니다. 견본을 그려 두면 한
+     눈에 고릅니다. CSS 변수를 읽어 그릴 수도 있지만 그러려면 테마를 실제로
+     적용해 봐야 하므로(변수는 지금 켜진 테마의 값만 줍니다), 여기 세 색만
+     적어 둡니다. styles.css 의 --bg / --surface / --accent 와 같은 값입니다. */
   const THEMES = {
     auto:     { label: '자동' },
-    light:    { label: '라이트',     base: 'light', color: '#FAFBFC' },
-    dark:     { label: '다크',       base: 'dark',  color: '#09090D' },
-    midnight: { label: '미드나이트', base: 'dark',  color: '#0A0F1C' },
-    oled:     { label: '순검정',     base: 'dark',  color: '#000000' },
-    paper:    { label: '크림',       base: 'light', color: '#FBF8F3' },
+    dark:     { label: '다크',       base: 'dark',  color: '#09090D', sw: ['#09090D','#15171F','#B8E23C'] },
+    midnight: { label: '미드나이트', base: 'dark',  color: '#0A0F1C', sw: ['#0A0F1C','#131A2B','#B8E23C'] },
+    forest:   { label: '포레스트',   base: 'dark',  color: '#0A130E', sw: ['#0A130E','#111C15','#E9B949'] },
+    plum:     { label: '플럼',       base: 'dark',  color: '#120A16', sw: ['#120A16','#1A1020','#6EE7C0'] },
+    light:    { label: '라이트',     base: 'light', color: '#FAFBFC', sw: ['#FAFBFC','#FFFFFF','#5F7D14'] },
+    mist:     { label: '미스트',     base: 'light', color: '#EBEFF4', sw: ['#EBEFF4','#FCFDFE','#0F6E6E'] },
+    paper:    { label: '크림',       base: 'light', color: '#FBF8F3', sw: ['#FBF8F3','#FFFDF9','#597312'] },
   };
   const THEME_MODES = Object.keys(THEMES);
+
+  /* 없어진 테마를 쓰던 사람을 조용히 옮겨 줍니다. 그냥 두면 저장된 값이
+     목록에 없어서 '자동' 으로 떨어지는데, 어두운 테마를 고른 사람이 낮에
+     앱을 열면 흰 화면을 맞게 됩니다 — 자기가 바꾼 적도 없이. */
+  const THEME_ALIAS = { oled: 'dark' };
 
   function initTheme() {
     let saved = null;
     try { saved = localStorage.getItem('fitlog-theme-mode'); } catch (_) {}
+    if (THEME_ALIAS[saved]) saved = THEME_ALIAS[saved];
     state.themeMode = THEME_MODES.includes(saved) ? saved : 'auto';
     applyTheme();
     /* auto 로 두고 해가 지면(또는 시스템이 밤에 자동 전환되면) 앱을 다시
@@ -133,6 +148,27 @@ const APP_VERSION = (() => {
       const color = (t && t.color) || (effectiveTheme() === 'light' ? '#FAFBFC' : '#09090D');
       if (meta) meta.setAttribute('content', color);
     } catch (_) {}
+  }
+
+  /* 설정 화면의 테마 견본 한 칸. 미니어처 화면입니다 — 배경 위에 카드가
+     하나 놓이고 그 위에 강조색 점이 있습니다. 앱에서 실제로 눈에 들어오는
+     것이 딱 그 세 가지라, 작게 줄여도 '아 저 테마구나' 가 됩니다.
+
+     'auto' 만 견본이 없습니다. 지금 시스템이 무엇이냐에 따라 달라지는
+     상태라 색 하나로 그릴 수가 없어서, 어둠과 빛을 반씩 가른 칸으로
+     그립니다(아래 .theme-swatch.auto). */
+  function renderThemeCard(v) {
+    const t = THEMES[v];
+    const on = state.themeMode === v;
+    const style = t.sw ? ` style="--sw-bg:${t.sw[0]};--sw-sf:${t.sw[1]};--sw-ac:${t.sw[2]}"` : '';
+    return `<button class="theme-card${on ? ' on' : ''}" data-act="set-theme" data-val="${v}"
+      aria-pressed="${on}" aria-label="${esc(t.label)} 테마"${style}>
+      <span class="theme-swatch${t.sw ? '' : ' auto'}">
+        <i class="theme-sw-dot"></i><i class="theme-sw-card"></i>
+        ${on ? `<i class="theme-sw-check">${CHECK_SVG}</i>` : ''}
+      </span>
+      <span class="theme-name">${esc(t.label)}</span>
+    </button>`;
   }
 
   function setThemeMode(mode) {
@@ -4977,62 +5013,67 @@ const APP_VERSION = (() => {
 
         <div class="settings-label">개인화</div>
         <div class="settings-group">
+          <!-- 테마가 맨 위로 올라옵니다. 이 화면에서 사람들이 실제로 만지작
+               거리는 것이고, 바꾼 결과가 그 자리에서 눈에 보이는 유일한
+               설정입니다 — 단위나 시작 탭보다 먼저 보이는 게 맞습니다. -->
           <div class="settings-item settings-block">
             <div class="settings-item-text">
-              <div class="settings-item-title">시작 탭</div>
-              <div class="settings-item-sub">앱을 열면 처음 보일 화면</div>
+              <div class="settings-item-title">테마</div>
+              <div class="settings-item-sub">${state.themeMode === 'auto'
+                ? '기기 설정을 따라 낮·밤이 바뀝니다'
+                : `${THEMES[state.themeMode].label} — 야간 운동 시 눈 피로 감소`}</div>
             </div>
-            <div class="presets-scroll">
-              ${[['home','홈'],['workout','기록'],['history','히스토리'],['settings','설정']]
-                .map(([v,l]) => `<button class="preset-chip${startTab()===v?' on':''}" data-act="set-start-tab" data-val="${v}">${l}</button>`).join('')}
-            </div>
-          </div>
-          <div class="settings-item settings-block">
-            <div class="settings-item-text">
-              <div class="settings-item-title">주 시작 요일</div>
-              <div class="settings-item-sub">히스토리 달력과 이번 주 통계에 적용됩니다</div>
-            </div>
-            <div class="presets-scroll">
-              <button class="preset-chip${weekStartsMon()?' on':''}" data-act="set-week-start" data-val="mon">월요일</button>
-              <button class="preset-chip${!weekStartsMon()?' on':''}" data-act="set-week-start" data-val="sun">일요일</button>
-            </div>
-          </div>
-          <div class="settings-item settings-block">
-            <div class="settings-item-text">
-              <div class="settings-item-title">무게 단위</div>
-            </div>
-            <div class="presets-scroll">
-              <button class="preset-chip${unitWeight()==='kg'?' on':''}" data-act="set-unit-weight" data-val="kg">kg</button>
-              <button class="preset-chip${unitWeight()==='lb'?' on':''}" data-act="set-unit-weight" data-val="lb">lb</button>
-            </div>
-          </div>
-          <div class="settings-item settings-block">
-            <div class="settings-item-text">
-              <div class="settings-item-title">키 단위</div>
-            </div>
-            <div class="presets-scroll">
-              <button class="preset-chip${unitHeight()==='cm'?' on':''}" data-act="set-unit-height" data-val="cm">cm</button>
-              <button class="preset-chip${unitHeight()==='in'?' on':''}" data-act="set-unit-height" data-val="in">in</button>
-            </div>
+            <div class="theme-grid">${THEME_MODES.map(v => renderThemeCard(v)).join('')}</div>
           </div>
           <div class="settings-item settings-block">
             <div class="settings-item-text">
               <div class="settings-item-title">글씨 크기</div>
               <div class="settings-item-sub">화면 전체가 함께 커집니다</div>
             </div>
-            <div class="presets-scroll">
+            <div class="preset-grid">
               ${[[0.92,'작게'],[1,'보통'],[1.08,'크게'],[1.18,'아주 크게']]
                 .map(([v,l]) => `<button class="preset-chip${fontScale()===v?' on':''}" data-act="set-font-scale" data-val="${v}">${l}</button>`).join('')}
             </div>
           </div>
           <div class="settings-item settings-block">
             <div class="settings-item-text">
-              <div class="settings-item-title">테마</div>
-              <div class="settings-item-sub">야간 운동 시 눈 피로 감소</div>
+              <div class="settings-item-title">시작 탭</div>
+              <div class="settings-item-sub">앱을 열면 처음 보일 화면</div>
             </div>
-            <div class="presets-scroll">
-              ${THEME_MODES
-                .map(v => `<button class="preset-chip${state.themeMode===v?' on':''}" data-act="set-theme" data-val="${v}">${THEMES[v].label}</button>`).join('')}
+            <div class="preset-grid">
+              ${[['home','홈'],['workout','기록'],['history','히스토리'],['settings','설정']]
+                .map(([v,l]) => `<button class="preset-chip${startTab()===v?' on':''}" data-act="set-start-tab" data-val="${v}">${l}</button>`).join('')}
+            </div>
+          </div>
+          <!-- 두 개 중 하나인 설정은 제목과 선택지를 한 줄에 둡니다. 줄마다
+               세로로 쌓으면 'kg / lb' 하나가 화면의 8분의 1을 먹고, 개인화
+               항목 여섯 개를 보려면 계속 스크롤해야 합니다. -->
+          <div class="settings-item settings-block settings-inline">
+            <div class="settings-item-text">
+              <div class="settings-item-title">주 시작 요일</div>
+              <div class="settings-item-sub">달력과 주간 통계 기준</div>
+            </div>
+            <div class="mini-seg">
+              <button class="mini-seg-btn${weekStartsMon()?' on':''}" data-act="set-week-start" data-val="mon">월</button>
+              <button class="mini-seg-btn${!weekStartsMon()?' on':''}" data-act="set-week-start" data-val="sun">일</button>
+            </div>
+          </div>
+          <div class="settings-item settings-block settings-inline">
+            <div class="settings-item-text">
+              <div class="settings-item-title">무게 단위</div>
+            </div>
+            <div class="mini-seg">
+              <button class="mini-seg-btn${unitWeight()==='kg'?' on':''}" data-act="set-unit-weight" data-val="kg">kg</button>
+              <button class="mini-seg-btn${unitWeight()==='lb'?' on':''}" data-act="set-unit-weight" data-val="lb">lb</button>
+            </div>
+          </div>
+          <div class="settings-item settings-block settings-inline">
+            <div class="settings-item-text">
+              <div class="settings-item-title">키 단위</div>
+            </div>
+            <div class="mini-seg">
+              <button class="mini-seg-btn${unitHeight()==='cm'?' on':''}" data-act="set-unit-height" data-val="cm">cm</button>
+              <button class="mini-seg-btn${unitHeight()==='in'?' on':''}" data-act="set-unit-height" data-val="in">in</button>
             </div>
           </div>
         </div>
