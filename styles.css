@@ -2204,7 +2204,15 @@ body.has-rest-timer .screen { padding-bottom: calc(var(--nav-h) + var(--safe-bot
 /* While a full-screen overlay is up, the page underneath must not scroll —
    two scrollable layers under one finger is what made closing the summary
    land at a random position. */
-body.overlay-open { overflow: hidden; }
+/* 시트·전체 화면·대화상자가 떠 있는 동안 뒤 페이지를 붙들어 둡니다.
+   overflow: hidden 만으로는 스크롤 위치가 0 으로 밀려 뒤가 맨 위로 튀므로,
+   position: fixed 로 그 자리에 세워 둡니다. 얼마나 내려와 있었는지는
+   app.js 의 setScrollLock 이 top: -Npx 로 넣고, 풀 때 그 자리로 되돌립니다. */
+body.overlay-open {
+  overflow: hidden;
+  position: fixed;
+  left: 0; right: 0; width: 100%;
+}
 
 .dsum-hero {
   background: var(--surface); border: 1px solid var(--line);

@@ -1113,7 +1113,11 @@ const APP_VERSION = (() => {
         if (settled) return;
         settled = true;
         wrap.classList.add('is-closing');
-        setTimeout(() => wrap.remove(), 140);
+        setTimeout(() => {
+          wrap.remove();
+          /* 시트 위에 뜬 대화상자였다면 시트의 잠금은 그대로 둡니다. */
+          if (!anyOverlayOpen()) setScrollLock(false);
+        }, 140);
         document.removeEventListener('keydown', onKey);
         resolve(val);
       };
@@ -1128,6 +1132,7 @@ const APP_VERSION = (() => {
       document.addEventListener('keydown', onKey);
 
       document.body.appendChild(wrap);
+      setScrollLock(true);
       requestAnimationFrame(() => {
         const first = wrap.querySelector('.dialog-btn.cancel') || wrap.querySelector('.dialog-btn');
         if (first) first.focus();
@@ -2034,6 +2039,45 @@ const APP_VERSION = (() => {
     });
   }
 
+  /* ── 뒤 페이지 잠그기 ─────────────────────────────────────────────────────
+     시트가 떠 있는데 어두운 배경이나 시트의 빈 자리를 쓸어 넘기면, 그 손짓이
+     시트를 지나쳐 뒤 페이지를 스크롤했습니다. 몸무게 휠처럼 시트 자체는
+     넘칠 일이 없는 화면에서 특히 두드러집니다 — 시트 안을 문질러도 뒤가
+     움직이니, 손을 떼고 보면 보던 자리가 사라져 있습니다.
+
+     body 에 overflow: hidden 을 주면 뒤가 멈추지만, 그것만으로는 스크롤
+     위치가 0 으로 밀려서 시트를 열자마자 뒤 페이지가 맨 위로 튑니다(직접
+     재 봤습니다: 180 → 0). 그래서 위치를 기억해 두고 body 를 그 자리에
+     고정한 뒤, 닫을 때 원래 자리로 되돌립니다.
+
+     .detail-screen(전체 화면)도 같은 장치를 씁니다. 예전에는 여기서도 위치가
+     0 으로 밀렸는데, 이제 돌아왔을 때 보던 자리가 그대로 남습니다. */
+  let _lockY = null;
+  function setScrollLock(on) {
+    const body = document.body;
+    if (on) {
+      if (_lockY != null) return;                 // 이미 잠겨 있으면 두 번 잠그지 않습니다
+      _lockY = window.scrollY || document.documentElement.scrollTop || 0;
+      body.style.top = `-${_lockY}px`;
+      body.classList.add('overlay-open');
+    } else {
+      if (_lockY == null) return;
+      const y = _lockY;
+      _lockY = null;
+      body.classList.remove('overlay-open');
+      body.style.top = '';
+      window.scrollTo(0, y);
+    }
+  }
+
+  /* 대화상자는 render() 밖에서 body 에 직접 붙습니다(그래야 질문 도중에 화면이
+     다시 그려져도 살아남습니다). 그래서 잠금도 여기서 직접 걸고 풉니다 —
+     단, 시트 위에 대화상자가 뜬 경우 대화상자를 닫으면서 시트의 잠금까지
+     풀어 버리면 안 되므로, 시트가 아직 있으면 그대로 둡니다. */
+  function anyOverlayOpen() {
+    return !!document.querySelector('.detail-screen, .sheet-backdrop, .dialog-backdrop');
+  }
+
   let _overlayKey = null;
   function syncOverlayScroll() {
     /* 전체 화면이 두 겹까지 쌓입니다(검색 → 운동 이력). 맨 위 것을 잡아야
@@ -2041,7 +2085,9 @@ const APP_VERSION = (() => {
        스크롤이 맨 위로 되돌아가서, 돌아왔을 때 보던 자리를 잃습니다. */
     const screens = document.querySelectorAll('.detail-screen');
     const overlay = screens[screens.length - 1] || null;
-    document.body.classList.toggle('overlay-open', !!overlay);
+    /* 전체 화면뿐 아니라 시트가 떠 있을 때도 뒤를 잠급니다 — 예전에는
+       전체 화면만 잠가서, 시트는 뒤 페이지와 스크롤을 나눠 갖고 있었습니다. */
+    setScrollLock(anyOverlayOpen());
     const key = !overlay ? null
       : state.summaryDate ? `day:${state.summaryDate}`
       : state.exHistoryName ? `exhist:${state.exHistoryName}`
