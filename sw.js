@@ -1,19 +1,28 @@
-const CACHE = "fitlog-v95";
+/* 버전 문자열은 여기 한 곳에서만 바꿉니다.
+   예전에는 CACHE 와 ASSETS 의 ?v= 가 각각 적혀 있어서, sw.js 안에서만
+   10곳, index.html 까지 합치면 18곳을 손으로 맞춰야 했습니다. 한 곳만
+   빠뜨리면 서비스워커는 새 파일을 미리 받아 두는데 페이지는 옛 주소를
+   요청하는 상태가 되고, 그 증상이 '가끔 예전 화면이 뜬다' 로만 보입니다.
+   `node scripts/bump-version.mjs <새 번호>` 가 index.html 과 이 파일을
+   함께 고칩니다. */
+const BUILD = "96";
+const CACHE = `fitlog-v${BUILD}`;
 /* Photos live in their own cache that version bumps do NOT clear. They never
    change once published, and re-downloading 2MB of them on every update would
    spend the free tier's daily transfer for nothing. */
 const MEDIA_CACHE = "fitlog-media-v1";
+const v = (path) => `${path}?v=${BUILD}`;
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=95",
-  "./native-bridge.js?v=95",
-  "./app.js?v=95",
-  "./db.js?v=95",
-  "./exercises.js?v=95",
-  "./exercise-photos.js?v=95",
-  "./cloud.js?v=95",
-  "./firebase-config.js?v=95",
+  v("./styles.css"),
+  v("./native-bridge.js"),
+  v("./app.js"),
+  v("./db.js"),
+  v("./exercises.js"),
+  v("./exercise-photos.js"),
+  v("./cloud.js"),
+  v("./firebase-config.js"),
   "./manifest.json",
   "./icons/icon.svg",
   "./icons/icon-192.png",
@@ -21,9 +30,18 @@ const ASSETS = [
 ];
 
 self.addEventListener("install", event => {
+  /* addAll 은 전부 아니면 아무것도입니다 — 목록의 파일 하나가 404 면 설치가
+     통째로 실패하고, 서비스워커가 영영 활성화되지 않습니다. 버전 문자열을
+     한 곳만 잘못 적어도 그렇게 됩니다. 개별로 담고 실패는 남기기만 합니다:
+     핵심 파일이 빠지면 fetch 핸들러가 네트워크로 가면 되고, 그게 캐시가
+     아예 없는 것보다 낫습니다. */
   event.waitUntil(
     caches.open(CACHE)
-      .then(cache => cache.addAll(ASSETS))
+      .then(cache => Promise.all(ASSETS.map(url =>
+        cache.add(url).catch(err => {
+          console.warn("[fitlog sw] precache 실패:", url, err);
+        })
+      )))
       .then(() => self.skipWaiting())
   );
 });

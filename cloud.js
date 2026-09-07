@@ -329,12 +329,34 @@ const Cloud = (() => {
     return "";
   }
 
-  /* Single-document get — the only read the rules allow before sign-in. */
+  /* Single-document get — the only read the rules allow before sign-in.
+
+     이 읽기는 이제 App Check 토큰을 요구합니다(firestore.rules 참고).
+     그래서 "없는 아이디" 와 "읽을 수 없었다" 를 구분해야 합니다 — 둘을
+     섞으면, App Check 가 꺼진 환경(localhost, reCAPTCHA 차단, 콘솔에 앱
+     미등록)의 사용자에게 "그런 아이디 없습니다" 라고 말하게 됩니다.
+     자기 아이디를 정확히 친 사람에게 그 문장은 거짓말이고, 원인을 찾을
+     단서도 주지 못합니다. */
   async function lookupUsername(rawId) {
     const id = normalizeUsername(rawId);
     if (!store || !id) return null;
-    const snap = await store.collection("usernames").doc(id).get();
-    return snap.exists ? snap.data() : null;
+    try {
+      const snap = await store.collection("usernames").doc(id).get();
+      return snap.exists ? snap.data() : null;
+    } catch (err) {
+      const code = err && err.code;
+      if (code === "permission-denied" || code === "unauthenticated") {
+        const e = new Error(
+          appCheckImpossibleHere()
+            ? "이 환경에서는 아이디 로그인을 쓸 수 없습니다. 이메일 또는 구글로 로그인해 주세요."
+            : "아이디를 확인할 수 없습니다. 잠시 후 다시 시도하거나 이메일·구글 로그인을 써 주세요."
+        );
+        e.code = "fitlog/username-lookup-blocked";
+        console.warn("[fitlog] usernames get denied — App Check 토큰이 없거나 앱이 콘솔에 등록되지 않았습니다.", err);
+        throw e;
+      }
+      throw err;
+    }
   }
 
   async function isUsernameFree(rawId) {
@@ -588,14 +610,52 @@ const Cloud = (() => {
 
   /* 몸무게 기록도 문서 하나에 들어갈 만큼 작습니다. 하루 한 줄, 2년이면
      700줄 남짓이라 넉넉합니다. */
+  /* 상한을 1000에서 5000으로 올립니다.
+     하루 한 줄이라 1000이면 2년 9개월입니다. 그 뒤로는 오래된 값이 조용히
+     잘려 나가고, 로컬에만 남아 있다가 기기를 바꿀 때 비로소 사라진 것이
+     드러났습니다 — 사용자에게 아무 말도 없이. 한 줄이 40바이트 남짓이라
+     5000줄이어도 200KB 정도이고, Firestore 문서 한도(1MB)에 넉넉합니다.
+     그래도 잘릴 때는 콘솔에 남겨 원인을 찾을 수 있게 합니다. */
+  const METRICS_MAX = 5000;
+
   async function saveMetrics(rows) {
     const u = currentUser;
     if (!store || !u) return;
-    const clean = (rows || []).slice(-1000).map(r => ({
-      date: String(r.date || "").slice(0, 10),
-      weightKg: Number(r.weightKg) || 0,
-    })).filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.date) && r.weightKg > 0);
+    const all = rows || [];
+    if (all.length > METRICS_MAX) {
+      console.warn(`[fitlog] saveMetrics: ${all.length}줄 중 오래된 ${all.length - METRICS_MAX}줄은 클라우드에 올리지 않습니다.`);
+    }
+    const clean = all.slice(-METRICS_MAX).map(r => {
+      const row = {
+        date: String(r.date || "").slice(0, 10),
+        weightKg: Number(r.weightKg) || 0,
+      };
+      /* 기기 사이에서 나중 값을 가리는 데 쓰므로 함께 올립니다. */
+      if (Number(r.updatedAt) > 0) row.updatedAt = Number(r.updatedAt);
+      return row;
+    }).filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.date) && r.weightKg > 0);
     await store.collection("users").doc(u.uid).set({ metrics: clean }, { merge: true });
+  }
+
+  /* ── 삭제 표시 ──────────────────────────────────────────────────────────
+     "이 열쇠는 이 시각에 지워졌다" 만 들어 있는 작은 지도입니다. 기기 사이의
+     합치기가 합집합이라, 이게 없으면 한 기기에서 지운 것을 다른 기기가 도로
+     올려 놓습니다. 루틴·몸무게와 같은 문서에 두는 이유도 같습니다 — 읽기를
+     한 번 더 쓸 이유가 없습니다. */
+  const TOMBSTONES_MAX = 600;
+
+  async function saveTombstones(map) {
+    const u = currentUser;
+    if (!store || !u) return;
+    const entries = Object.entries(map || {})
+      .filter(([k, v]) => typeof k === "string" && k && Number(v) > 0)
+      .map(([k, v]) => [k, Number(v)])
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, TOMBSTONES_MAX);
+    await store.collection("users").doc(u.uid).set(
+      { deletions: Object.fromEntries(entries) },
+      { merge: true },
+    );
   }
 
   async function saveProfile(prof) {
@@ -709,7 +769,7 @@ const Cloud = (() => {
   async function pullAll() {
     const sessionsCol = userCol("sessions");
     const customCol = userCol("customExercises");
-    if (!sessionsCol) return { sessions: [], customExercises: [], routines: [], metrics: [] };
+    if (!sessionsCol) return { sessions: [], customExercises: [], routines: [], metrics: [], deletions: {} };
     const id = uid();
     const [sessSnap, customSnap, userSnap] = await Promise.all([
       sessionsCol.get(),
@@ -722,6 +782,7 @@ const Cloud = (() => {
       customExercises: customSnap.docs.map((d) => d.data()).filter((e) => e && e.id),
       routines: Array.isArray(userDoc.routines) ? userDoc.routines : [],
       metrics: Array.isArray(userDoc.metrics) ? userDoc.metrics : [],
+      deletions: (userDoc.deletions && typeof userDoc.deletions === "object") ? userDoc.deletions : {},
     };
   }
 
@@ -827,6 +888,7 @@ const Cloud = (() => {
     saveProfile,
     saveRoutines,
     saveMetrics,
+    saveTombstones,
     loadProfile,
     signOut,
     touchProfile,

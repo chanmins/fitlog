@@ -186,6 +186,28 @@ const WorkoutDB = (() => {
     return txDone(tx);
   }
 
+  /* 여러 건을 한 트랜잭션에 넣습니다.
+     동기화는 합친 목록을 통째로 다시 씁니다. 한 건씩 putRoutine/putMetric 을
+     부르면 그때마다 트랜잭션이 새로 열려, 1년치 몸무게가 쌓인 사람은 동기화
+     한 번에 트랜잭션이 365개 열렸습니다. */
+  async function putMany(storeName, rows) {
+    const list = (rows || []).filter(Boolean);
+    if (!list.length) return;
+    const db = await open();
+    const tx = db.transaction(storeName, "readwrite");
+    const store = tx.objectStore(storeName);
+    for (const row of list) store.put(row);
+    return txDone(tx);
+  }
+
+  async function putRoutines(rows) {
+    return putMany("routines", (rows || []).filter(r => r && r.id));
+  }
+
+  async function putMetrics(rows) {
+    return putMany("metrics", (rows || []).filter(r => r && typeof r.date === "string"));
+  }
+
   async function deleteRoutine(id) {
     const db = await open();
     const tx = db.transaction("routines", "readwrite");
@@ -422,9 +444,11 @@ const WorkoutDB = (() => {
     deleteCustomExercise,
     getRoutines,
     putRoutine,
+    putRoutines,
     deleteRoutine,
     getMetrics,
     putMetric,
+    putMetrics,
     deleteMetric,
     replaceAll,
     exportAll,

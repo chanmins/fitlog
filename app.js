@@ -713,9 +713,15 @@ const APP_VERSION = (() => {
 
   function exVolume(ex) {
     /* Warm-up sets don't count toward working volume — matches how lifters
-       actually think about volume, and keeps the number meaningful. */
+       actually think about volume, and keeps the number meaningful.
+
+       체크하지 않은 세트도 세지 않습니다. 예전에는 여기만 done 을 보지 않아,
+       같은 '볼륨' 이 화면 위치에 따라 다른 숫자로 나왔습니다 — 부위 분석
+       (partWindows)은 완료한 세트만 세는데 그날 요약은 입력만 해 둔 세트까지
+       더했습니다. 미리 적어 두고 아직 안 한 세트가 오늘의 볼륨에 들어가면
+       그 숫자는 '한 일' 이 아니라 '할 일' 입니다. */
     return (ex.sets||[]).reduce((sum, st) => {
-      if (st.warmup) return sum;
+      if (st.warmup || !st.done) return sum;
       const kg = Number(st.kg), reps = Number(st.reps);
       return sum + (Number.isFinite(kg) && Number.isFinite(reps) ? kg * reps : 0);
     }, 0);
@@ -1027,8 +1033,15 @@ const APP_VERSION = (() => {
   /* ── Persist queue ──────────────────────── */
   let _pq = Promise.resolve();
   function persist() {
-    _pq = _pq.then(doSave, doSave);
-    return _pq;
+    /* 큐에는 '삼킨' 사슬을 남기고, 호출자에게는 진짜 결과를 돌려줍니다.
+       예전에는 같은 promise 를 둘 다에 썼습니다. doSave 가 실패하면 그
+       거절을 아무도 받지 않는 자리가 생겨(대부분의 호출부가 await 하지
+       않습니다) unhandled rejection 이 났고, 브라우저에 따라 콘솔이
+       빨갛게 물들거나 오류 리포터가 울렸습니다 — 사용자에게는 이미
+       toast 로 알린 뒤인데도. */
+    const run = _pq.then(doSave, doSave);
+    _pq = run.catch(() => {});
+    return run;
   }
   /* Fire-and-forget. The local IndexedDB write has already succeeded by the time
      this runs, so a slow or unreachable Firestore must never block the UI. */
@@ -1053,6 +1066,9 @@ const APP_VERSION = (() => {
     if (!worthSaving(s)) {
       await WorkoutDB.deleteSession(s.date);
       state.sessions = state.sessions.filter(x => x.date !== s.date);
+      /* 내용을 다 지워 빈 날이 된 것도 '그날은 없다' 는 말입니다.
+         표시를 남기지 않으면 다른 기기의 옛 사본이 다시 올라옵니다. */
+      markDeleted('session', s.date);
       await cloudSync(() => Cloud.deleteSession(s.date));
       return;
     }
@@ -3971,7 +3987,11 @@ const APP_VERSION = (() => {
     const lead = (first.getDay() - weekdayStartIdx() + 7) % 7;
     const today = todayISO();
 
-    const byDate = new Map(state.sessions.map(s => [s.date, s]));
+    /* 달력의 '운동한 날' 은 실제로 한 것이 있는 날입니다.
+       예전에는 state.sessions 에 있기만 하면 표시했는데, worthSaving 은 부위
+       칩 하나만 골라도 참이라 부위만 눌러 보고 나간 날이 체크되고 아래
+       '3일 운동 · 0세트 완료' 같은 줄이 나왔습니다. */
+    const byDate = new Map(state.sessions.filter(hasAnyWork).map(s => [s.date, s]));
     let cells = '';
     for (let i = 0; i < lead; i++) cells += '<div class="cal-cell empty"></div>';
     for (let d = 1; d <= daysInMonth; d++) {
@@ -3997,7 +4017,7 @@ const APP_VERSION = (() => {
       </button>`;
     }
 
-    const monthSessions = state.sessions.filter(s => s.date.startsWith(mKey));
+    const monthSessions = state.sessions.filter(s => hasAnyWork(s) && s.date.startsWith(mKey));
     const monthSets = monthSessions.reduce((a, s) =>
       a + (s.exercises || []).reduce((b, ex) => b + (ex.sets || []).filter(st => st.done).length, 0), 0);
     const canGoNext = shiftMonth(mKey, 1) <= monthKey(today);
@@ -4350,7 +4370,9 @@ const APP_VERSION = (() => {
     const kg = fromDisplayWeight(disp);
     if (!Number.isFinite(kg)) return;
     state.bodyWeight = null;
-    const row = { date: todayISO(), weightKg: Math.round(kg * 10) / 10 };
+    /* updatedAt 을 함께 남깁니다 — 삭제 표시와 견줄 기준이 되고,
+       기기 두 대에서 같은 날 몸무게를 적었을 때 나중 것이 이깁니다. */
+    const row = { date: todayISO(), weightKg: Math.round(kg * 10) / 10, updatedAt: Date.now() };
     state.metrics = state.metrics.filter(m => m.date !== row.date).concat(row)
       .sort((a, b) => a.date.localeCompare(b.date));
     await WorkoutDB.putMetric(row);
@@ -6762,6 +6784,7 @@ const APP_VERSION = (() => {
                      confirmText: '삭제', danger: true })) return;
     await WorkoutDB.deleteCustomExercise(id);
     state.customExercises = state.customExercises.filter(e=>e.id!==id);
+    markDeleted('custom', id);
     await cloudSync(() => Cloud.deleteCustom(id));
     render();
   }
@@ -6788,7 +6811,7 @@ const APP_VERSION = (() => {
      않습니다 — 그건 그날 몸 상태를 보고 정하는 것이고, 루틴에 굳혀 두면
      오늘과 상관없는 숫자가 딸려옵니다. */
   async function persistRoutines() {
-    for (const r of state.routines) await WorkoutDB.putRoutine(clone(r));
+    await WorkoutDB.putRoutines(state.routines.map(clone));
     cloudSync(() => Cloud.saveRoutines(state.routines));
   }
 
@@ -6952,6 +6975,10 @@ const APP_VERSION = (() => {
     if (!await ask({ title: '루틴 삭제', body: `"${r.name}" 을(를) 지울까요? 지난 기록은 그대로 남습니다.`, confirmText: '삭제', danger: true })) return;
     state.routines = state.routines.filter(x => x.id !== id);
     await WorkoutDB.deleteRoutine(id);
+    /* 루틴은 문서 하나에 통째로 들어가므로 saveRoutines 만으로도 클라우드에서
+       사라집니다. 그래도 표시를 남깁니다 — 다른 기기가 옛 목록을 들고
+       합치면 mergeRoutines 가 '이 기기에만 있는 줄' 로 보고 되살립니다. */
+    markDeleted('routine', id);
     cloudSync(() => Cloud.saveRoutines(state.routines));
     render();
     toast('루틴을 지웠습니다');
@@ -7037,9 +7064,13 @@ const APP_VERSION = (() => {
     if (!await ask({ title: '이 날 기록을 삭제할까요?',
                      body: '이 날 저장된 운동과 러닝 기록이 모두 사라집니다.',
                      confirmText: '삭제', danger: true })) return;
-    await WorkoutDB.deleteSession(state.session.date);
-    state.sessions = state.sessions.filter(s=>s.date!==state.session.date);
-    await cloudSync(() => Cloud.deleteSession(state.session.date));
+    const gone = state.session.date;
+    await WorkoutDB.deleteSession(gone);
+    state.sessions = state.sessions.filter(s=>s.date!==gone);
+    /* 지웠다는 사실을 남깁니다 — 이게 없으면 그 날짜를 아직 들고 있는
+       다른 기기가 동기화하면서 도로 올립니다. */
+    markDeleted('session', gone);
+    await cloudSync(() => Cloud.deleteSession(gone));
     state.session = emptySession(state.date);
     state.tab = 'home';
     render(); toast('삭제했습니다');
@@ -7104,6 +7135,12 @@ const APP_VERSION = (() => {
       toast(err?.message || '가져오지 못했습니다');
       return;
     }
+    /* 백업으로 교체했으면 지난 삭제 표시는 더 이상 유효하지 않습니다.
+       파일 안의 날짜가 예전에 지운 날짜와 겹치면, 표시를 그대로 둔 채
+       동기화가 돌면서 방금 가져온 기록을 다시 지웁니다 — 가져오기가
+       "완료" 라고 말한 직후에. */
+    writeTombstones({});
+    cloudSync(() => Cloud.saveTombstones({}));
     state.sessions = await WorkoutDB.getAllSessions();
     state.customExercises = await WorkoutDB.getCustomExercises();
     state.routines = await WorkoutDB.getRoutines();
@@ -7158,6 +7195,110 @@ const APP_VERSION = (() => {
     if (idx >= 0) state.sessions[idx] = copy;
     else state.sessions.push(copy);
     state.sessions.sort((a, b) => b.date.localeCompare(a.date));
+  }
+
+  /* ── 삭제 표시(tombstone) ────────────────────────────────────────────────
+     합치기는 합집합입니다. 그래서 예전에는 삭제가 되살아났습니다 — A 기기에서
+     기록을 지우면 로컬에서도 클라우드에서도 사라지지만, 그 날짜를 아직 들고
+     있는 B 기기가 동기화하는 순간 B의 로컬 행이 합쳐지고 pushAll 이 클라우드에
+     도로 올렸습니다. 확인 창까지 띄우고 지운 것이 며칠 뒤에 돌아왔고, 원인을
+     알 방법이 없었습니다.
+
+     그래서 '지웠다' 는 사실 자체를 남깁니다. 행이 아니라 열쇠와 시각만 남기면
+     되므로 아주 작습니다. 이 기기의 사본은 localStorage 에, 기기 사이에서
+     공유되는 사본은 users/{uid}.deletions 에 둡니다 — 지워진 이상 IndexedDB
+     본체에 자리를 차지할 이유가 없고, 클라우드 쪽이 결국 진실이 됩니다.
+
+     삭제 뒤에 같은 날짜를 다시 기록하는 것은 흔한 일이므로(어제 걸 지우고
+     다시 적는다), 행의 updatedAt 이 삭제 시각보다 나중이면 되살립니다. */
+  const TOMB_KEY = 'fitlog-tombstones';
+  const TOMB_MAX = 600;
+
+  /* 계정별로 따로 둡니다.
+     IndexedDB 가 scope 로 갈라져 있는 것과 같은 이유입니다 — 로그인 전
+     게스트로 쓰다가 계정으로 들어온 사람의 삭제 표시가, 계정 쪽의 같은
+     날짜를 지워 버리면 안 됩니다. 한 기기를 여러 사람이 쓰는 경우도
+     마찬가지입니다. */
+  function tombStoreKey() {
+    return `${TOMB_KEY}:${state.user ? state.user.uid : 'guest'}`;
+  }
+
+  function tombKey(kind, id) { return kind + ':' + id; }
+
+  function trimTombstones(map) {
+    const entries = Object.entries(map || {});
+    if (entries.length <= TOMB_MAX) return map || {};
+    entries.sort((a, b) => (b[1] || 0) - (a[1] || 0));
+    return Object.fromEntries(entries.slice(0, TOMB_MAX));
+  }
+
+  function readTombstones() {
+    try {
+      const v = JSON.parse(localStorage.getItem(tombStoreKey()) || '{}');
+      return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+    } catch (_) { return {}; }
+  }
+
+  function writeTombstones(map) {
+    try { localStorage.setItem(tombStoreKey(), JSON.stringify(trimTombstones(map))); } catch (_) {}
+  }
+
+  /* 지웠다고 남기고, 클라우드에도 곧바로 알립니다. 이걸 미루면 그 사이에
+     다른 기기가 동기화하면서 되살립니다. */
+  function markDeleted(kind, id) {
+    const map = readTombstones();
+    map[tombKey(kind, id)] = Date.now();
+    writeTombstones(map);
+    cloudSync(() => Cloud.saveTombstones(readTombstones()));
+    return map;
+  }
+
+  function mergeTombstones(a, b) {
+    const out = { ...(a || {}) };
+    for (const [k, v] of Object.entries(b || {})) {
+      if (!(Number(out[k]) >= Number(v))) out[k] = v;
+    }
+    return trimTombstones(out);
+  }
+
+  /* 지워진 것인가. 삭제 이후에 다시 쓴 행이면 아닙니다. */
+  function isTombstoned(map, kind, id, rowUpdatedAt) {
+    const at = Number((map || {})[tombKey(kind, id)]) || 0;
+    if (!at) return false;
+    return !(Number(rowUpdatedAt) > at);
+  }
+
+  /* 키 순서에 흔들리지 않는 비교용 문자열.
+     Firestore 에서 돌아온 객체와 이 기기의 객체는 같은 내용이어도 키 순서가
+     다를 수 있어서 JSON.stringify 를 그대로 비교하면 늘 '다르다' 가 나온다. */
+  function stableKey(v) {
+    if (v === null || typeof v !== 'object') return JSON.stringify(v);
+    if (Array.isArray(v)) return '[' + v.map(stableKey).join(',') + ']';
+    return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + stableKey(v[k])).join(',') + '}';
+  }
+
+  /* 이 행이 클라우드에 있는 것과 같은가.
+     updatedAt 이 양쪽에 다 있으면 그것만 본다(싸다). 옛 기록에는 없을 수
+     있으므로 그때만 내용을 비교한다. */
+  function sameAsCloud(local, cloud) {
+    if (!cloud) return false;
+    const a = Number(local.updatedAt) || 0, b = Number(cloud.updatedAt) || 0;
+    if (a && b) return a === b;
+    return stableKey(local) === stableKey(cloud);
+  }
+
+  /* ── 올릴 것만 고릅니다 ──────────────────────────────────────────────────
+     예전에는 동기화할 때마다 pushAll 이 세션 전체를 다시 썼습니다. 2년치
+     300일을 기록한 사람은 앱을 열 때마다, 당겨서 새로고침할 때마다 문서
+     300개를 병렬로 덮어썼습니다 — 무료 요금제의 하루 쓰기 한도를 사용자
+     몇 명이 태우고, 비용이 기록 길이에 비례해 영원히 늘어나는 구조였습니다.
+     바뀐 것만 올리면 평소에는 0~2건입니다. */
+  function changedAgainstCloud(merged, cloudRows, keyOf) {
+    const cloudMap = new Map();
+    for (const row of cloudRows || []) {
+      if (row && keyOf(row)) cloudMap.set(keyOf(row), row);
+    }
+    return (merged || []).filter(row => !sameAsCloud(row, cloudMap.get(keyOf(row))));
   }
 
   function mergeByDate(localRows, cloudRows) {
@@ -7219,7 +7360,13 @@ const APP_VERSION = (() => {
       if (row && row.date && Number(row.weightKg) > 0) map.set(row.date, row);
     }
     for (const row of localRows || []) {
-      if (row && row.date && Number(row.weightKg) > 0) map.set(row.date, row);
+      if (!row || !row.date || !(Number(row.weightKg) > 0)) continue;
+      const prev = map.get(row.date);
+      /* 양쪽에 updatedAt 이 있으면 나중 것을 남깁니다. 없으면(옛 기록)
+         지금까지처럼 이 기기 것을 남깁니다 — 오늘 잰 값을 적은 곳이
+         이 기기이기 때문입니다. */
+      const a = Number(row.updatedAt) || 0, b = prev ? Number(prev.updatedAt) || 0 : 0;
+      if (!prev || !(a && b) || a >= b) map.set(row.date, row);
     }
     return [...map.values()].sort((a, b) => a.date.localeCompare(b.date));
   }
@@ -7503,40 +7650,75 @@ const APP_VERSION = (() => {
       const localSessions = await WorkoutDB.getAllSessions();
       const localCustom = await WorkoutDB.getCustomExercises();
       if (!stillMe()) return;
+      /* 삭제 표시를 먼저 합칩니다 — 무엇을 남길지 정하는 기준이므로
+         행을 고르기 전에 양쪽 것이 다 모여 있어야 합니다. */
+      const tombstones = mergeTombstones(readTombstones(), cloudData.deletions);
+      writeTombstones(tombstones);
+
       let sessions = mergeByDate(localSessions, cloudData.sessions);
       sessions = overlayOpenSession(sessions);
+      /* 지운 날은 어느 쪽에서 올라왔든 남기지 않습니다. 단, 지운 뒤에 다시
+         기록한 날은 되살립니다(updatedAt 이 삭제 시각보다 나중). */
+      const revivedDates = sessions
+        .filter(s => isTombstoned(tombstones, 'session', s.date, s.updatedAt))
+        .map(s => s.date);
+      if (revivedDates.length) {
+        sessions = sessions.filter(s => !isTombstoned(tombstones, 'session', s.date, s.updatedAt));
+      }
       /* 빈 껍데기 기록을 털어냅니다 — doSave() 가 저장하지 않는 것과 같은
          기준입니다. 옛 버전이 클라우드에 올려 둔 빈 기록은 pullAll 로 매번
          다시 내려오는데 pushAll 은 덮어쓰기만 하고 지우지는 않아서, 그냥 두면
          새로고침할 때마다 오늘이 '운동한 날' 로 되살아납니다. */
       const junkDates = sessions.filter(s => !worthSaving(s)).map(s => s.date);
       if (junkDates.length) sessions = sessions.filter(worthSaving);
-      const customExercises = mergeCustom(localCustom, cloudData.customExercises);
+      let customExercises = mergeCustom(localCustom, cloudData.customExercises);
+      const revivedCustom = customExercises
+        .filter(e => isTombstoned(tombstones, 'custom', e.id, e.updatedAt))
+        .map(e => e.id);
+      if (revivedCustom.length) {
+        customExercises = customExercises.filter(e => !isTombstoned(tombstones, 'custom', e.id, e.updatedAt));
+      }
       if (!stillMe()) return;
       await WorkoutDB.replaceAll(sessions, customExercises);
       if (!stillMe()) return;
-      await withTimeout(Cloud.pushAll(sessions, customExercises), 15000, '저장');
+      /* 전부가 아니라 클라우드와 달라진 것만 올립니다. */
+      const pushSessions = changedAgainstCloud(sessions, cloudData.sessions, r => r.date);
+      const pushCustom = changedAgainstCloud(customExercises, cloudData.customExercises, r => r.id);
+      if (pushSessions.length || pushCustom.length) {
+        await withTimeout(Cloud.pushAll(pushSessions, pushCustom), 15000, '저장');
+      }
       if (!stillMe()) return;
       /* pushAll 은 덮어쓰기만 하므로, 위에서 걸러낸 빈 기록은 여기서 직접
          지워야 계정에서 사라집니다. 실패해도 동기화를 무너뜨릴 일은 아니라
          각각 감쌉니다 — 다음 동기화에서 다시 시도합니다. */
-      for (const date of junkDates) {
+      /* 지운 날이 클라우드에 아직 남아 있으면 여기서 실제로 지웁니다.
+         pushAll 은 덮어쓰기만 하므로, 이 줄이 없으면 다음 pullAll 에서
+         똑같이 다시 내려옵니다. */
+      for (const date of [...new Set([...junkDates, ...revivedDates])]) {
         /* 지우는 사이에 그 날짜가 되살아났다면(동기화 도중 세트를 찍었다면)
            건너뜁니다. */
         if (state.session && state.session.date === date && worthSaving(state.session)) continue;
         try { await withTimeout(Cloud.deleteSession(date), 8000, '정리'); }
         catch (err) { console.warn('[fitlog] 빈 기록 정리 실패', date, err); }
       }
+      for (const id of revivedCustom) {
+        try { await withTimeout(Cloud.deleteCustom(id), 8000, '정리'); }
+        catch (err) { console.warn('[fitlog] 지운 운동 정리 실패', id, err); }
+      }
       if (!stillMe()) return;
 
       /* 루틴과 몸무게도 같이 맞춥니다. 예전에는 저장만 올려보내고 내려받는
          쪽이 없어서, 새 기기로 로그인하면 만들어 둔 루틴과 몸무게 기록이
          통째로 사라진 것처럼 보였습니다. */
-      const routines = mergeRoutines(await WorkoutDB.getRoutines(), cloudData.routines);
-      const metrics  = mergeMetrics(await WorkoutDB.getMetrics(), cloudData.metrics);
+      const routines = mergeRoutines(await WorkoutDB.getRoutines(), cloudData.routines)
+        .filter(r => !isTombstoned(tombstones, 'routine', r.id, r.usedAt));
+      const metrics  = mergeMetrics(await WorkoutDB.getMetrics(), cloudData.metrics)
+        .filter(m => !isTombstoned(tombstones, 'metric', m.date, m.updatedAt));
       if (!stillMe()) return;
-      for (const r of routines) await WorkoutDB.putRoutine(clone(r));
-      for (const m of metrics)  await WorkoutDB.putMetric(clone(m));
+      /* 한 건씩 트랜잭션을 여는 대신 한 번에 넣습니다 — 1년치 몸무게면
+         예전에는 동기화 한 번에 트랜잭션이 365개 열렸습니다. */
+      await WorkoutDB.putRoutines(routines.map(clone));
+      await WorkoutDB.putMetrics(metrics.map(clone));
       state.routines = routines;
       state.metrics  = metrics;
       /* 합친 결과를 다시 올려야 이 기기에만 있던 줄이 클라우드로 갑니다.
@@ -7544,6 +7726,7 @@ const APP_VERSION = (() => {
       try {
         await withTimeout(Cloud.saveRoutines(routines), 10000, '루틴 저장');
         await withTimeout(Cloud.saveMetrics(metrics), 10000, '몸무게 저장');
+        await withTimeout(Cloud.saveTombstones(tombstones), 10000, '삭제 기록');
       } catch (err) { console.warn('routine/metric push failed', err); }
 
       /* Refresh data in place — loadWorkspace() would reset the tab and close
@@ -7795,6 +7978,12 @@ const APP_VERSION = (() => {
     if (!await ask({ title: '이 기기 기록을 초기화할까요?', body: msg,
                      confirmText: '초기화', danger: true })) return;
     await WorkoutDB.replaceAll([], []);
+    /* 삭제 표시도 같이 비웁니다. 이 동작은 '이 기기를 비운다' 이지 '내
+       기록을 지운다' 가 아닙니다. 표시를 남겨 두면 곧바로 이어지는
+       동기화가 클라우드에서 내려온 기록을 그 표시로 다시 걸러 냅니다 —
+       "클라우드 기록은 남아 있습니다" 라고 방금 말해 놓고 지우는 셈입니다. */
+    writeTombstones({});
+    cloudSync(() => Cloud.saveTombstones({}));
     state.sessions = [];
     state.customExercises = [];
     state.session = emptySession(state.date);

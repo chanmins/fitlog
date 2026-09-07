@@ -1,0 +1,77 @@
+name: check
+
+# 배포 전에 걸러 낼 수 있는 것만 거릅니다.
+#
+# 이 저장소에는 빌드 단계도 테스트도 없습니다. app.js 는 8천 줄이고 브라우저가
+# 직접 받아 실행하므로, 문법 오류 하나가 그대로 배포되면 앱이 흰 화면으로 뜹니다
+# (index.html 의 복구 스크립트가 서비스워커를 지우고 새로고침하지만, 원인이
+# 그대로면 계속 흰 화면입니다).
+#
+# 그래서 자동으로 확인할 수 있는 두 가지만 봅니다:
+#   1. 모든 JS 파일이 파싱되는가
+#   2. 버전 문자열이 index.html 과 sw.js 에서 일치하는가
+#
+# 둘 다 실제로 배포를 망가뜨린 적 있는 종류입니다. 여기서 걸리면 push 에
+# 빨간불이 뜹니다.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 문법 검사
+        run: |
+          fail=0
+          for f in *.js scripts/*.mjs; do
+            [ -e "$f" ] || continue
+            if ! node --check "$f"; then
+              echo "::error file=$f::문법 오류"
+              fail=1
+            fi
+          done
+          exit $fail
+
+      - name: 버전 문자열 일치
+        run: |
+          idx=$(grep -oE 'var BUILD = "[0-9]+"' index.html | grep -oE '[0-9]+' | head -1)
+          sw=$(grep -oE 'const BUILD = "[0-9]+"' sw.js | grep -oE '[0-9]+' | head -1)
+          if [ -z "$idx" ] || [ -z "$sw" ]; then
+            echo "::error::BUILD 상수를 찾지 못했어요 (index.html=$idx sw.js=$sw)"
+            exit 1
+          fi
+          if [ "$idx" != "$sw" ]; then
+            echo "::error::index.html($idx) 과 sw.js($sw) 의 버전이 다릅니다 — node scripts/bump-version.mjs 로 맞추세요."
+            exit 1
+          fi
+          # index.html 안의 ?v= 도 전부 같아야 합니다.
+          bad=$(grep -oE '\?v=[0-9]+' index.html | grep -v "?v=$idx" || true)
+          if [ -n "$bad" ]; then
+            echo "::error::index.html 안에 버전이 다른 ?v= 가 있습니다: $bad (기준 $idx)"
+            exit 1
+          fi
+          echo "✓ 버전 $idx 로 일치합니다."
+
+      - name: 참조된 파일이 실제로 있는가
+        run: |
+          fail=0
+          # index.html 이 부르는 로컬 스크립트/스타일이 전부 존재해야 합니다.
+          for ref in $(grep -oE '(src|href)="\./[^"?]+' index.html | sed 's/.*="\.\///'); do
+            if [ ! -e "$ref" ]; then
+              echo "::error file=index.html::참조한 파일이 없습니다: $ref"
+              fail=1
+            fi
+          done
+          exit $fail
