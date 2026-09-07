@@ -331,12 +331,11 @@ const Cloud = (() => {
 
   /* Single-document get — the only read the rules allow before sign-in.
 
-     이 읽기는 이제 App Check 토큰을 요구합니다(firestore.rules 참고).
-     그래서 "없는 아이디" 와 "읽을 수 없었다" 를 구분해야 합니다 — 둘을
-     섞으면, App Check 가 꺼진 환경(localhost, reCAPTCHA 차단, 콘솔에 앱
-     미등록)의 사용자에게 "그런 아이디 없습니다" 라고 말하게 됩니다.
-     자기 아이디를 정확히 친 사람에게 그 문장은 거짓말이고, 원인을 찾을
-     단서도 주지 못합니다. */
+     "없는 아이디" 와 "읽을 수 없었다" 를 구분합니다. 둘을 섞으면 규칙이나
+     네트워크 때문에 못 읽었을 때도 "그런 아이디 없습니다" 라고 말하게
+     되는데, 자기 아이디를 정확히 친 사람에게 그건 거짓말이고 원인을 찾을
+     단서도 주지 못합니다. 나중에 이 읽기에 App Check 를 걸면(규칙 파일의
+     주석 참고) 그때 이 분기가 곧바로 제 몫을 합니다. */
   async function lookupUsername(rawId) {
     const id = normalizeUsername(rawId);
     if (!store || !id) return null;
@@ -346,13 +345,9 @@ const Cloud = (() => {
     } catch (err) {
       const code = err && err.code;
       if (code === "permission-denied" || code === "unauthenticated") {
-        const e = new Error(
-          appCheckImpossibleHere()
-            ? "이 환경에서는 아이디 로그인을 쓸 수 없습니다. 이메일 또는 구글로 로그인해 주세요."
-            : "아이디를 확인할 수 없습니다. 잠시 후 다시 시도하거나 이메일·구글 로그인을 써 주세요."
-        );
+        const e = new Error("아이디를 확인할 수 없습니다. 잠시 후 다시 시도하거나 이메일·구글 로그인을 써 주세요.");
         e.code = "fitlog/username-lookup-blocked";
-        console.warn("[fitlog] usernames get denied — App Check 토큰이 없거나 앱이 콘솔에 등록되지 않았습니다.", err);
+        console.warn("[fitlog] usernames get denied — 규칙이 이 읽기를 막았습니다.", err);
         throw e;
       }
       throw err;
